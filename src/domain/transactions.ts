@@ -169,6 +169,16 @@ export function rejectTransaction(db: HomelyDatabase, transactionId: string) {
   return readTransaction(db, transactionId);
 }
 
+function snapshotRequired(snapshot: Snapshot, key: string): string {
+  const value = snapshot[key];
+  if (value == null) throw new Error(`Transaction snapshot is missing ${key}.`);
+  return value;
+}
+
+function snapshotOptional(snapshot: Snapshot, key: string): string | null {
+  return snapshot[key] ?? null;
+}
+
 export function commitTransaction(db: HomelyDatabase, transactionId: string) {
   const transaction = readTransaction(db, transactionId);
   if (!transaction) throw new Error("Transaction not found.");
@@ -179,13 +189,24 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
   db.exec("BEGIN IMMEDIATE;");
   try {
     if (transaction.action_type === "REPORT_ISSUE") {
+      const id = snapshotRequired(after, "id");
+      const assetId = snapshotRequired(after, "asset_id");
+      const issueTitle = snapshotRequired(after, "title");
+      const status = snapshotRequired(after, "status");
+      const severity = snapshotRequired(after, "severity");
+      const detectedAt = snapshotRequired(after, "detected_at");
+      const createdAt = snapshotRequired(after, "created_at");
+      const updatedAt = snapshotRequired(after, "updated_at");
+      const description = snapshotOptional(after, "description");
+      const resolvedAt = snapshotOptional(after, "resolved_at");
+
       db.prepare(`
         INSERT INTO issues(
           id,asset_id,title,status,severity,description,detected_at,resolved_at,created_at,updated_at
         ) VALUES (?,?,?,?,?,?,?,?,?,?)
       `).run(
-        after.id, after.asset_id, after.title, after.status, after.severity,
-        after.description, after.detected_at, after.resolved_at, after.created_at, after.updated_at
+        id, assetId, issueTitle, status, severity,
+        description, detectedAt, resolvedAt, createdAt, updatedAt
       );
 
       db.prepare(`
@@ -195,18 +216,24 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         `event-${randomUUID()}`, transaction.home_id, "ISSUE_REPORTED",
-        `Issue reported — ${after.title}`, after.description ?? transaction.reason,
-        now, after.asset_id, after.id, "{}", transactionId, now
+        `Issue reported — ${issueTitle}`, description ?? transaction.reason,
+        now, assetId, id, "{}", transactionId, now
       );
     } else if (transaction.action_type === "CREATE_MAINTENANCE_TASK") {
+      const id = snapshotRequired(after, "id");
+      const assetId = snapshotRequired(after, "asset_id");
+      const taskTitle = snapshotRequired(after, "title");
+      const status = snapshotRequired(after, "status");
+      const reason = snapshotRequired(after, "reason");
+      const createdAt = snapshotRequired(after, "created_at");
+      const updatedAt = snapshotRequired(after, "updated_at");
+      const dueAt = snapshotOptional(after, "due_at");
+
       db.prepare(`
         INSERT INTO maintenance_tasks(
           id,asset_id,title,due_at,status,reason,created_at,updated_at
         ) VALUES (?,?,?,?,?,?,?,?)
-      `).run(
-        after.id, after.asset_id, after.title, after.due_at, after.status,
-        after.reason, after.created_at, after.updated_at
-      );
+      `).run(id, assetId, taskTitle, dueAt, status, reason, createdAt, updatedAt);
 
       db.prepare(`
         INSERT INTO timeline_events(
@@ -215,8 +242,8 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         `event-${randomUUID()}`, transaction.home_id, "MAINTENANCE_PLANNED",
-        `Maintenance planned — ${after.title}`, transaction.reason,
-        now, after.asset_id, after.id, "{}", transactionId, now
+        `Maintenance planned — ${taskTitle}`, transaction.reason,
+        now, assetId, id, "{}", transactionId, now
       );
     } else {
       throw new Error("Unsupported transaction action.");
@@ -243,6 +270,8 @@ export function undoTransaction(db: HomelyDatabase, transactionId: string) {
   if (transaction.status !== "COMMITTED") throw new Error("Only committed transactions can be undone.");
 
   const after = transaction.after;
+  const assetId = snapshotRequired(after, "asset_id");
+  const originalUpdatedAt = snapshotRequired(after, "updated_at");
   const now = new Date().toISOString();
 
   db.exec("BEGIN IMMEDIATE;");
@@ -250,14 +279,14 @@ export function undoTransaction(db: HomelyDatabase, transactionId: string) {
     if (transaction.action_type === "REPORT_ISSUE") {
       const current = db.prepare("SELECT updated_at FROM issues WHERE id = ?").get(transaction.entity_id);
       if (!current) throw new Error("The created issue no longer exists.");
-      if (String(current.updated_at) !== String(after.updated_at)) {
+      if (String(current.updated_at) !== originalUpdatedAt) {
         throw new Error("The issue changed after this transaction and cannot be safely undone.");
       }
       db.prepare("DELETE FROM issues WHERE id = ?").run(transaction.entity_id);
     } else if (transaction.action_type === "CREATE_MAINTENANCE_TASK") {
       const current = db.prepare("SELECT updated_at FROM maintenance_tasks WHERE id = ?").get(transaction.entity_id);
       if (!current) throw new Error("The created maintenance task no longer exists.");
-      if (String(current.updated_at) !== String(after.updated_at)) {
+      if (String(current.updated_at) !== originalUpdatedAt) {
         throw new Error("The maintenance task changed after this transaction and cannot be safely undone.");
       }
       db.prepare("DELETE FROM maintenance_tasks WHERE id = ?").run(transaction.entity_id);
@@ -273,7 +302,7 @@ export function undoTransaction(db: HomelyDatabase, transactionId: string) {
     `).run(
       `event-${randomUUID()}`, transaction.home_id, "TRANSACTION_REVERSED",
       `Action undone — ${transaction.action_type.replaceAll("_", " ").toLowerCase()}`,
-      transaction.reason, now, after.asset_id, "{}", transactionId, now
+      transaction.reason, now, assetId, "{}", transactionId, now
     );
 
     db.prepare(`
