@@ -6,6 +6,9 @@ const assetDetail = document.querySelector("#asset-detail");
 const actionDialog = document.querySelector("#action-dialog");
 const actionDetail = document.querySelector("#action-detail");
 const toast = document.querySelector("#toast");
+const runtimeStatus = document.querySelector("#runtime-status");
+const runtimeStatusText = document.querySelector("#runtime-status-text");
+const logoutButton = document.querySelector("#logout-button");
 
 document.querySelector("#today").textContent = new Intl.DateTimeFormat("en-ZA", {
   day: "2-digit", month: "short", year: "numeric"
@@ -17,7 +20,8 @@ const state = {
   pendingTransactionId: null,
   agentMessages: [],
   agentPreviousResponseId: null,
-  agentStatus: null
+  agentStatus: null,
+  integrations: null
 };
 
 const esc = (value = "") => String(value)
@@ -57,8 +61,48 @@ function notify(message) {
   window.setTimeout(() => toast.classList.remove("show"), 2600);
 }
 
-function loading() {
-  content.innerHTML = '<div class="empty">Loading home state…</div>';
+function loading(label = "Loading home state…") {
+  content.innerHTML = '<div class="loading-state"><span class="loading-pulse" aria-hidden="true"></span><span>' + esc(label) + '</span></div>';
+}
+
+function setRuntimeStatus(integrations) {
+  if (!runtimeStatus || !runtimeStatusText) return;
+  const backup = integrations?.backup;
+  let tone = "good";
+  let label = "Cloud runtime active";
+
+  if (backup?.enabled) {
+    if (!backup.connected) {
+      tone = "attention";
+      label = "Backup not connected";
+    } else if (backup.lastError) {
+      tone = "failed";
+      label = "Backup degraded";
+    } else if (backup.lastBackupAt) {
+      label = "Drive backup active";
+    } else {
+      tone = "attention";
+      label = "Drive backup ready";
+    }
+  }
+
+  runtimeStatus.dataset.tone = tone;
+  runtimeStatusText.textContent = label;
+  runtimeStatus.title = backup?.lastBackupAt ? "Last off-site backup: " + fmtDateTime(backup.lastBackupAt) : label;
+}
+
+async function refreshRuntimeStatus() {
+  try {
+    const integrations = await api("/api/integrations/status");
+    state.integrations = integrations;
+    setRuntimeStatus(integrations);
+    return integrations;
+  } catch (error) {
+    if (runtimeStatus) runtimeStatus.dataset.tone = "failed";
+    if (runtimeStatusText) runtimeStatusText.textContent = "Cloud status unavailable";
+    console.error(error);
+    return null;
+  }
 }
 
 function fail(error) {
@@ -112,7 +156,7 @@ async function showOverview() {
         <div>
           <p class="eyebrow">ACTIVE PROPERTY</p>
           <div class="home-title">${esc(data.home.name)}</div>
-          <p class="lede">Local, persistent property state with deterministic health. ${data.summary.systems_needing_attention} systems currently require attention.</p>
+          <p class="lede">Authoritative property state with deterministic health and audited changes. ${data.summary.systems_needing_attention} systems currently require attention.</p>
         </div>
         <div class="summary-strip">
           <div class="metric"><strong>${data.summary.systems_needing_attention}</strong><span>systems need attention</span></div>
@@ -574,7 +618,7 @@ async function showAgent() {
             <div>
               <p class="eyebrow">AGENT UNAVAILABLE</p>
               <h3>Structured Homely remains operational.</h3>
-              <p>The OpenAI agent is ${integrations.ai.enabled ? "enabled but not configured" : "disabled"}. Assets, issues, maintenance, documents, timeline and transactions continue to use local SQLite state.</p>
+              <p>The OpenAI agent is ${integrations.ai.enabled ? "enabled but not configured" : "disabled"}. Assets, issues, maintenance, documents, timeline and transactions remain available from Homely\'s structured property state.</p>
             </div>
             <div class="agent-config">
               <span>AI_ENABLED</span><strong>${integrations.ai.enabled ? "true" : "false"}</strong>
