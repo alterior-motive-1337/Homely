@@ -2,11 +2,20 @@ import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { HomelyDatabase } from "../db.js";
 import { executeHomelyTool } from "../tools/homelyTools.js";
-import {
-  commitTransaction,
-  rejectTransaction,
-  undoTransaction,
-} from "../domain/transactions.js";
+
+const readOnlyAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false
+} as const;
+
+const proposalAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false
+} as const;
 
 function ok(value: unknown) {
   return {
@@ -25,14 +34,15 @@ function fail(error: unknown) {
 export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
   const server = new McpServer({
     name: "Homely",
-    version: "0.2.0"
+    version: "0.3.0"
   });
 
   server.registerTool(
     "get_home_summary",
     {
       description: "Return the current deterministic home health summary, active issues, overdue maintenance, upcoming maintenance, and recent history.",
-      inputSchema: z.object({})
+      inputSchema: z.object({}),
+      annotations: readOnlyAnnotations
     },
     async () => {
       try { return ok(executeHomelyTool(db, "get_home_summary", {}, "MCP")); } catch (error) { return fail(error); }
@@ -46,7 +56,8 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
       inputSchema: z.object({
         system: z.string().trim().min(1).optional().describe("Optional system name or category filter."),
         health: z.enum(["HEALTHY","ATTENTION","DEGRADED","FAILED","UNKNOWN"]).optional()
-      })
+      }),
+      annotations: readOnlyAnnotations
     },
     async ({ system, health }) => {
       try {
@@ -62,7 +73,8 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     "get_asset",
     {
       description: "Get one asset including issues, maintenance, documents, health and recent history.",
-      inputSchema: z.object({ assetId: z.string().min(1) })
+      inputSchema: z.object({ assetId: z.string().min(1) }),
+      annotations: readOnlyAnnotations
     },
     async ({ assetId }) => {
       try {
@@ -72,10 +84,43 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
   );
 
   server.registerTool(
+    "list_issues",
+    {
+      description: "List the issue register, including active and resolved issues with asset and system context.",
+      inputSchema: z.object({
+        status: z.enum(["ACTIVE","RESOLVED","ALL"]).default("ACTIVE")
+      }),
+      annotations: readOnlyAnnotations
+    },
+    async ({ status }) => {
+      try {
+        return ok(executeHomelyTool(db, "list_issues", { status }, "MCP"));
+      } catch (error) { return fail(error); }
+    }
+  );
+
+  server.registerTool(
+    "list_documents",
+    {
+      description: "List Homely document records and their linked asset or issue context. This returns Homely metadata, not external file contents.",
+      inputSchema: z.object({
+        provider: z.enum(["LOCAL","GOOGLE_DRIVE","ALL"]).default("ALL")
+      }),
+      annotations: readOnlyAnnotations
+    },
+    async ({ provider }) => {
+      try {
+        return ok(executeHomelyTool(db, "list_documents", { provider }, "MCP"));
+      } catch (error) { return fail(error); }
+    }
+  );
+
+  server.registerTool(
     "get_asset_history",
     {
       description: "Return the recorded chronological history for a specific asset.",
-      inputSchema: z.object({ assetId: z.string().min(1) })
+      inputSchema: z.object({ assetId: z.string().min(1) }),
+      annotations: readOnlyAnnotations
     },
     async ({ assetId }) => {
       try {
@@ -92,7 +137,8 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
         query: z.string().trim().max(200).optional(),
         assetId: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(100).default(20)
-      })
+      }),
+      annotations: readOnlyAnnotations
     },
     async ({ query, assetId, limit }) => {
       try {
@@ -111,7 +157,8 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
       description: "List active maintenance obligations, optionally restricted to overdue or upcoming items.",
       inputSchema: z.object({
         state: z.enum(["OVERDUE","UPCOMING","ALL"]).default("ALL")
-      })
+      }),
+      annotations: readOnlyAnnotations
     },
     async ({ state }) => {
       try {
@@ -123,13 +170,14 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
   server.registerTool(
     "preview_action",
     {
-      description: "Validate and create an inert Homely transaction proposal. This does not change home state. Use commit_action only after the user explicitly approves this exact proposal.",
+      description: "Validate and create an inert Homely transaction proposal. This does not change home state. Homely itself must separately approve, commit, reject, or undo transactions; those operations are intentionally not exposed through MCP.",
       inputSchema: z.object({
         actionType: z.enum(["REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE"]),
         payload: z.record(z.string(), z.unknown()),
         reason: z.string().trim().min(1).max(500),
         requestText: z.string().max(2000).optional()
-      })
+      }),
+      annotations: proposalAnnotations
     },
     async ({ actionType, payload, reason, requestText }) => {
       try {
@@ -144,49 +192,11 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
   );
 
   server.registerTool(
-    "commit_action",
-    {
-      description: "Commit a previously previewed Homely transaction. Call only after explicit human approval of the exact transaction preview.",
-      inputSchema: z.object({
-        transactionId: z.string().min(1),
-        userApproved: z.literal(true).describe("Must be true only after the user explicitly approved this transaction.")
-      })
-    },
-    async ({ transactionId }) => {
-      try { return ok(commitTransaction(db, transactionId)); } catch (error) { return fail(error); }
-    }
-  );
-
-  server.registerTool(
-    "reject_action",
-    {
-      description: "Reject a proposed transaction after the user declines it. Rejection changes no home state and remains in the audit history.",
-      inputSchema: z.object({ transactionId: z.string().min(1) })
-    },
-    async ({ transactionId }) => {
-      try { return ok(rejectTransaction(db, transactionId)); } catch (error) { return fail(error); }
-    }
-  );
-
-  server.registerTool(
-    "undo_action",
-    {
-      description: "Reverse a committed Homely transaction when safe. The original transaction and reversal remain in the audit history.",
-      inputSchema: z.object({
-        transactionId: z.string().min(1),
-        userApproved: z.literal(true).describe("Must be true only after the user explicitly approved the reversal.")
-      })
-    },
-    async ({ transactionId }) => {
-      try { return ok(undoTransaction(db, transactionId)); } catch (error) { return fail(error); }
-    }
-  );
-
-  server.registerTool(
     "get_transaction",
     {
       description: "Get a Homely transaction and its recorded entity changes for audit/explanation.",
-      inputSchema: z.object({ transactionId: z.string().min(1) })
+      inputSchema: z.object({ transactionId: z.string().min(1) }),
+      annotations: readOnlyAnnotations
     },
     async ({ transactionId }) => {
       try {

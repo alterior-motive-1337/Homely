@@ -1,11 +1,21 @@
 import type { HomelyDatabase } from "../db.js";
-import { getAsset, getOverview, getTimeline, listAssets, listMaintenance } from "../domain/repository.js";
+import {
+  getAsset,
+  getOverview,
+  getTimeline,
+  listAssets,
+  listDocuments,
+  listIssues,
+  listMaintenance
+} from "../domain/repository.js";
 import { DomainError, getTransaction, proposeTransaction, type ActionType } from "../domain/transactions.js";
 
 export type HomelyToolName =
   | "get_home_summary"
   | "list_assets"
   | "get_asset"
+  | "list_issues"
+  | "list_documents"
   | "get_asset_history"
   | "search_history"
   | "list_maintenance_due"
@@ -62,6 +72,34 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
       type: "object",
       properties: { assetId: { type: "string" } },
       required: ["assetId"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "list_issues",
+    description: "List the issue register with asset/system context. Use ACTIVE for unresolved work or RESOLVED for historical fixes.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["ACTIVE","RESOLVED","ALL"] }
+      },
+      required: ["status"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "list_documents",
+    description: "List Homely document metadata and linked asset/issue context. Does not retrieve external file contents.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        provider: { type: "string", enum: ["LOCAL","GOOGLE_DRIVE","ALL"] }
+      },
+      required: ["provider"],
       additionalProperties: false
     }
   },
@@ -172,6 +210,23 @@ export function executeHomelyTool(
     const asset = getAsset(db, String(args.assetId ?? ""));
     if (!asset) throw new DomainError("Asset not found.", 404);
     return asset;
+  }
+
+  if (name === "list_issues") {
+    const status = String(args.status ?? "ACTIVE");
+    return listIssues(db).filter((issue) => {
+      const resolved = ["RESOLVED","CLOSED"].includes(String(issue.status));
+      if (status === "ACTIVE") return !resolved;
+      if (status === "RESOLVED") return resolved;
+      return true;
+    });
+  }
+
+  if (name === "list_documents") {
+    const provider = String(args.provider ?? "ALL");
+    return listDocuments(db).filter((document) =>
+      provider === "ALL" || String(document.provider) === provider
+    );
   }
 
   if (name === "get_asset_history") {
