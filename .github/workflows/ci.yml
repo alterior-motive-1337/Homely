@@ -144,7 +144,7 @@ jobs:
           await page.getByText("Transaction reversed. Audit history retained.").waitFor();
 
           await page.getByRole("button", { name: "Issues" }).click();
-          if (await page.getByText("Browser transaction issue").count()) {
+          if (await page.locator("#content .row-title").filter({ hasText: "Browser transaction issue" }).count()) {
             throw new Error("browser undo did not reverse issue state");
           }
 
