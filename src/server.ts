@@ -11,6 +11,7 @@ import {
   getTransaction,
   listTransactions,
   proposeTransaction,
+  rejectTransaction,
   undoTransaction,
   type ActionType
 } from "./domain/transactions.js";
@@ -96,7 +97,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 201, result);
     }
 
-    const transactionMatch = url.pathname.match(/^\/api\/transactions\/([^/]+)(?:\/(commit|undo))?$/);
+    const transactionMatch = url.pathname.match(/^\/api\/transactions\/([^/]+)(?:\/(commit|reject|undo))?$/);
     if (transactionMatch) {
       const transactionId = decodeURIComponent(transactionMatch[1] ?? "");
       const operation = transactionMatch[2];
@@ -110,6 +111,10 @@ const server = http.createServer(async (req, res) => {
 
       if (req.method === "POST" && operation === "commit") {
         return sendJson(res, 200, commitTransaction(db, transactionId));
+      }
+
+      if (req.method === "POST" && operation === "reject") {
+        return sendJson(res, 200, rejectTransaction(db, transactionId));
       }
 
       if (req.method === "POST" && operation === "undo") {
