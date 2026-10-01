@@ -6,7 +6,7 @@ This foundation deliberately starts below the AI layer: local SQLite state, dete
 
 ## Run
 
-Requires Node.js 22.13+.
+Requires Node.js 24.x.
 
 ```bash
 npm install
@@ -49,7 +49,7 @@ Current domain surface: Home, Systems, Assets, Issues, Maintenance Rules, Timeli
 
 Homely also exposes the same domain through a local stdio MCP server. The OpenAI agent uses the same provider-neutral Homely tool executor for grounded reads and proposals. Google Drive, ElevenLabs, and richer project workflows remain later layers.
 
-The default database is `./data/homely.db`; override it with `HOMELY_DB_PATH`. Optional integration variables are documented in `.env.example` and disabled by default.
+The default local database is `./data/homely.db`; override it with `HOMELY_DB_PATH`. The supported cloud-primary deployment runs Homely on Render with an ephemeral SQLite working copy, single-owner authentication, and verified Google Drive database recovery. Optional integration variables are documented in `.env.example`.
 
 
 ## MCP
@@ -114,3 +114,20 @@ GOOGLE_DRIVE_REDIRECT_URI=http://localhost:4173/api/google-drive/callback
 The connect flow invokes Google's file picker authorization flow. Homely receives only file IDs the user selected. OAuth credentials are stored locally under `./data/google-drive-token.json` by default, which is gitignored.
 
 Selecting a Drive file does **not** silently attach it. The user chooses a Homely asset and document type, previews an `ATTACH_DOCUMENT` transaction, and explicitly approves it. The document association and timeline event are reversible while the audit record remains.
+
+
+## Cloud-primary Render deployment
+
+The repository includes a root `render.yaml` for the low-infrastructure deployment path:
+
+```text
+Browser → Render → Homely/SQLite → Google Drive backups
+```
+
+The Render service binds to `0.0.0.0:$PORT`, requires the owner password before exposing property data, and stores long-lived Google credentials only in Render's secret environment variables. Important transaction commits, rejections, and reversals trigger a Drive backup; periodic backups run while the service is awake.
+
+On a fresh ephemeral boot, Homely attempts to restore the newest Drive snapshot **before** it opens/migrates SQLite. Restored databases must pass SQLite integrity checking. If no backup exists yet, the demo home is seeded and backed up before the server starts accepting traffic.
+
+See [docs/render-deployment.md](docs/render-deployment.md) for the Google OAuth refresh-token and Blueprint setup procedure.
+
+A paid persistent disk can be added later without replacing this design: point `HOMELY_DB_PATH` at the mounted disk and retain Drive as off-site recovery.
