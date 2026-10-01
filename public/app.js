@@ -1000,15 +1000,40 @@ async function selectView(view) {
   const entry = views[view] ?? views.overview;
   state.view = view in views ? view : "overview";
   pageTitle.textContent = entry[0];
-  document.querySelectorAll(".nav-item").forEach((item) =>
-    item.classList.toggle("active", item.dataset.view === state.view)
-  );
+  document.title = entry[0] + " · Homely";
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    const active = item.dataset.view === state.view;
+    item.classList.toggle("active", active);
+    if (active) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
   await entry[1]();
+}
+
+function viewUrl(view) {
+  return view === "overview" ? "/" : "/?view=" + encodeURIComponent(view);
 }
 
 nav.addEventListener("click", (event) => {
   const button = event.target.closest("[data-view]");
-  if (button) selectView(button.dataset.view);
+  if (!button) return;
+  const view = button.dataset.view;
+  if (view !== state.view) history.pushState({ view }, "", viewUrl(view));
+  void selectView(view);
+});
+
+window.addEventListener("popstate", () => {
+  const view = new URLSearchParams(window.location.search).get("view");
+  void selectView(view && view in views ? view : "overview");
+});
+
+logoutButton?.addEventListener("click", async () => {
+  logoutButton.disabled = true;
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } finally {
+    window.location.href = "/auth/login";
+  }
 });
 
 document.querySelector("#dialog-close").addEventListener("click", () => assetDialog.close());
@@ -1019,4 +1044,5 @@ actionDialog.addEventListener("cancel", (event) => {
 });
 
 const requestedView = new URLSearchParams(window.location.search).get("view");
-selectView(requestedView && requestedView in views ? requestedView : "overview");
+void refreshRuntimeStatus();
+void selectView(requestedView && requestedView in views ? requestedView : "overview");
