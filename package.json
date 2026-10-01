@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.2.0",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "openai": "7.23.0"
   }
 }

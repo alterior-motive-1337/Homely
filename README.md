@@ -32,22 +32,22 @@ npm run db:reset
 ## Current architecture
 
 ```text
-Browser UI                 MCP hosts
-   |                           |
-HTTP API                 Homely MCP server
-   |                           |
-   +------------+--------------+
-                |
-Homely domain logic + guarded transactions
-                |
-              SQLite
+Browser UI             OpenAI Agent             MCP hosts
+   |                         |                       |
+HTTP API              Homely tool layer       Homely MCP server
+   |                         |                       |
+   +-------------------------+-----------+-----------+
+                                         |
+                         Homely domain logic + guarded transactions
+                                         |
+                                       SQLite
 ```
 
-SQLite owns truth. The current build has no LLM dependency. Mutations are committed only through Homely's transaction service; proposals are inert until explicitly approved.
+SQLite owns truth. OpenAI is optional and sits behind an AgentProvider boundary. Mutations are committed only through Homely's transaction service; model-created proposals are inert until explicitly approved in Homely.
 
 Current domain surface: Home, Systems, Assets, Issues, Maintenance Rules, Timeline Events, Documents, and auditable Transactions. Mutating home state follows propose → preview → commit → audit → undo.
 
-Homely also exposes the same domain through a local stdio MCP server. OpenAI, Google Drive, ElevenLabs, and richer project workflows remain later layers.
+Homely also exposes the same domain through a local stdio MCP server. The OpenAI agent uses the same provider-neutral Homely tool executor for grounded reads and proposals. Google Drive, ElevenLabs, and richer project workflows remain later layers.
 
 The default database is `./data/homely.db`; override it with `HOMELY_DB_PATH`. Optional integration variables are documented in `.env.example` and disabled by default.
 
@@ -75,3 +75,19 @@ Initial tools:
 - `get_transaction`
 
 Read tools query the same SQLite/domain state as the web application. Mutation tools route through Homely transactions; `preview_action` is inert, while commit and undo require an explicit `userApproved: true` argument and remain audited.
+
+
+## Optional OpenAI agent
+
+The web application runs normally with AI disabled. To enable the reasoning layer, provide server-side environment configuration:
+
+```bash
+AI_ENABLED=true
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-5.5
+npm run dev
+```
+
+The API key is never sent to the browser. The OpenAI provider uses the Responses API and can read Homely state or create an inert transaction proposal. It is not given commit or undo tools. Approval remains a Homely UI/API action, so a model response cannot silently mutate SQLite.
+
+If the provider is disabled, unconfigured, or temporarily unavailable, the structured property application remains operational.

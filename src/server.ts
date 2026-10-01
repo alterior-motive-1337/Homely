@@ -16,10 +16,12 @@ import {
   type ActionType
 } from "./domain/transactions.js";
 import { hasHome, seedDemo } from "./seed.js";
+import { createAgentRuntime } from "./agent/runtime.js";
 
 const db = openDatabase();
 migrate(db);
 if (!hasHome(db)) seedDemo(db);
+const agentRuntime = createAgentRuntime(db);
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -85,6 +87,40 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
     if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
     if (req.method === "GET" && url.pathname === "/api/transactions") return sendJson(res, 200, listTransactions(db));
+    if (req.method === "GET" && url.pathname === "/api/integrations/status") {
+      return sendJson(res, 200, {
+        ai: agentRuntime.status,
+        voice: { enabled: config.voiceEnabled, available: false },
+        googleDrive: { enabled: config.googleDriveEnabled, available: false }
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/agent/respond") {
+      const body = await readJson(req);
+      const message = String(body.message ?? "").trim();
+      if (!message) throw new DomainError("Message is required.");
+      if (message.length > 4000) throw new DomainError("Message is too long.");
+      if (!agentRuntime.provider) {
+        return sendJson(res, 503, {
+          error: "Agent unavailable. Structured Homely functionality remains operational."
+        });
+      }
+
+      try {
+        const response = await agentRuntime.provider.respond({
+          message,
+          previousResponseId: body.previousResponseId === null || body.previousResponseId === undefined
+            ? null
+            : String(body.previousResponseId)
+        });
+        return sendJson(res, 200, response);
+      } catch (error) {
+        console.error("Homely agent provider failed:", error);
+        return sendJson(res, 503, {
+          error: "Agent temporarily unavailable. Structured Homely functionality remains operational."
+        });
+      }
+    }
 
     if (req.method === "POST" && url.pathname === "/api/transactions/preview") {
       const body = await readJson(req);

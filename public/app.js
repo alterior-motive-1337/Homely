@@ -14,7 +14,10 @@ document.querySelector("#today").textContent = new Intl.DateTimeFormat("en-ZA", 
 const state = {
   view: "overview",
   assets: [],
-  pendingTransactionId: null
+  pendingTransactionId: null,
+  agentMessages: [],
+  agentPreviousResponseId: null,
+  agentStatus: null
 };
 
 const esc = (value = "") => String(value)
@@ -363,6 +366,197 @@ async function showDocuments() {
   } catch (error) { fail(error); }
 }
 
+function agentMessageMarkup(message) {
+  const proposals = Array.isArray(message.proposals) ? message.proposals : [];
+  return `
+    <article class="agent-message ${esc(message.role)}">
+      <div class="agent-role">${message.role === "user" ? "You" : "Homely"}</div>
+      <div class="agent-copy">${esc(message.text)}</div>
+      ${proposals.map((proposal) => `
+        <div class="agent-proposal" data-agent-proposal="${esc(proposal.transactionId)}">
+          <div class="row-main">
+            <div>
+              <div class="row-title">${esc(proposal.preview.title)}</div>
+              <div class="row-meta">${esc(proposal.preview.summary)}</div>
+            </div>
+            <span class="status ${esc(proposal.status ?? "PROPOSED")}">${esc(proposal.status ?? "PROPOSED")}</span>
+          </div>
+          <div class="proposal-reason"><strong>Reason</strong><br>${esc(proposal.reason)}</div>
+          <ul class="effect-list">${proposal.preview.effects.map((effect) => `<li>${esc(effect)}</li>`).join("")}</ul>
+          ${(proposal.status ?? "PROPOSED") === "PROPOSED" ? `
+            <div class="form-actions">
+              <button class="button small" data-agent-reject="${esc(proposal.transactionId)}">Reject</button>
+              <button class="button primary small" data-agent-approve="${esc(proposal.transactionId)}">Approve & commit</button>
+            </div>
+          ` : ""}
+        </div>
+      `).join("")}
+    </article>
+  `;
+}
+
+function renderAgentConversation() {
+  const target = document.querySelector("#agent-conversation");
+  if (!target) return;
+  target.innerHTML = state.agentMessages.length
+    ? state.agentMessages.map(agentMessageMarkup).join("")
+    : `<div class="empty">Ask about this home's condition, history, maintenance or a recurring problem.</div>`;
+
+  target.querySelectorAll("[data-agent-approve]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.dataset.agentApprove;
+      try {
+        await api(`/api/transactions/${encodeURIComponent(id)}/commit`, { method: "POST" });
+        for (const message of state.agentMessages) {
+          const proposal = message.proposals?.find((item) => item.transactionId === id);
+          if (proposal) proposal.status = "COMMITTED";
+        }
+        renderAgentConversation();
+        await renderAgentHomeState();
+        notify("Agent proposal committed. Home state and timeline updated.");
+      } catch (error) {
+        notify(error.message);
+      }
+    });
+  });
+
+  target.querySelectorAll("[data-agent-reject]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.dataset.agentReject;
+      try {
+        await api(`/api/transactions/${encodeURIComponent(id)}/reject`, { method: "POST" });
+        for (const message of state.agentMessages) {
+          const proposal = message.proposals?.find((item) => item.transactionId === id);
+          if (proposal) proposal.status = "REJECTED";
+        }
+        renderAgentConversation();
+        notify("Proposal rejected. No home state changed.");
+      } catch (error) {
+        notify(error.message);
+      }
+    });
+  });
+
+  target.scrollTop = target.scrollHeight;
+}
+
+async function renderAgentHomeState() {
+  const target = document.querySelector("#agent-home-state");
+  if (!target) return;
+  try {
+    const overview = await api("/api/overview");
+    target.innerHTML = `
+      <div class="agent-state-title">${esc(overview.home.name)}</div>
+      <div class="agent-state-metrics">
+        <div><strong>${overview.summary.systems_needing_attention}</strong><span>systems attention</span></div>
+        <div><strong>${overview.summary.open_issues}</strong><span>active issues</span></div>
+        <div><strong>${overview.summary.overdue_maintenance}</strong><span>overdue</span></div>
+      </div>
+      <div class="detail-section">
+        <h3>Current system state</h3>
+        <div class="list">
+          ${overview.systems.map((system) => `
+            <div class="list-row"><div class="row-main"><span class="row-title">${esc(system.name)}</span>${health(system.health)}</div></div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  } catch (error) {
+    target.innerHTML = `<div class="error">${esc(error.message)}</div>`;
+  }
+}
+
+async function showAgent() {
+  loading();
+  try {
+    const integrations = await api("/api/integrations/status");
+    state.agentStatus = integrations.ai;
+
+    if (!integrations.ai.available) {
+      content.innerHTML = `
+        <section class="section">
+          <div class="section-head"><h2>Homely Agent</h2><span class="section-note">Optional reasoning layer</span></div>
+          <div class="agent-disabled">
+            <div>
+              <p class="eyebrow">AGENT UNAVAILABLE</p>
+              <h3>Structured Homely remains operational.</h3>
+              <p>The OpenAI agent is ${integrations.ai.enabled ? "enabled but not configured" : "disabled"}. Assets, issues, maintenance, documents, timeline and transactions continue to use local SQLite state.</p>
+            </div>
+            <div class="agent-config">
+              <span>AI_ENABLED</span><strong>${integrations.ai.enabled ? "true" : "false"}</strong>
+              <span>API key</span><strong>${integrations.ai.configured ? "configured" : "not configured"}</strong>
+              <span>Model</span><strong>${esc(integrations.ai.model)}</strong>
+            </div>
+          </div>
+        </section>
+      `;
+      return;
+    }
+
+    content.innerHTML = `
+      <div class="agent-layout">
+        <aside class="agent-state" id="agent-home-state"><div class="empty">Loading current home state…</div></aside>
+        <section class="agent-panel">
+          <div class="section-head">
+            <div><h2>Homely Agent</h2><span class="section-note">Reads real state · proposals require approval</span></div>
+            <span class="badge">${esc(integrations.ai.model)}</span>
+          </div>
+          <div class="agent-conversation" id="agent-conversation"></div>
+          <form class="agent-input" id="agent-form">
+            <textarea id="agent-message" maxlength="4000" required placeholder="Ask Homely about this house…"></textarea>
+            <button class="button primary" type="submit">Send</button>
+          </form>
+        </section>
+      </div>
+    `;
+
+    await renderAgentHomeState();
+    renderAgentConversation();
+
+    document.querySelector("#agent-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.querySelector("#agent-message");
+      const message = input.value.trim();
+      if (!message) return;
+
+      state.agentMessages.push({ role: "user", text: message, proposals: [] });
+      input.value = "";
+      renderAgentConversation();
+      const submit = event.currentTarget.querySelector("button[type=submit]");
+      submit.disabled = true;
+      submit.textContent = "Working…";
+
+      try {
+        const response = await api("/api/agent/respond", {
+          method: "POST",
+          body: {
+            message,
+            previousResponseId: state.agentPreviousResponseId
+          }
+        });
+        state.agentPreviousResponseId = response.responseId;
+        state.agentMessages.push({
+          role: "assistant",
+          text: response.text,
+          proposals: response.proposals.map((proposal) => ({ ...proposal, status: "PROPOSED" }))
+        });
+        renderAgentConversation();
+      } catch (error) {
+        state.agentMessages.push({
+          role: "assistant",
+          text: error.message,
+          proposals: []
+        });
+        renderAgentConversation();
+      } finally {
+        submit.disabled = false;
+        submit.textContent = "Send";
+        input.focus();
+      }
+    });
+  } catch (error) { fail(error); }
+}
+
 async function showTransactions() {
   loading();
   try {
@@ -660,6 +854,7 @@ const views = {
   maintenance: ["Maintenance", showMaintenance],
   timeline: ["Timeline", showTimeline],
   documents: ["Documents", showDocuments],
+  agent: ["Agent", showAgent],
   transactions: ["Transactions", showTransactions]
 };
 
