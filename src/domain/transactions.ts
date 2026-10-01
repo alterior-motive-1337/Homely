@@ -283,6 +283,18 @@ function createTimelineEvent(
   return event;
 }
 
+export function rejectTransaction(db: HomelyDatabase, transactionId: string) {
+  const transaction = db.prepare("SELECT * FROM transactions WHERE id = ?").get(transactionId);
+  if (!transaction) throw new DomainError("Transaction not found.", 404);
+  if (String(transaction.status) !== "PROPOSED") {
+    throw new DomainError("Only proposed transactions can be rejected.", 409);
+  }
+  db.prepare(
+    "UPDATE transactions SET status = 'REJECTED', rejected_at = ? WHERE id = ?"
+  ).run(nowIso(), transactionId);
+  return getTransaction(db, transactionId);
+}
+
 export function commitTransaction(db: HomelyDatabase, transactionId: string) {
   const transaction = db.prepare("SELECT * FROM transactions WHERE id = ?").get(transactionId);
   if (!transaction) throw new DomainError("Transaction not found.", 404);
