@@ -129,17 +129,17 @@ jobs:
           await page.goto("http://127.0.0.1:4173", { waitUntil: "networkidle" });
           await page.getByText("14 Hawthorn Residence").waitFor();
           await page.getByText("Cloud runtime active").waitFor();
-          await page.getByRole("button", { name: "Assets" }).click();
+          await page.getByRole("button", { name: "Assets", exact: true }).click();
           if (!page.url().includes("view=assets")) throw new Error("navigation did not update URL");
           await page.goBack({ waitUntil: "networkidle" });
           await page.getByText("14 Hawthorn Residence").waitFor();
-          await page.getByRole("button", { name: "Assets" }).click();
+          await page.getByRole("button", { name: "Assets", exact: true }).click();
           await page.getByText("8 kW inverter", { exact: true }).waitFor();
           await page.getByText("8 kW inverter", { exact: true }).click();
           await page.getByText("Sunsynk 8 kW inverter warranty").waitFor();
           await page.getByRole("button", { name: "Close asset details" }).click();
 
-          await page.getByRole("button", { name: "Issues" }).click();
+          await page.getByRole("button", { name: "Issues", exact: true }).click();
           await page.getByText("Camera 4 intermittent disconnect").waitFor();
 
           await page.getByRole("button", { name: "Report issue" }).click();
@@ -152,30 +152,30 @@ jobs:
           await page.locator("#action-dialog").waitFor({ state: "hidden" });
           await page.locator(".list-row .row-title").filter({ hasText: "Browser transaction issue" }).waitFor();
 
-          await page.getByRole("button", { name: "Transactions" }).click();
+          await page.getByRole("button", { name: "Transactions", exact: true }).click();
           const transactionRow = page.locator(".transaction-row").filter({ hasText: 'Homeowner reported "Browser transaction issue"' });
           await transactionRow.waitFor();
           await transactionRow.getByRole("button", { name: "Undo" }).click();
           await page.getByRole("button", { name: "Undo transaction" }).click();
           await page.getByText("Transaction reversed. Audit history retained.").waitFor();
 
-          await page.getByRole("button", { name: "Issues" }).click();
+          await page.getByRole("button", { name: "Issues", exact: true }).click();
           if (await page.locator("#content .row-title").filter({ hasText: "Browser transaction issue" }).count()) {
             throw new Error("browser undo did not reverse issue state");
           }
 
-          await page.getByRole("button", { name: "Maintenance" }).click();
+          await page.getByRole("button", { name: "Maintenance", exact: true }).click();
           await page.getByText("Inspect and clear north gutters").waitFor();
 
-          await page.getByRole("button", { name: "Documents" }).click();
+          await page.getByRole("button", { name: "Documents", exact: true }).click();
           await page.locator("#content").getByText("Sunsynk 8 kW inverter warranty").waitFor();
           await page.locator("#content").getByText("Optional integration is off. Existing Homely document metadata remains available.").waitFor();
 
-          await page.getByRole("button", { name: "Agent" }).click();
+          await page.getByRole("button", { name: "Agent", exact: true }).click();
           await page.locator("#content").getByText("Structured Homely remains operational.").waitFor();
 
           await page.setViewportSize({ width: 390, height: 844 });
-          await page.getByRole("button", { name: "Timeline" }).click();
+          await page.getByRole("button", { name: "Timeline", exact: true }).click();
           await page.locator("#timeline-search").fill("aerator");
           await page.getByText("Kitchen tap aerator cleaned").waitFor();
 
