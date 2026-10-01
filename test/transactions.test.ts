@@ -92,6 +92,7 @@ test("Drive document association is proposed, committed and reversible", () => {
   ).get();
   assert.equal(attached?.asset_id, "asset-inverter");
   assert.equal(attached?.type, "WARRANTY");
+  assert.equal(attached?.web_view_link, "https://drive.google.com/file/d/drive-file-123/view");
 
   undoTransaction(db, String(proposal.transaction?.id));
   assert.equal(
