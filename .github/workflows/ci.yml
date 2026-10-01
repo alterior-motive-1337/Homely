@@ -17,6 +17,11 @@ jobs:
       - run: npm install
       - run: npm run build
       - run: npm test
+      - run: node --check public/app.js
+      - name: Install CI browser
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
       - run: npm run db:reset
       - name: Start Homely and verify real state
         shell: bash
@@ -60,6 +65,39 @@ jobs:
           const warranty = await get("/demo-documents/inverter-warranty.txt");
           assert((await warranty.text()).includes("20 January 2030"), "warranty document did not resolve");
           NODE
+
+          node --input-type=module <<'NODE'
+          import { chromium } from "playwright";
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+          const errors = [];
+          page.on("pageerror", (error) => errors.push(String(error)));
+          page.on("console", (message) => {
+            if (message.type() === "error") errors.push(message.text());
+          });
+
+          await page.goto("http://127.0.0.1:4173", { waitUntil: "networkidle" });
+          await page.getByText("14 Hawthorn Residence").waitFor();
+          await page.getByRole("button", { name: "Assets" }).click();
+          await page.getByText("8 kW inverter", { exact: true }).waitFor();
+          await page.getByText("8 kW inverter", { exact: true }).click();
+          await page.getByText("Sunsynk 8 kW inverter warranty").waitFor();
+          await page.getByRole("button", { name: "Close asset details" }).click();
+
+          await page.getByRole("button", { name: "Issues" }).click();
+          await page.getByText("Camera 4 intermittent disconnect").waitFor();
+
+          await page.getByRole("button", { name: "Maintenance" }).click();
+          await page.getByText("Inspect and clear north gutters").waitFor();
+
+          await page.setViewportSize({ width: 390, height: 844 });
+          await page.getByRole("button", { name: "Timeline" }).click();
+          await page.getByText("Kitchen tap aerator cleaned").waitFor();
+
+          if (errors.length) throw new Error("Browser errors: " + errors.join(" | "));
+          await browser.close();
+          NODE
+
           kill "$(cat /tmp/homely.pid)"
       - if: failure()
         run: cat /tmp/homely.log || true
