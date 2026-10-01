@@ -11,6 +11,8 @@ export function seedDemo(db: HomelyDatabase): void {
   db.exec("BEGIN IMMEDIATE;");
   try {
     db.exec(`
+      DELETE FROM transaction_changes;
+      DELETE FROM transactions;
       DELETE FROM timeline_events;
       DELETE FROM documents;
       DELETE FROM maintenance_rules;
