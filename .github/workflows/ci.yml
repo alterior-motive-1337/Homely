@@ -172,10 +172,10 @@ jobs:
           await page.getByRole("button", { name: "Close asset details" }).click();
 
           await page.getByRole("button", { name: "Issues" }).click();
-          await page.getByLabel("Asset").selectOption("asset-irrigation");
-          await page.getByLabel("Issue").fill("Irrigation controller fails to power on");
-          await page.getByLabel("Severity").selectOption("HIGH");
-          await page.getByLabel("Description").fill("Display remains dark after supply is confirmed.");
+          await page.locator('#issue-form select[name="assetId"]').selectOption("asset-irrigation");
+          await page.locator('#issue-form input[name="title"]').fill("Irrigation controller fails to power on");
+          await page.locator('#issue-form select[name="severity"]').selectOption("HIGH");
+          await page.locator('#issue-form textarea[name="description"]').fill("Display remains dark after supply is confirmed.");
           await page.getByRole("button", { name: "Preview issue" }).click();
           await page.getByText("PROPOSED ACTION").waitFor();
           await page.getByRole("button", { name: "Approve" }).click();
