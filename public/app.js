@@ -543,14 +543,14 @@ async function showDocuments() {
     const driveError = params.get("driveError");
     const picked = params.get("drivePicked");
     if (driveError) {
-      history.replaceState({}, "", "/?view=documents");
+      history.replaceState({}, "", "/?view=assets&tab=documents");
       notify("Google Drive selection was cancelled or failed.");
     } else if (picked && drive.connected) {
-      history.replaceState({}, "", "/?view=documents");
+      history.replaceState({}, "", "/?view=assets&tab=documents");
       const files = await api("/api/google-drive/files?ids=" + encodeURIComponent(picked));
       if (files.length) await openDriveImport(files[0]);
     } else if (params.get("driveConnected")) {
-      history.replaceState({}, "", "/?view=documents");
+      history.replaceState({}, "", "/?view=assets&tab=documents");
       notify("Google Drive connected. Select a file to attach it to Homely.");
     }
   } catch (error) { fail(error); }
@@ -1040,16 +1040,77 @@ function openUndoConfirmation(transactionId, reason) {
   });
 }
 
+function activeRouteTab(allowed, fallback) {
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  return allowed.includes(tab) ? tab : fallback;
+}
+
+function renderViewTabs(view, tabs, active) {
+  const bar = document.createElement("div");
+  bar.className = "view-tabs";
+  bar.setAttribute("aria-label", "Section");
+  bar.innerHTML = tabs.map((tab) => `
+    <button class="view-tab ${tab.id === active ? "active" : ""}" data-inner-tab="${esc(tab.id)}">${esc(tab.label)}</button>
+  `).join("");
+  content.prepend(bar);
+  bar.querySelectorAll("[data-inner-tab]").forEach((button) => {
+    button.addEventListener("click", () => navigateTo(view, button.dataset.innerTab));
+  });
+}
+
+async function showAssetsHub() {
+  const tab = activeRouteTab(["assets", "documents"], "assets");
+  if (tab === "documents") await showDocuments();
+  else await showAssets();
+  renderViewTabs("assets", [
+    { id: "assets", label: "Assets" },
+    { id: "documents", label: "Documents" }
+  ], tab);
+}
+
+async function showWork() {
+  const tab = activeRouteTab(["issues", "maintenance"], "issues");
+  if (tab === "maintenance") await showMaintenance();
+  else await showIssues();
+  renderViewTabs("work", [
+    { id: "issues", label: "Issues" },
+    { id: "maintenance", label: "Maintenance" }
+  ], tab);
+}
+
+async function showHistory() {
+  const tab = activeRouteTab(["timeline", "transactions"], "timeline");
+  if (tab === "transactions") await showTransactions();
+  else await showTimeline();
+  renderViewTabs("history", [
+    { id: "timeline", label: "Timeline" },
+    { id: "transactions", label: "Transactions" }
+  ], tab);
+}
+
 const views = {
   overview: ["Overview", showOverview],
-  assets: ["Assets", showAssets],
-  issues: ["Issues", showIssues],
-  maintenance: ["Maintenance", showMaintenance],
-  timeline: ["Timeline", showTimeline],
-  documents: ["Documents", showDocuments],
-  agent: ["Agent", showAgent],
-  transactions: ["Transactions", showTransactions]
+  assets: ["Assets", showAssetsHub],
+  work: ["Work", showWork],
+  history: ["History", showHistory],
+  agent: ["Agent", showAgent]
 };
+
+const legacyRoutes = {
+  issues: ["work", "issues"],
+  maintenance: ["work", "maintenance"],
+  timeline: ["history", "timeline"],
+  transactions: ["history", "transactions"],
+  documents: ["assets", "documents"]
+};
+
+function normalizeRoute(view, tab = null) {
+  if (legacyRoutes[view]) {
+    const [nextView, nextTab] = legacyRoutes[view];
+    return { view: nextView, tab: nextTab };
+  }
+  return { view: view in views ? view : "overview", tab };
+}
 
 async function selectView(view) {
   const entry = views[view] ?? views.overview;
@@ -1065,21 +1126,32 @@ async function selectView(view) {
   await entry[1]();
 }
 
-function viewUrl(view) {
-  return view === "overview" ? "/" : "/?view=" + encodeURIComponent(view);
+function viewUrl(view, tab = null) {
+  if (view === "overview") return "/";
+  const params = new URLSearchParams({ view });
+  if (tab) params.set("tab", tab);
+  return "/?" + params.toString();
+}
+
+function navigateTo(view, tab = null, { replace = false } = {}) {
+  const route = normalizeRoute(view, tab);
+  const url = viewUrl(route.view, route.tab);
+  if (replace) history.replaceState({ view: route.view, tab: route.tab }, "", url);
+  else history.pushState({ view: route.view, tab: route.tab }, "", url);
+  void selectView(route.view);
 }
 
 nav.addEventListener("click", (event) => {
   const button = event.target.closest("[data-view]");
   if (!button) return;
-  const view = button.dataset.view;
-  if (view !== state.view) history.pushState({ view }, "", viewUrl(view));
-  void selectView(view);
+  const defaults = { assets: "assets", work: "issues", history: "timeline" };
+  navigateTo(button.dataset.view, defaults[button.dataset.view] ?? null);
 });
 
 window.addEventListener("popstate", () => {
-  const view = new URLSearchParams(window.location.search).get("view");
-  void selectView(view && view in views ? view : "overview");
+  const params = new URLSearchParams(window.location.search);
+  const route = normalizeRoute(params.get("view") ?? "overview", params.get("tab"));
+  void selectView(route.view);
 });
 
 logoutButton?.addEventListener("click", async () => {
@@ -1098,6 +1170,10 @@ actionDialog.addEventListener("cancel", (event) => {
   closeAction();
 });
 
-const requestedView = new URLSearchParams(window.location.search).get("view");
+const initialParams = new URLSearchParams(window.location.search);
+const initialRoute = normalizeRoute(initialParams.get("view") ?? "overview", initialParams.get("tab"));
+if (initialParams.get("view") && initialRoute.view !== initialParams.get("view")) {
+  history.replaceState({ view: initialRoute.view, tab: initialRoute.tab }, "", viewUrl(initialRoute.view, initialRoute.tab));
+}
 void refreshRuntimeStatus();
-void selectView(requestedView && requestedView in views ? requestedView : "overview");
+void selectView(initialRoute.view);
