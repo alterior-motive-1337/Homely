@@ -536,7 +536,7 @@ async function showDocuments() {
     document.querySelector("#drive-disconnect")?.addEventListener("click", async () => {
       await api("/api/google-drive/disconnect", { method: "POST" });
       notify("Google Drive disconnected. Existing Homely document metadata was preserved.");
-      await selectView("documents");
+      await selectView("assets");
     });
 
     const params = new URLSearchParams(window.location.search);
@@ -997,7 +997,7 @@ function renderPreview(result) {
     state.pendingTransactionId = null;
     await closeAction({ rejectPending: false });
     notify("Proposal rejected. No home state changed.");
-    if (state.view === "transactions") await selectView("transactions");
+    if (state.view === "history") await selectView("history");
   });
   document.querySelector("#approve-action").addEventListener("click", async () => {
     const id = state.pendingTransactionId;
