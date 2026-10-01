@@ -17,11 +17,13 @@ import {
 } from "./domain/transactions.js";
 import { hasHome, seedDemo } from "./seed.js";
 import { createAgentRuntime } from "./agent/runtime.js";
+import { GoogleDriveIntegration } from "./integrations/googleDrive.js";
 
 const db = openDatabase();
 migrate(db);
 if (!hasHome(db)) seedDemo(db);
 const agentRuntime = createAgentRuntime(db);
+const googleDrive = new GoogleDriveIntegration();
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -91,8 +93,44 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ai: agentRuntime.status,
         voice: { enabled: config.voiceEnabled, available: false },
-        googleDrive: { enabled: config.googleDriveEnabled, available: false }
+        googleDrive: googleDrive.status
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/google-drive/connect") {
+      const location = googleDrive.getAuthorizationUrl();
+      res.writeHead(302, { location });
+      return res.end();
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/google-drive/callback") {
+      const error = url.searchParams.get("error");
+      if (error) {
+        res.writeHead(302, { location: "/?view=documents&driveError=" + encodeURIComponent(error) });
+        return res.end();
+      }
+
+      const code = url.searchParams.get("code");
+      if (!code) throw new DomainError("Google Drive authorization code is missing.");
+      await googleDrive.exchangeCode(code);
+
+      const picked = url.searchParams.get("picked_file_ids") ?? "";
+      const location = picked
+        ? "/?view=documents&drivePicked=" + encodeURIComponent(picked)
+        : "/?view=documents&driveConnected=1";
+      res.writeHead(302, { location });
+      return res.end();
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/google-drive/files") {
+      const ids = (url.searchParams.get("ids") ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+      if (!ids.length) throw new DomainError("No Drive file IDs were selected.");
+      return sendJson(res, 200, await googleDrive.getSelectedFiles(ids));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/google-drive/disconnect") {
+      googleDrive.disconnect();
+      return sendJson(res, 200, { connected: false });
     }
 
     if (req.method === "POST" && url.pathname === "/api/agent/respond") {
