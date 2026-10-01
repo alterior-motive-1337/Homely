@@ -65,3 +65,38 @@ test("completing recurring maintenance advances due date and undo restores it", 
   assert.equal(restored?.next_due_at, before?.next_due_at);
   db.close();
 });
+
+
+test("Drive document association is proposed, committed and reversible", () => {
+  const db = demoDb();
+  const before = Number(db.prepare("SELECT COUNT(*) AS count FROM documents").get()?.count ?? 0);
+
+  const proposal = proposeTransaction(db, {
+    actionType: "ATTACH_DOCUMENT",
+    reason: "Homeowner selected the inverter warranty from Google Drive.",
+    payload: {
+      assetId: "asset-inverter",
+      title: "Selected inverter warranty",
+      documentType: "WARRANTY",
+      providerFileId: "drive-file-123",
+      mimeType: "text/plain",
+      webViewLink: "https://drive.google.com/file/d/drive-file-123/view"
+    }
+  });
+
+  assert.equal(Number(db.prepare("SELECT COUNT(*) AS count FROM documents").get()?.count ?? 0), before);
+  commitTransaction(db, String(proposal.transaction?.id));
+
+  const attached = db.prepare(
+    "SELECT * FROM documents WHERE provider = 'GOOGLE_DRIVE' AND provider_file_id = 'drive-file-123'"
+  ).get();
+  assert.equal(attached?.asset_id, "asset-inverter");
+  assert.equal(attached?.type, "WARRANTY");
+
+  undoTransaction(db, String(proposal.transaction?.id));
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM documents WHERE provider_file_id = 'drive-file-123'").get()?.count ?? 0),
+    0
+  );
+  db.close();
+});

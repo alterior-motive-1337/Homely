@@ -319,14 +319,79 @@ async function showTimeline() {
   } catch (error) { fail(error); }
 }
 
+async function openDriveImport(file) {
+  const options = await assetOptions();
+  openAction(`
+    <p class="eyebrow">GOOGLE DRIVE IMPORT</p>
+    <h2>Attach selected document</h2>
+    <div class="muted">${esc(file.name)} · ${esc(file.mimeType ?? "unknown type")}</div>
+    <form class="action-form" id="drive-import-form">
+      <div class="form-grid">
+        <div class="field full"><label>Asset</label><select name="assetId" required>${options}</select></div>
+        <div class="field"><label>Document type</label>
+          <select name="documentType">
+            <option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option>
+            <option>INSPECTION</option><option>PHOTO</option><option>REPORT</option><option selected>OTHER</option>
+          </select>
+        </div>
+        <div class="field"><label>Title</label><input name="title" maxlength="240" value="${esc(file.name)}" required></div>
+      </div>
+      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview association</button></div>
+    </form>
+  `);
+  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
+  document.querySelector("#drive-import-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    await createPreview("ATTACH_DOCUMENT", {
+      assetId: data.get("assetId"),
+      title: data.get("title"),
+      documentType: data.get("documentType"),
+      providerFileId: file.id,
+      mimeType: file.mimeType,
+      webViewLink: file.webViewLink
+    }, `Homeowner selected "${file.name}" in Google Drive and chose an explicit asset association.`);
+  });
+}
+
 async function showDocuments() {
   loading();
   try {
-    const items = await api("/api/documents");
+    const [items, integrations] = await Promise.all([
+      api("/api/documents"),
+      api("/api/integrations/status")
+    ]);
+    const drive = integrations.googleDrive;
+    const driveStatus = !drive.enabled
+      ? "Disabled"
+      : !drive.configured
+        ? "Not configured"
+        : drive.connected
+          ? "Connected"
+          : "Ready to connect";
+
     content.innerHTML = `
       <section class="section">
         <div class="section-head">
           <div><h2>Documents</h2><span class="section-note">Evidence remains separate from its storage provider</span></div>
+          <div class="section-actions">
+            <span class="badge">${esc(driveStatus)}</span>
+            ${drive.enabled && drive.configured
+              ? drive.connected
+                ? `<button class="button" id="drive-select">Select from Drive</button><button class="button small" id="drive-disconnect">Disconnect</button>`
+                : `<button class="button" id="drive-connect">Connect Google Drive</button>`
+              : ""}
+          </div>
+        </div>
+        <div class="drive-note">
+          <strong>Google Drive</strong>
+          <span>${drive.enabled
+            ? drive.configured
+              ? drive.connected
+                ? "Per-file access only. Select a file explicitly before Homely can associate it."
+                : "Configured with drive.file scope. Connect the dedicated Homely Google account to select files."
+              : "Enable Drive only after OAuth credentials are configured."
+            : "Optional integration is off. Local document records continue to work."}</span>
         </div>
         <div class="asset-toolbar">
           <input id="document-search" class="search" type="search" placeholder="Search warranties, invoices, manuals…" aria-label="Search documents">
@@ -342,7 +407,9 @@ async function showDocuments() {
           <tbody>
             ${documents.map((doc) => `
               <tr>
-                <td>${doc.local_path ? `<a class="doc-link" href="${esc(doc.local_path)}" target="_blank" rel="noreferrer">${esc(doc.title)}</a>` : esc(doc.title)}</td>
+                <td>${doc.local_path
+                  ? `<a class="doc-link" href="${esc(doc.local_path)}" target="_blank" rel="noreferrer">${esc(doc.title)}</a>`
+                  : esc(doc.title)}</td>
                 <td>${esc(doc.type)}</td>
                 <td>${esc(doc.provider)}</td>
                 <td>${doc.asset_id ? `<button class="button small" data-asset="${esc(doc.asset_id)}">${esc(doc.asset_name ?? "Asset")}</button>` : "—"}</td>
@@ -363,6 +430,33 @@ async function showDocuments() {
           .some((value) => String(value ?? "").toLowerCase().includes(query))
       ));
     });
+
+    document.querySelector("#drive-connect")?.addEventListener("click", () => {
+      window.location.href = "/api/google-drive/connect";
+    });
+    document.querySelector("#drive-select")?.addEventListener("click", () => {
+      window.location.href = "/api/google-drive/connect";
+    });
+    document.querySelector("#drive-disconnect")?.addEventListener("click", async () => {
+      await api("/api/google-drive/disconnect", { method: "POST" });
+      notify("Google Drive disconnected. Existing Homely document metadata was preserved.");
+      await selectView("documents");
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const driveError = params.get("driveError");
+    const picked = params.get("drivePicked");
+    if (driveError) {
+      history.replaceState({}, "", "/?view=documents");
+      notify("Google Drive selection was cancelled or failed.");
+    } else if (picked && drive.connected) {
+      history.replaceState({}, "", "/?view=documents");
+      const files = await api("/api/google-drive/files?ids=" + encodeURIComponent(picked));
+      if (files.length) await openDriveImport(files[0]);
+    } else if (params.get("driveConnected")) {
+      history.replaceState({}, "", "/?view=documents");
+      notify("Google Drive connected. Select a file to attach it to Homely.");
+    }
   } catch (error) { fail(error); }
 }
 
@@ -880,4 +974,5 @@ actionDialog.addEventListener("cancel", (event) => {
   closeAction();
 });
 
-selectView("overview");
+const requestedView = new URLSearchParams(window.location.search).get("view");
+selectView(requestedView && requestedView in views ? requestedView : "overview");

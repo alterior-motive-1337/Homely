@@ -5,7 +5,8 @@ export type ActionType =
   | "REPORT_ISSUE"
   | "CREATE_MAINTENANCE"
   | "RESOLVE_ISSUE"
-  | "COMPLETE_MAINTENANCE";
+  | "COMPLETE_MAINTENANCE"
+  | "ATTACH_DOCUMENT";
 
 export class DomainError extends Error {
   constructor(message: string, public readonly status = 400) {
@@ -118,6 +119,23 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
     };
   }
 
+  if (actionType === "ATTACH_DOCUMENT") {
+    const assetId = requireText(raw.assetId, "Asset", 120);
+    getAsset(db, assetId);
+    const documentType = requireText(raw.documentType, "Document type", 40).toUpperCase();
+    if (!["WARRANTY","MANUAL","INVOICE","RECEIPT","INSPECTION","PHOTO","REPORT","OTHER"].includes(documentType)) {
+      throw new DomainError("Unsupported document type.");
+    }
+    return {
+      assetId,
+      title: requireText(raw.title, "Document title", 240),
+      documentType,
+      providerFileId: requireText(raw.providerFileId, "Drive file ID", 300),
+      mimeType: optionalText(raw.mimeType, 200),
+      webViewLink: optionalText(raw.webViewLink, 1000)
+    };
+  }
+
   if (actionType === "RESOLVE_ISSUE") {
     const issueId = requireText(raw.issueId, "Issue", 120);
     const issue = getIssue(db, issueId);
@@ -171,6 +189,15 @@ function previewFor(db: HomelyDatabase, actionType: ActionType, payload: JsonRec
         "Recalculate health when overdue",
         "Add a house timeline event"
       ]
+    };
+  }
+
+  if (actionType === "ATTACH_DOCUMENT") {
+    const asset = getAsset(db, String(payload.assetId));
+    return {
+      title: `Attach document: ${payload.title}`,
+      summary: `${payload.documentType} on ${asset.name} from Google Drive`,
+      effects: ["Create a Homely document record", "Link it to the selected asset", "Add a house timeline event"]
     };
   }
 
@@ -260,6 +287,7 @@ function createTimelineEvent(
     assetId?: string | null;
     issueId?: string | null;
     maintenanceRuleId?: string | null;
+    documentId?: string | null;
   },
   createdAt: string
 ): JsonRecord {
@@ -282,7 +310,7 @@ function createTimelineEvent(
     input.assetId ?? null,
     input.issueId ?? null,
     input.maintenanceRuleId ?? null,
-    null,
+    input.documentId ?? null,
     JSON.stringify({ transactionId }),
     createdAt
   );
@@ -374,6 +402,37 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
       }, createdAt);
     }
 
+    if (actionType === "ATTACH_DOCUMENT") {
+      const documentId = newId("doc");
+      db.prepare(`
+        INSERT INTO documents(
+          id,title,type,provider,provider_file_id,local_path,mime_type,asset_id,issue_id,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      `).run(
+        documentId,
+        String(payload.title),
+        String(payload.documentType),
+        "GOOGLE_DRIVE",
+        String(payload.providerFileId),
+        null,
+        payload.mimeType === null || payload.mimeType === undefined ? null : String(payload.mimeType),
+        String(payload.assetId),
+        null,
+        createdAt,
+        createdAt
+      );
+      const document = db.prepare("SELECT * FROM documents WHERE id = ?").get(documentId) as JsonRecord;
+      recordChange(db, transactionId, "document", documentId, "CREATE", null, document, createdAt);
+      createTimelineEvent(db, transactionId, {
+        eventType: "DOCUMENT_ATTACHED",
+        title: `Document attached: ${payload.title}`,
+        summary: `${payload.documentType} linked from Google Drive.`,
+        occurredAt: createdAt,
+        assetId: String(payload.assetId),
+        documentId
+      }, createdAt);
+    }
+
     if (actionType === "RESOLVE_ISSUE") {
       const before = getIssue(db, String(payload.issueId)) as JsonRecord;
       if (["RESOLVED","CLOSED"].includes(String(before.status))) {
@@ -459,6 +518,10 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
       const current = db.prepare("SELECT * FROM maintenance_rules WHERE id = ?").get(entityId);
       if (!sameRow(current, after)) throw new DomainError("Maintenance changed after this transaction and cannot be safely undone.", 409);
       db.prepare("DELETE FROM maintenance_rules WHERE id = ?").run(entityId);
+    } else if (entityType === "document") {
+      const current = db.prepare("SELECT * FROM documents WHERE id = ?").get(entityId);
+      if (!sameRow(current, after)) throw new DomainError("Document association changed after this transaction and cannot be safely undone.", 409);
+      db.prepare("DELETE FROM documents WHERE id = ?").run(entityId);
     } else {
       throw new DomainError("This transaction contains an unsupported undo operation.", 409);
     }
