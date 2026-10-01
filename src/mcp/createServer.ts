@@ -1,15 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { HomelyDatabase } from "../db.js";
-import { getAsset, getOverview, getTimeline, listAssets, listMaintenance } from "../domain/repository.js";
+import { executeHomelyTool } from "../tools/homelyTools.js";
 import {
   commitTransaction,
-  DomainError,
-  getTransaction,
-  proposeTransaction,
   rejectTransaction,
   undoTransaction,
-  type ActionType
 } from "../domain/transactions.js";
 
 function ok(value: unknown) {
@@ -39,7 +35,7 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
       inputSchema: z.object({})
     },
     async () => {
-      try { return ok(getOverview(db)); } catch (error) { return fail(error); }
+      try { return ok(executeHomelyTool(db, "get_home_summary", {}, "MCP")); } catch (error) { return fail(error); }
     }
   );
 
@@ -54,14 +50,10 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     },
     async ({ system, health }) => {
       try {
-        const assets = listAssets(db).filter((asset) => {
-          const row = asset as typeof asset & Record<string, unknown>;
-          const matchesSystem = !system ||
-            String(row.system_name ?? "").toLowerCase().includes(system.toLowerCase()) ||
-            String(row.system_category ?? "").toLowerCase().includes(system.toLowerCase());
-          return matchesSystem && (!health || asset.health === health);
-        });
-        return ok(assets);
+        return ok(executeHomelyTool(db, "list_assets", {
+          system: system ?? null,
+          health: health ?? null
+        }, "MCP"));
       } catch (error) { return fail(error); }
     }
   );
@@ -74,9 +66,7 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     },
     async ({ assetId }) => {
       try {
-        const asset = getAsset(db, assetId);
-        if (!asset) throw new DomainError("Asset not found.", 404);
-        return ok(asset);
+        return ok(executeHomelyTool(db, "get_asset", { assetId }, "MCP"));
       } catch (error) { return fail(error); }
     }
   );
@@ -89,9 +79,7 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     },
     async ({ assetId }) => {
       try {
-        const asset = getAsset(db, assetId);
-        if (!asset) throw new DomainError("Asset not found.", 404);
-        return ok(asset.history);
+        return ok(executeHomelyTool(db, "get_asset_history", { assetId }, "MCP"));
       } catch (error) { return fail(error); }
     }
   );
@@ -108,14 +96,11 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     },
     async ({ query, assetId, limit }) => {
       try {
-        const needle = query?.toLowerCase();
-        const events = getTimeline(db, 250).filter((event) => {
-          if (assetId && String(event.asset_id ?? "") !== assetId) return false;
-          if (!needle) return true;
-          return [event.title, event.summary, event.asset_name, event.event_type]
-            .some((value) => String(value ?? "").toLowerCase().includes(needle));
-        }).slice(0, limit);
-        return ok(events);
+        return ok(executeHomelyTool(db, "search_history", {
+          query: query ?? null,
+          assetId: assetId ?? null,
+          limit
+        }, "MCP"));
       } catch (error) { return fail(error); }
     }
   );
@@ -130,8 +115,7 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     },
     async ({ state }) => {
       try {
-        const rows = listMaintenance(db).filter((row) => state === "ALL" || row.due_state === state);
-        return ok(rows);
+        return ok(executeHomelyTool(db, "list_maintenance_due", { state }, "MCP"));
       } catch (error) { return fail(error); }
     }
   );
@@ -149,13 +133,12 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     },
     async ({ actionType, payload, reason, requestText }) => {
       try {
-        return ok(proposeTransaction(db, {
-          actionType: actionType as ActionType,
+        return ok(executeHomelyTool(db, "preview_action", {
+          actionType,
           payload,
           reason,
-          requestText,
-          origin: "MCP"
-        }));
+          requestText: requestText ?? null
+        }, "MCP"));
       } catch (error) { return fail(error); }
     }
   );
@@ -207,9 +190,7 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     },
     async ({ transactionId }) => {
       try {
-        const transaction = getTransaction(db, transactionId);
-        if (!transaction) throw new DomainError("Transaction not found.", 404);
-        return ok(transaction);
+        return ok(executeHomelyTool(db, "get_transaction", { transactionId }, "MCP"));
       } catch (error) { return fail(error); }
     }
   );
