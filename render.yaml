@@ -57,7 +57,7 @@ services:
         value: "72"
 
       - key: AI_ENABLED
-        value: "false"
+        value: "true"
 
       - key: OPENAI_API_KEY
         sync: false

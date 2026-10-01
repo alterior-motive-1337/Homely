@@ -406,8 +406,8 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
       const documentId = newId("doc");
       db.prepare(`
         INSERT INTO documents(
-          id,title,type,provider,provider_file_id,local_path,mime_type,asset_id,issue_id,created_at,updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+          id,title,type,provider,provider_file_id,local_path,mime_type,web_view_link,asset_id,issue_id,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         documentId,
         String(payload.title),
@@ -416,6 +416,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         String(payload.providerFileId),
         null,
         payload.mimeType === null || payload.mimeType === undefined ? null : String(payload.mimeType),
+        payload.webViewLink === null || payload.webViewLink === undefined ? null : String(payload.webViewLink),
         String(payload.assetId),
         null,
         createdAt,

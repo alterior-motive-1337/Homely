@@ -21,7 +21,12 @@
         <button class="nav-item" data-view="agent">Agent</button>
         <button class="nav-item" data-view="transactions">Transactions</button>
       </nav>
-      <div class="sidebar-foot"><span class="status-dot"></span><span>Local state active</span></div>
+      <div class="sidebar-foot">
+        <div class="runtime-status" id="runtime-status" data-tone="neutral">
+          <span class="status-dot"></span><span id="runtime-status-text">Checking cloud state…</span>
+        </div>
+        <button class="logout-button" id="logout-button" type="button">Log out</button>
+      </div>
     </aside>
     <main class="workspace">
       <header class="topbar">

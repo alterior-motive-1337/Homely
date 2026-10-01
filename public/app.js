@@ -6,6 +6,9 @@ const assetDetail = document.querySelector("#asset-detail");
 const actionDialog = document.querySelector("#action-dialog");
 const actionDetail = document.querySelector("#action-detail");
 const toast = document.querySelector("#toast");
+const runtimeStatus = document.querySelector("#runtime-status");
+const runtimeStatusText = document.querySelector("#runtime-status-text");
+const logoutButton = document.querySelector("#logout-button");
 
 document.querySelector("#today").textContent = new Intl.DateTimeFormat("en-ZA", {
   day: "2-digit", month: "short", year: "numeric"
@@ -17,7 +20,8 @@ const state = {
   pendingTransactionId: null,
   agentMessages: [],
   agentPreviousResponseId: null,
-  agentStatus: null
+  agentStatus: null,
+  integrations: null
 };
 
 const esc = (value = "") => String(value)
@@ -38,6 +42,24 @@ const fmtDateTime = (value) => value
 const todayInput = () => new Date().toISOString().slice(0, 10);
 const health = (value) => `<span class="health ${esc(value)}">${esc(value)}</span>`;
 
+function documentHref(doc) {
+  const value = String(doc?.web_view_link ?? doc?.local_path ?? "").trim();
+  if (!value) return null;
+  if (value.startsWith("/")) return value;
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.protocol === "https:" || url.protocol === "http:") return value;
+  } catch {}
+  return null;
+}
+
+function documentLink(doc) {
+  const href = documentHref(doc);
+  return href
+    ? `<a class="doc-link" href="${esc(href)}" target="_blank" rel="noreferrer">${esc(doc.title)}</a>`
+    : esc(doc.title);
+}
+
 async function api(path, options = {}) {
   const init = { ...options };
   if (init.body && typeof init.body !== "string") {
@@ -57,8 +79,48 @@ function notify(message) {
   window.setTimeout(() => toast.classList.remove("show"), 2600);
 }
 
-function loading() {
-  content.innerHTML = '<div class="empty">Loading home state…</div>';
+function loading(label = "Loading home state…") {
+  content.innerHTML = '<div class="loading-state"><span class="loading-pulse" aria-hidden="true"></span><span>' + esc(label) + '</span></div>';
+}
+
+function setRuntimeStatus(integrations) {
+  if (!runtimeStatus || !runtimeStatusText) return;
+  const backup = integrations?.backup;
+  let tone = "good";
+  let label = "Cloud runtime active";
+
+  if (backup?.enabled) {
+    if (!backup.connected) {
+      tone = "attention";
+      label = "Backup not connected";
+    } else if (backup.lastError) {
+      tone = "failed";
+      label = "Backup degraded";
+    } else if (backup.lastBackupAt) {
+      label = "Drive backup active";
+    } else {
+      tone = "attention";
+      label = "Drive backup ready";
+    }
+  }
+
+  runtimeStatus.dataset.tone = tone;
+  runtimeStatusText.textContent = label;
+  runtimeStatus.title = backup?.lastBackupAt ? "Last off-site backup: " + fmtDateTime(backup.lastBackupAt) : label;
+}
+
+async function refreshRuntimeStatus() {
+  try {
+    const integrations = await api("/api/integrations/status");
+    state.integrations = integrations;
+    setRuntimeStatus(integrations);
+    return integrations;
+  } catch (error) {
+    if (runtimeStatus) runtimeStatus.dataset.tone = "failed";
+    if (runtimeStatusText) runtimeStatusText.textContent = "Cloud status unavailable";
+    console.error(error);
+    return null;
+  }
 }
 
 function fail(error) {
@@ -112,7 +174,7 @@ async function showOverview() {
         <div>
           <p class="eyebrow">ACTIVE PROPERTY</p>
           <div class="home-title">${esc(data.home.name)}</div>
-          <p class="lede">Local, persistent property state with deterministic health. ${data.summary.systems_needing_attention} systems currently require attention.</p>
+          <p class="lede">Authoritative property state with deterministic health and audited changes. ${data.summary.systems_needing_attention} systems currently require attention.</p>
         </div>
         <div class="summary-strip">
           <div class="metric"><strong>${data.summary.systems_needing_attention}</strong><span>systems need attention</span></div>
@@ -391,7 +453,7 @@ async function showDocuments() {
                 ? "Per-file access only. Select a file explicitly before Homely can associate it."
                 : "Configured with drive.file scope. Connect the dedicated Homely Google account to select files."
               : "Enable Drive only after OAuth credentials are configured."
-            : "Optional integration is off. Local document records continue to work."}</span>
+            : "Optional integration is off. Existing Homely document metadata remains available."}</span>
         </div>
         <div class="asset-toolbar">
           <input id="document-search" class="search" type="search" placeholder="Search warranties, invoices, manuals…" aria-label="Search documents">
@@ -407,9 +469,7 @@ async function showDocuments() {
           <tbody>
             ${documents.map((doc) => `
               <tr>
-                <td>${doc.local_path
-                  ? `<a class="doc-link" href="${esc(doc.local_path)}" target="_blank" rel="noreferrer">${esc(doc.title)}</a>`
-                  : esc(doc.title)}</td>
+                <td>${documentLink(doc)}</td>
                 <td>${esc(doc.type)}</td>
                 <td>${esc(doc.provider)}</td>
                 <td>${doc.asset_id ? `<button class="button small" data-asset="${esc(doc.asset_id)}">${esc(doc.asset_name ?? "Asset")}</button>` : "—"}</td>
@@ -501,6 +561,7 @@ function renderAgentConversation() {
       const id = button.dataset.agentApprove;
       try {
         await api(`/api/transactions/${encodeURIComponent(id)}/commit`, { method: "POST" });
+        void refreshRuntimeStatus();
         for (const message of state.agentMessages) {
           const proposal = message.proposals?.find((item) => item.transactionId === id);
           if (proposal) proposal.status = "COMMITTED";
@@ -574,7 +635,7 @@ async function showAgent() {
             <div>
               <p class="eyebrow">AGENT UNAVAILABLE</p>
               <h3>Structured Homely remains operational.</h3>
-              <p>The OpenAI agent is ${integrations.ai.enabled ? "enabled but not configured" : "disabled"}. Assets, issues, maintenance, documents, timeline and transactions continue to use local SQLite state.</p>
+              <p>The OpenAI agent is ${integrations.ai.enabled ? "enabled but not configured" : "disabled"}. Assets, issues, maintenance, documents, timeline and transactions remain available from Homely\'s structured property state.</p>
             </div>
             <div class="agent-config">
               <span>AI_ENABLED</span><strong>${integrations.ai.enabled ? "true" : "false"}</strong>
@@ -716,7 +777,7 @@ async function openAsset(assetId) {
       <section class="detail-section">
         <h3>Documents</h3>
         <div class="list">
-          ${asset.documents.map((doc) => `<div class="list-row"><a class="doc-link" href="${esc(doc.local_path ?? "#")}" target="_blank" rel="noreferrer">${esc(doc.title)}</a><div class="row-meta">${esc(doc.type)} · ${esc(doc.provider)}</div></div>`).join("") || '<div class="empty">No documents attached.</div>'}
+          ${asset.documents.map((doc) => `<div class="list-row">${documentLink(doc)}<div class="row-meta">${esc(doc.type)} · ${esc(doc.provider)}</div></div>`).join("") || '<div class="empty">No documents attached.</div>'}
         </div>
       </section>
       <section class="detail-section"><h3>History</h3>${timelineMarkup(asset.history)}</section>
@@ -907,6 +968,7 @@ function renderPreview(result) {
     if (!id) return;
     try {
       await api(`/api/transactions/${encodeURIComponent(id)}/commit`, { method: "POST" });
+      void refreshRuntimeStatus();
       state.pendingTransactionId = null;
       await closeAction({ rejectPending: false });
       await selectView(state.view);
@@ -932,6 +994,7 @@ function openUndoConfirmation(transactionId, reason) {
   document.querySelector("#confirm-undo").addEventListener("click", async () => {
     try {
       await api(`/api/transactions/${encodeURIComponent(transactionId)}/undo`, { method: "POST" });
+      void refreshRuntimeStatus();
       await closeAction({ rejectPending: false });
       await selectView(state.view);
       notify("Transaction reversed. Audit history retained.");
@@ -956,15 +1019,40 @@ async function selectView(view) {
   const entry = views[view] ?? views.overview;
   state.view = view in views ? view : "overview";
   pageTitle.textContent = entry[0];
-  document.querySelectorAll(".nav-item").forEach((item) =>
-    item.classList.toggle("active", item.dataset.view === state.view)
-  );
+  document.title = entry[0] + " · Homely";
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    const active = item.dataset.view === state.view;
+    item.classList.toggle("active", active);
+    if (active) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
   await entry[1]();
+}
+
+function viewUrl(view) {
+  return view === "overview" ? "/" : "/?view=" + encodeURIComponent(view);
 }
 
 nav.addEventListener("click", (event) => {
   const button = event.target.closest("[data-view]");
-  if (button) selectView(button.dataset.view);
+  if (!button) return;
+  const view = button.dataset.view;
+  if (view !== state.view) history.pushState({ view }, "", viewUrl(view));
+  void selectView(view);
+});
+
+window.addEventListener("popstate", () => {
+  const view = new URLSearchParams(window.location.search).get("view");
+  void selectView(view && view in views ? view : "overview");
+});
+
+logoutButton?.addEventListener("click", async () => {
+  logoutButton.disabled = true;
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } finally {
+    window.location.href = "/auth/login";
+  }
 });
 
 document.querySelector("#dialog-close").addEventListener("click", () => assetDialog.close());
@@ -975,4 +1063,5 @@ actionDialog.addEventListener("cancel", (event) => {
 });
 
 const requestedView = new URLSearchParams(window.location.search).get("view");
-selectView(requestedView && requestedView in views ? requestedView : "overview");
+void refreshRuntimeStatus();
+void selectView(requestedView && requestedView in views ? requestedView : "overview");
