@@ -91,3 +91,25 @@ npm run dev
 The API key is never sent to the browser. The OpenAI provider uses the Responses API and can read Homely state or create an inert transaction proposal. It is not given commit or undo tools. Approval remains a Homely UI/API action, so a model response cannot silently mutate SQLite.
 
 If the provider is disabled, unconfigured, or temporarily unavailable, the structured property application remains operational.
+
+
+## Optional Google Drive
+
+Drive remains off unless explicitly enabled and configured. Homely requests only the non-sensitive per-file scope:
+
+```text
+https://www.googleapis.com/auth/drive.file
+```
+
+Configure a Google OAuth web client with the callback URI shown in `.env.example`, enable the Google Drive API, and use the dedicated Homely Google account:
+
+```bash
+GOOGLE_DRIVE_ENABLED=true
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_DRIVE_REDIRECT_URI=http://localhost:4173/api/google-drive/callback
+```
+
+The connect flow invokes Google's file picker authorization flow. Homely receives only file IDs the user selected. OAuth credentials are stored locally under `./data/google-drive-token.json` by default, which is gitignored.
+
+Selecting a Drive file does **not** silently attach it. The user chooses a Homely asset and document type, previews an `ATTACH_DOCUMENT` transaction, and explicitly approves it. The document association and timeline event are reversible while the audit record remains.
