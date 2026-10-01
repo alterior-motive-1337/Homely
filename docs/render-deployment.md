@@ -30,9 +30,10 @@ Create or select a Google Cloud project dedicated to Homely.
 
 1. Enable the **Google Drive API**.
 2. Configure the OAuth consent screen.
-3. Add the Google account that will own the Homely backup folder as an allowed/test user when required.
-4. Create an **OAuth 2.0 Client ID** of type **Web application**.
-5. Add this authorized redirect URI to that client:
+3. During setup you can add the Google account that will own the Homely backup folder as a test user.
+4. **Before relying on Homely backups long-term, move the OAuth app to “In production”.** Google refresh tokens issued to an external OAuth app left in Testing normally expire after 7 days. Homely's backup design requires a long-lived refresh token.
+5. Create an **OAuth 2.0 Client ID** of type **Web application**.
+6. Add this authorized redirect URI to that client:
    `https://developers.google.com/oauthplayground`
 
 Homely only requests:
