@@ -435,7 +435,7 @@ async function showDocuments() {
                 ? "Per-file access only. Select a file explicitly before Homely can associate it."
                 : "Configured with drive.file scope. Connect the dedicated Homely Google account to select files."
               : "Enable Drive only after OAuth credentials are configured."
-            : "Optional integration is off. Local document records continue to work."}</span>
+            : "Optional integration is off. Existing Homely document metadata remains available."}</span>
         </div>
         <div class="asset-toolbar">
           <input id="document-search" class="search" type="search" placeholder="Search warranties, invoices, manuals…" aria-label="Search documents">
@@ -545,6 +545,7 @@ function renderAgentConversation() {
       const id = button.dataset.agentApprove;
       try {
         await api(`/api/transactions/${encodeURIComponent(id)}/commit`, { method: "POST" });
+        void refreshRuntimeStatus();
         for (const message of state.agentMessages) {
           const proposal = message.proposals?.find((item) => item.transactionId === id);
           if (proposal) proposal.status = "COMMITTED";
@@ -951,6 +952,7 @@ function renderPreview(result) {
     if (!id) return;
     try {
       await api(`/api/transactions/${encodeURIComponent(id)}/commit`, { method: "POST" });
+      void refreshRuntimeStatus();
       state.pendingTransactionId = null;
       await closeAction({ rejectPending: false });
       await selectView(state.view);
@@ -976,6 +978,7 @@ function openUndoConfirmation(transactionId, reason) {
   document.querySelector("#confirm-undo").addEventListener("click", async () => {
     try {
       await api(`/api/transactions/${encodeURIComponent(transactionId)}/undo`, { method: "POST" });
+      void refreshRuntimeStatus();
       await closeAction({ rejectPending: false });
       await selectView(state.view);
       notify("Transaction reversed. Audit history retained.");
