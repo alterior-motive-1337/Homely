@@ -15,6 +15,14 @@ export class DomainError extends Error {
 
 type JsonRecord = Record<string, unknown>;
 
+export interface TransactionRecord extends JsonRecord {
+  id: string;
+  action_type: string;
+  status: string;
+  reason: string;
+  changes: JsonRecord[];
+}
+
 interface ProposalInput {
   actionType: ActionType;
   payload: JsonRecord;
@@ -320,7 +328,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         String(payload.title),
         "OPEN",
         String(payload.severity),
-        payload.description ?? null,
+        payload.description === null || payload.description === undefined ? null : String(payload.description),
         String(payload.detectedAt),
         null,
         createdAt,
@@ -348,7 +356,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         maintenanceId,
         String(payload.assetId),
         String(payload.title),
-        payload.intervalDays ?? null,
+        payload.intervalDays === null || payload.intervalDays === undefined ? null : Number(payload.intervalDays),
         null,
         String(payload.nextDueAt),
         createdAt,
@@ -466,7 +474,12 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
       if (!sameRow(current, after)) throw new DomainError("Issue changed after this transaction and cannot be safely undone.", 409);
       db.prepare(
         "UPDATE issues SET status = ?, resolved_at = ?, updated_at = ? WHERE id = ?"
-      ).run(before.status, before.resolved_at ?? null, before.updated_at, entityId);
+      ).run(
+        String(before.status),
+        before.resolved_at === null || before.resolved_at === undefined ? null : String(before.resolved_at),
+        String(before.updated_at),
+        entityId
+      );
       const restored = db.prepare("SELECT * FROM issues WHERE id = ?").get(entityId);
       recordChange(db, undoId, entityType, entityId, "UPDATE", after, restored, changedAt);
       return;
@@ -477,7 +490,13 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
       if (!sameRow(current, after)) throw new DomainError("Maintenance changed after this transaction and cannot be safely undone.", 409);
       db.prepare(
         "UPDATE maintenance_rules SET last_completed_at = ?, next_due_at = ?, active = ?, updated_at = ? WHERE id = ?"
-      ).run(before.last_completed_at ?? null, before.next_due_at, before.active, before.updated_at, entityId);
+      ).run(
+        before.last_completed_at === null || before.last_completed_at === undefined ? null : String(before.last_completed_at),
+        String(before.next_due_at),
+        Number(before.active),
+        String(before.updated_at),
+        entityId
+      );
       const restored = db.prepare("SELECT * FROM maintenance_rules WHERE id = ?").get(entityId);
       recordChange(db, undoId, entityType, entityId, "UPDATE", after, restored, changedAt);
       return;
@@ -539,13 +558,20 @@ export function undoTransaction(db: HomelyDatabase, transactionId: string) {
   };
 }
 
-export function getTransaction(db: HomelyDatabase, transactionId: string) {
-  const transaction = db.prepare("SELECT * FROM transactions WHERE id = ?").get(transactionId);
+export function getTransaction(db: HomelyDatabase, transactionId: string): TransactionRecord | null {
+  const transaction = db.prepare("SELECT * FROM transactions WHERE id = ?").get(transactionId) as JsonRecord | undefined;
   if (!transaction) return null;
   const changes = db.prepare(
     "SELECT * FROM transaction_changes WHERE transaction_id = ? ORDER BY rowid"
-  ).all(transactionId);
-  return { ...transaction, changes };
+  ).all(transactionId) as JsonRecord[];
+  return {
+    ...transaction,
+    id: String(transaction.id),
+    action_type: String(transaction.action_type),
+    status: String(transaction.status),
+    reason: String(transaction.reason),
+    changes
+  };
 }
 
 export function listTransactions(db: HomelyDatabase, limit = 50) {
