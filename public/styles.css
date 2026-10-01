@@ -30,7 +30,7 @@
 .view-tab.active{color:var(--text)}
 .view-tab.active::after{content:"";display:block;height:1px;background:var(--text);margin-top:7px}
 
-.overview-onepage{height:calc(100vh - 108px);min-height:540px;max-height:660px;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:12px;overflow:hidden}
+.overview-onepage{height:calc(100vh - 132px);min-height:540px;max-height:636px;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:12px;overflow:hidden}
 .overview-identity{display:flex;align-items:end;justify-content:space-between;gap:20px;padding:0 0 10px;border-bottom:1px solid var(--line)}
 .overview-home-name{font-size:22px;line-height:1.05;letter-spacing:-.035em;font-weight:520}
 .overview-actions{display:flex;gap:14px;align-items:center}
