@@ -308,11 +308,13 @@ async function main(): Promise<void> {
 
         if (req.method === "POST" && operation === "commit") {
           const result = commitTransaction(db, transactionId);
+          if (!result) throw new DomainError("Committed transaction could not be reloaded.", 500);
           return sendJson(res, 200, await durable(result, "transaction-commit"));
         }
 
         if (req.method === "POST" && operation === "reject") {
           const result = rejectTransaction(db, transactionId);
+          if (!result) throw new DomainError("Rejected transaction could not be reloaded.", 500);
           return sendJson(res, 200, await durable(result, "transaction-reject"));
         }
 
