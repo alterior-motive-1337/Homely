@@ -55,9 +55,10 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     async ({ system, health }) => {
       try {
         const assets = listAssets(db).filter((asset) => {
+          const row = asset as typeof asset & Record<string, unknown>;
           const matchesSystem = !system ||
-            String(asset.system_name).toLowerCase().includes(system.toLowerCase()) ||
-            String(asset.system_category).toLowerCase().includes(system.toLowerCase());
+            String(row.system_name ?? "").toLowerCase().includes(system.toLowerCase()) ||
+            String(row.system_category ?? "").toLowerCase().includes(system.toLowerCase());
           return matchesSystem && (!health || asset.health === health);
         });
         return ok(assets);
