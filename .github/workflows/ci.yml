@@ -25,52 +25,132 @@ jobs:
             npx playwright install --with-deps chromium
           fi
       - run: npm run db:reset
-      - name: Start Homely and verify real state
+      - name: Verify state, persistence, transactions and browser UI
         shell: bash
         run: |
-          node dist/src/server.js > /tmp/homely.log 2>&1 &
-          echo $! > /tmp/homely.pid
-          for i in {1..20}; do
-            if curl --fail --silent http://127.0.0.1:4173/api/health >/dev/null; then
-              break
-            fi
-            sleep 0.5
-          done
-          node <<'NODE'
-          const assert = (value, message) => { if (!value) throw new Error(message); };
-          const get = async (path) => {
-            const response = await fetch("http://127.0.0.1:4173" + path);
-            assert(response.ok, path + " returned " + response.status);
-            return response;
-          };
+          start_server() {
+            node dist/src/server.js > /tmp/homely.log 2>&1 &
+            HOMELY_PID=$!
+            for i in {1..30}; do
+              if curl --fail --silent http://127.0.0.1:4173/api/health >/dev/null; then
+                return 0
+              fi
+              sleep 0.5
+            done
+            cat /tmp/homely.log
+            return 1
+          }
 
-          const health = await (await get("/api/health")).json();
+          stop_server() {
+            kill "$HOMELY_PID"
+            wait "$HOMELY_PID" 2>/dev/null || true
+          }
+
+          start_server
+
+          node <<'NODE'
+          import fs from "node:fs";
+          const assert = (value, message) => { if (!value) throw new Error(message); };
+          const request = async (path, options = {}) => {
+            const response = await fetch("http://127.0.0.1:4173" + path, options);
+            const body = await response.json();
+            assert(response.ok, path + " returned " + response.status + ": " + JSON.stringify(body));
+            return body;
+          };
+          const post = (path, body) => request(path, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body ? JSON.stringify(body) : undefined
+          });
+
+          const health = await request("/api/health");
           assert(health.ok === true, "health endpoint not ready");
 
-          const overview = await (await get("/api/overview")).json();
+          const overview = await request("/api/overview");
           assert(overview.home.name === "14 Hawthorn Residence", "seed home missing");
           assert(overview.systems.length === 7, "expected 7 systems");
           assert(overview.summary.systems_needing_attention === 2, "expected two systems needing attention");
           assert(overview.summary.open_issues === 1, "expected one active issue");
           assert(overview.summary.overdue_maintenance === 1, "expected one overdue maintenance rule");
 
-          const assets = await (await get("/api/assets")).json();
+          const assets = await request("/api/assets");
           assert(assets.length === 16, "expected 16 seeded assets");
           assert(assets.some((asset) => asset.name === "Irrigation controller" && asset.health === "UNKNOWN"), "unknown-health asset missing");
 
-          const camera = await (await get("/api/assets/asset-camera-4")).json();
+          const camera = await request("/api/assets/asset-camera-4");
           assert(camera.issues.some((issue) => issue.status === "OPEN"), "Camera 4 issue missing");
 
-          const tap = await (await get("/api/assets/asset-tap")).json();
+          const tap = await request("/api/assets/asset-tap");
           assert(tap.history.some((event) => event.title.includes("aerator cleaned")), "kitchen tap history missing");
 
-          const warranty = await get("/demo-documents/inverter-warranty.txt");
-          assert((await warranty.text()).includes("20 January 2030"), "warranty document did not resolve");
+          const warrantyResponse = await fetch("http://127.0.0.1:4173/demo-documents/inverter-warranty.txt");
+          assert(warrantyResponse.ok, "warranty document did not resolve");
+          assert((await warrantyResponse.text()).includes("20 January 2030"), "warranty evidence missing");
+
+          const proposal = await post("/api/actions/preview", {
+            type: "CREATE_MAINTENANCE_TASK",
+            assetId: "asset-camera-4",
+            title: "Inspect Camera 4 network path",
+            dueAt: "2026-10-03",
+            reason: "Repeated disconnects suggest the network path should be inspected."
+          });
+          assert(proposal.status === "PROPOSED", "maintenance transaction was not proposed");
+          assert((await request("/api/maintenance-tasks")).length === 0, "proposal changed operational state");
+
+          const committed = await post("/api/transactions/" + encodeURIComponent(proposal.id) + "/commit");
+          assert(committed.status === "COMMITTED", "maintenance transaction did not commit");
+          fs.writeFileSync("/tmp/homely-tx-id", proposal.id);
+          NODE
+
+          stop_server
+          start_server
+
+          node <<'NODE'
+          import fs from "node:fs";
+          const assert = (value, message) => { if (!value) throw new Error(message); };
+          const txId = fs.readFileSync("/tmp/homely-tx-id", "utf8").trim();
+          const request = async (path, options = {}) => {
+            const response = await fetch("http://127.0.0.1:4173" + path, options);
+            const body = await response.json();
+            assert(response.ok, path + " returned " + response.status + ": " + JSON.stringify(body));
+            return body;
+          };
+
+          const tasks = await request("/api/maintenance-tasks");
+          assert(tasks.some((task) => task.title === "Inspect Camera 4 network path"), "committed task did not survive restart");
+
+          const undo = await request("/api/transactions/" + encodeURIComponent(txId) + "/undo", { method: "POST" });
+          assert(undo.status === "REVERSED", "undo did not reverse transaction");
+          NODE
+
+          stop_server
+          start_server
+
+          node <<'NODE'
+          import fs from "node:fs";
+          const assert = (value, message) => { if (!value) throw new Error(message); };
+          const txId = fs.readFileSync("/tmp/homely-tx-id", "utf8").trim();
+          const get = async (path) => {
+            const response = await fetch("http://127.0.0.1:4173" + path);
+            const body = await response.json();
+            assert(response.ok, path + " returned " + response.status);
+            return body;
+          };
+
+          const tasks = await get("/api/maintenance-tasks");
+          assert(!tasks.some((task) => task.title === "Inspect Camera 4 network path"), "undone task survived restart");
+
+          const transaction = await get("/api/transactions/" + encodeURIComponent(txId));
+          assert(transaction.status === "REVERSED", "reversed audit state did not persist");
+
+          const timeline = await get("/api/timeline");
+          assert(timeline.some((event) => event.transaction_id === txId && event.event_type === "TRANSACTION_REVERSED"), "reversal provenance missing");
           NODE
 
           node --input-type=module <<'NODE'
           import fs from "node:fs";
           import { chromium } from "playwright";
+
           const browser = await chromium.launch({
             headless: true,
             ...(fs.existsSync("/usr/bin/google-chrome") ? { executablePath: "/usr/bin/google-chrome" } : {})
@@ -84,6 +164,7 @@ jobs:
 
           await page.goto("http://127.0.0.1:4173", { waitUntil: "networkidle" });
           await page.getByText("14 Hawthorn Residence").waitFor();
+
           await page.getByRole("button", { name: "Assets" }).click();
           await page.getByText("8 kW inverter", { exact: true }).waitFor();
           await page.getByText("8 kW inverter", { exact: true }).click();
@@ -91,7 +172,22 @@ jobs:
           await page.getByRole("button", { name: "Close asset details" }).click();
 
           await page.getByRole("button", { name: "Issues" }).click();
-          await page.getByText("Camera 4 intermittent disconnect").waitFor();
+          await page.locator('#issue-form select[name="assetId"]').selectOption("asset-irrigation");
+          await page.locator('#issue-form input[name="title"]').fill("Irrigation controller fails to power on");
+          await page.locator('#issue-form select[name="severity"]').selectOption("HIGH");
+          await page.locator('#issue-form textarea[name="description"]').fill("Display remains dark after supply is confirmed.");
+          await page.getByRole("button", { name: "Preview issue" }).click();
+          await page.getByText("PROPOSED ACTION").waitFor();
+          await page.getByRole("button", { name: "Approve" }).click();
+          await page.getByText("Irrigation controller fails to power on").waitFor();
+
+          await page.getByRole("button", { name: "Transactions" }).click();
+          await page.getByText("REPORT ISSUE", { exact: true }).waitFor();
+          await page.getByRole("button", { name: "Undo" }).click();
+          await page.getByText("REVERSED", { exact: true }).first().waitFor();
+
+          await page.getByRole("button", { name: "Issues" }).click();
+          await page.getByText("Irrigation controller fails to power on").waitFor({ state: "detached" });
 
           await page.getByRole("button", { name: "Maintenance" }).click();
           await page.getByText("Inspect and clear north gutters").waitFor();
@@ -99,11 +195,12 @@ jobs:
           await page.setViewportSize({ width: 390, height: 844 });
           await page.getByRole("button", { name: "Timeline" }).click();
           await page.getByText("Kitchen tap aerator cleaned").waitFor();
+          await page.getByText("Action undone — report issue").waitFor();
 
           if (errors.length) throw new Error("Browser errors: " + errors.join(" | "));
           await browser.close();
           NODE
 
-          kill "$(cat /tmp/homely.pid)"
+          stop_server
       - if: failure()
         run: cat /tmp/homely.log || true
