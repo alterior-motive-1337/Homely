@@ -66,6 +66,39 @@ jobs:
 
           const warranty = await get("/demo-documents/inverter-warranty.txt");
           assert((await warranty.text()).includes("20 January 2030"), "warranty document did not resolve");
+
+          const post = async (path, body) => {
+            const response = await fetch("http://127.0.0.1:4173" + path, {
+              method: "POST",
+              headers: body ? { "content-type": "application/json" } : undefined,
+              body: body ? JSON.stringify(body) : undefined
+            });
+            const data = await response.json();
+            assert(response.ok, path + " failed: " + JSON.stringify(data));
+            return data;
+          };
+
+          const issuesBefore = (await (await get("/api/issues")).json()).length;
+          const proposal = await post("/api/transactions/preview", {
+            actionType: "REPORT_ISSUE",
+            reason: "CI verifies inert proposal and reversible commit.",
+            payload: {
+              assetId: "asset-tap",
+              title: "CI transaction issue",
+              severity: "MEDIUM",
+              description: "Created only to verify Homely transaction semantics."
+            }
+          });
+          assert(proposal.transaction.status === "PROPOSED", "proposal did not persist");
+          assert((await (await get("/api/issues")).json()).length === issuesBefore, "preview mutated issue state");
+
+          await post("/api/transactions/" + encodeURIComponent(proposal.transaction.id) + "/commit");
+          assert((await (await get("/api/issues")).json()).some((issue) => issue.title === "CI transaction issue"), "commit did not create issue");
+          await post("/api/transactions/" + encodeURIComponent(proposal.transaction.id) + "/undo");
+          assert(!(await (await get("/api/issues")).json()).some((issue) => issue.title === "CI transaction issue"), "undo did not remove created issue");
+
+          const audited = await (await get("/api/transactions/" + encodeURIComponent(proposal.transaction.id))).json();
+          assert(audited.status === "REVERSED", "original transaction was not retained as reversed");
           NODE
 
           node --input-type=module <<'NODE'
@@ -92,6 +125,28 @@ jobs:
 
           await page.getByRole("button", { name: "Issues" }).click();
           await page.getByText("Camera 4 intermittent disconnect").waitFor();
+
+          await page.getByRole("button", { name: "Report issue" }).click();
+          await page.locator("#issue-form select[name=assetId]").selectOption("asset-tap");
+          await page.locator("#issue-form input[name=title]").fill("Browser transaction issue");
+          await page.locator("#issue-form textarea[name=description]").fill("Browser verifies preview, commit and undo.");
+          await page.getByRole("button", { name: "Preview" }).click();
+          await page.getByText("PROPOSED TRANSACTION").waitFor();
+          await page.getByRole("button", { name: "Approve & commit" }).click();
+          await page.locator("#action-dialog").waitFor({ state: "hidden" });
+          await page.locator(".list-row .row-title").filter({ hasText: "Browser transaction issue" }).waitFor();
+
+          await page.getByRole("button", { name: "Transactions" }).click();
+          const transactionRow = page.locator(".transaction-row").filter({ hasText: 'Homeowner reported "Browser transaction issue"' });
+          await transactionRow.waitFor();
+          await transactionRow.getByRole("button", { name: "Undo" }).click();
+          await page.getByRole("button", { name: "Undo transaction" }).click();
+          await page.getByText("Transaction reversed. Audit history retained.").waitFor();
+
+          await page.getByRole("button", { name: "Issues" }).click();
+          if (await page.locator("#content .row-title").filter({ hasText: "Browser transaction issue" }).count()) {
+            throw new Error("browser undo did not reverse issue state");
+          }
 
           await page.getByRole("button", { name: "Maintenance" }).click();
           await page.getByText("Inspect and clear north gutters").waitFor();
