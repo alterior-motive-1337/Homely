@@ -4,7 +4,7 @@ import http from "node:http";
 import { URL } from "node:url";
 import { config } from "./config.js";
 import { migrate, openDatabase } from "./db.js";
-import { getAsset, getOverview, getTimeline, listAssets, listIssues, listMaintenance, listSystems } from "./domain/repository.js";
+import { getAsset, getOverview, getTimeline, listAssets, listDocuments, listIssues, listMaintenance, listSystems } from "./domain/repository.js";
 import {
   commitTransaction,
   DomainError,
@@ -83,6 +83,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/issues") return sendJson(res, 200, listIssues(db));
     if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
     if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
+    if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
     if (req.method === "GET" && url.pathname === "/api/transactions") return sendJson(res, 200, listTransactions(db));
 
     if (req.method === "POST" && url.pathname === "/api/transactions/preview") {

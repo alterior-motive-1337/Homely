@@ -88,6 +88,17 @@ export function listMaintenance(db: HomelyDatabase) {
   ).all(today, today);
 }
 
+export function listDocuments(db: HomelyDatabase) {
+  return db.prepare(`
+    SELECT d.*, a.name AS asset_name, s.name AS system_name, i.title AS issue_title
+    FROM documents d
+    LEFT JOIN assets a ON a.id = d.asset_id
+    LEFT JOIN systems s ON s.id = a.system_id
+    LEFT JOIN issues i ON i.id = d.issue_id
+    ORDER BY d.created_at DESC, d.title
+  `).all();
+}
+
 export function getTimeline(db: HomelyDatabase, limit = 80) {
   return db.prepare(
     `SELECT t.*, a.name AS asset_name

@@ -283,12 +283,83 @@ async function showMaintenance() {
 async function showTimeline() {
   loading();
   try {
+    const items = await api("/api/timeline");
+    const eventTypes = [...new Set(items.map((item) => item.event_type))].sort();
     content.innerHTML = `
       <section class="section">
         <div class="section-head"><h2>House timeline</h2><span class="section-note">Unified property history</span></div>
-        ${timelineMarkup(await api("/api/timeline"))}
+        <div class="asset-toolbar">
+          <input id="timeline-search" class="search" type="search" placeholder="Search history…" aria-label="Search timeline">
+          <select id="timeline-type" class="search" aria-label="Filter timeline by event type">
+            <option value="">All event types</option>
+            ${eventTypes.map((type) => `<option value="${esc(type)}">${esc(type.replaceAll("_", " "))}</option>`).join("")}
+          </select>
+        </div>
+        <div id="timeline-results"></div>
       </section>
     `;
+
+    const render = () => {
+      const query = document.querySelector("#timeline-search").value.trim().toLowerCase();
+      const type = document.querySelector("#timeline-type").value;
+      const filtered = items.filter((item) => {
+        const matchesType = !type || item.event_type === type;
+        const haystack = [item.title, item.summary, item.asset_name, item.event_type].map((value) => String(value ?? "").toLowerCase()).join(" ");
+        return matchesType && (!query || haystack.includes(query));
+      });
+      document.querySelector("#timeline-results").innerHTML = timelineMarkup(filtered);
+    };
+
+    document.querySelector("#timeline-search").addEventListener("input", render);
+    document.querySelector("#timeline-type").addEventListener("change", render);
+    render();
+  } catch (error) { fail(error); }
+}
+
+async function showDocuments() {
+  loading();
+  try {
+    const items = await api("/api/documents");
+    content.innerHTML = `
+      <section class="section">
+        <div class="section-head">
+          <div><h2>Documents</h2><span class="section-note">Evidence remains separate from its storage provider</span></div>
+        </div>
+        <div class="asset-toolbar">
+          <input id="document-search" class="search" type="search" placeholder="Search warranties, invoices, manuals…" aria-label="Search documents">
+        </div>
+        <div id="document-results"></div>
+      </section>
+    `;
+
+    const render = (documents) => {
+      document.querySelector("#document-results").innerHTML = `
+        <table class="asset-table">
+          <thead><tr><th>Document</th><th>Type</th><th>Provider</th><th>Related asset</th><th>System</th></tr></thead>
+          <tbody>
+            ${documents.map((doc) => `
+              <tr>
+                <td>${doc.local_path ? `<a class="doc-link" href="${esc(doc.local_path)}" target="_blank" rel="noreferrer">${esc(doc.title)}</a>` : esc(doc.title)}</td>
+                <td>${esc(doc.type)}</td>
+                <td>${esc(doc.provider)}</td>
+                <td>${doc.asset_id ? `<button class="button small" data-asset="${esc(doc.asset_id)}">${esc(doc.asset_name ?? "Asset")}</button>` : "—"}</td>
+                <td>${esc(doc.system_name ?? "—")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+      wireAssetLinks();
+    };
+
+    render(items);
+    document.querySelector("#document-search").addEventListener("input", (event) => {
+      const query = event.target.value.trim().toLowerCase();
+      render(items.filter((doc) =>
+        [doc.title, doc.type, doc.provider, doc.asset_name, doc.system_name, doc.issue_title]
+          .some((value) => String(value ?? "").toLowerCase().includes(query))
+      ));
+    });
   } catch (error) { fail(error); }
 }
 
@@ -588,6 +659,7 @@ const views = {
   issues: ["Issues", showIssues],
   maintenance: ["Maintenance", showMaintenance],
   timeline: ["Timeline", showTimeline],
+  documents: ["Documents", showDocuments],
   transactions: ["Transactions", showTransactions]
 };
 
