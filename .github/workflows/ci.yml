@@ -1,0 +1,65 @@
+name: Homely CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install
+      - run: npm run build
+      - run: npm test
+      - run: npm run db:reset
+      - name: Start Homely and verify real state
+        shell: bash
+        run: |
+          node dist/src/server.js > /tmp/homely.log 2>&1 &
+          echo $! > /tmp/homely.pid
+          for i in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:4173/api/health >/dev/null; then
+              break
+            fi
+            sleep 0.5
+          done
+          node <<'NODE'
+          const assert = (value, message) => { if (!value) throw new Error(message); };
+          const get = async (path) => {
+            const response = await fetch("http://127.0.0.1:4173" + path);
+            assert(response.ok, path + " returned " + response.status);
+            return response;
+          };
+
+          const health = await (await get("/api/health")).json();
+          assert(health.ok === true, "health endpoint not ready");
+
+          const overview = await (await get("/api/overview")).json();
+          assert(overview.home.name === "14 Hawthorn Residence", "seed home missing");
+          assert(overview.systems.length === 7, "expected 7 systems");
+          assert(overview.summary.systems_needing_attention === 2, "expected two systems needing attention");
+          assert(overview.summary.open_issues === 1, "expected one active issue");
+          assert(overview.summary.overdue_maintenance === 1, "expected one overdue maintenance rule");
+
+          const assets = await (await get("/api/assets")).json();
+          assert(assets.length === 16, "expected 16 seeded assets");
+          assert(assets.some((asset) => asset.name === "Irrigation controller" && asset.health === "UNKNOWN"), "unknown-health asset missing");
+
+          const camera = await (await get("/api/assets/asset-camera-4")).json();
+          assert(camera.issues.some((issue) => issue.status === "OPEN"), "Camera 4 issue missing");
+
+          const tap = await (await get("/api/assets/asset-tap")).json();
+          assert(tap.history.some((event) => event.title.includes("aerator cleaned")), "kitchen tap history missing");
+
+          const warranty = await get("/demo-documents/inverter-warranty.txt");
+          assert((await warranty.text()).includes("20 January 2030"), "warranty document did not resolve");
+          NODE
+          kill "$(cat /tmp/homely.pid)"
+      - if: failure()
+        run: cat /tmp/homely.log || true
