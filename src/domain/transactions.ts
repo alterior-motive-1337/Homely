@@ -2,6 +2,27 @@ import { randomUUID } from "node:crypto";
 import type { HomelyDatabase } from "../db.js";
 
 export type ActionType = "REPORT_ISSUE" | "CREATE_MAINTENANCE_TASK";
+export type TransactionStatus = "PROPOSED" | "COMMITTED" | "REVERSED" | "REJECTED";
+type Snapshot = Record<string, string | null>;
+
+export interface TransactionRecord {
+  id: string;
+  home_id: string;
+  action_type: ActionType;
+  status: TransactionStatus;
+  entity_type: string;
+  entity_id: string;
+  reason: string;
+  origin: string;
+  approved_at: string | null;
+  committed_at: string | null;
+  reversed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  request: Record<string, unknown>;
+  before: Snapshot | null;
+  after: Snapshot;
+}
 
 export interface PreviewActionInput {
   type: ActionType;
@@ -32,14 +53,27 @@ function getAsset(db: HomelyDatabase, assetId: string) {
   return asset;
 }
 
-function readTransaction(db: HomelyDatabase, transactionId: string) {
+function readTransaction(db: HomelyDatabase, transactionId: string): TransactionRecord | null {
   const row = db.prepare("SELECT * FROM transactions WHERE id = ?").get(transactionId);
   if (!row) return null;
+
   return {
-    ...row,
-    request: JSON.parse(String(row.request_json ?? "{}")),
-    before: row.before_json ? JSON.parse(String(row.before_json)) : null,
-    after: JSON.parse(String(row.after_json))
+    id: String(row.id),
+    home_id: String(row.home_id),
+    action_type: String(row.action_type) as ActionType,
+    status: String(row.status) as TransactionStatus,
+    entity_type: String(row.entity_type),
+    entity_id: String(row.entity_id),
+    reason: String(row.reason),
+    origin: String(row.origin),
+    approved_at: row.approved_at == null ? null : String(row.approved_at),
+    committed_at: row.committed_at == null ? null : String(row.committed_at),
+    reversed_at: row.reversed_at == null ? null : String(row.reversed_at),
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+    request: JSON.parse(String(row.request_json ?? "{}")) as Record<string, unknown>,
+    before: row.before_json ? JSON.parse(String(row.before_json)) as Snapshot : null,
+    after: JSON.parse(String(row.after_json)) as Snapshot
   };
 }
 
@@ -141,7 +175,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
   if (transaction.status !== "PROPOSED") throw new Error("Only proposed transactions can be committed.");
 
   const now = new Date().toISOString();
-  const after = transaction.after as Record<string, unknown>;
+  const after = transaction.after;
   db.exec("BEGIN IMMEDIATE;");
   try {
     if (transaction.action_type === "REPORT_ISSUE") {
@@ -208,7 +242,7 @@ export function undoTransaction(db: HomelyDatabase, transactionId: string) {
   if (!transaction) throw new Error("Transaction not found.");
   if (transaction.status !== "COMMITTED") throw new Error("Only committed transactions can be undone.");
 
-  const after = transaction.after as Record<string, unknown>;
+  const after = transaction.after;
   const now = new Date().toISOString();
 
   db.exec("BEGIN IMMEDIATE;");
