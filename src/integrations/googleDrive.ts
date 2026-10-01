@@ -296,6 +296,9 @@ export class GoogleDriveIntegration {
   }
 
   disconnect(): void {
+    if (config.googleDriveRefreshToken) {
+      throw new DomainError("Google Drive credentials are managed by the cloud secret store.", 409);
+    }
     if (fs.existsSync(config.googleDriveTokenPath)) fs.rmSync(config.googleDriveTokenPath);
   }
 }
