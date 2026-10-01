@@ -21,7 +21,9 @@ jobs:
       - name: Install CI browser
         run: |
           npm install --no-save playwright@1.55.0
-          npx playwright install --with-deps chromium
+          if ! command -v google-chrome >/dev/null 2>&1; then
+            npx playwright install --with-deps chromium
+          fi
       - run: npm run db:reset
       - name: Start Homely and verify real state
         shell: bash
@@ -67,8 +69,12 @@ jobs:
           NODE
 
           node --input-type=module <<'NODE'
+          import fs from "node:fs";
           import { chromium } from "playwright";
-          const browser = await chromium.launch({ headless: true });
+          const browser = await chromium.launch({
+            headless: true,
+            ...(fs.existsSync("/usr/bin/google-chrome") ? { executablePath: "/usr/bin/google-chrome" } : {})
+          });
           const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
           const errors = [];
           page.on("pageerror", (error) => errors.push(String(error)));
