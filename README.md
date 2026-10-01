@@ -41,8 +41,8 @@ Homely domain queries + deterministic health
 SQLite
 ```
 
-SQLite owns truth. The current build has no LLM dependency.
+SQLite owns truth. The current build has no LLM dependency. Mutations are committed only through Homely's transaction service; proposals are inert until explicitly approved.
 
-Current domain surface: Home, Systems, Assets, Issues, Maintenance Rules, Timeline Events, and Documents. Projects, transactions, MCP, OpenAI, Google Drive, and ElevenLabs will be layered on after the state model is trustworthy.
+Current domain surface: Home, Systems, Assets, Issues, Maintenance Rules, Timeline Events, Documents, and auditable Transactions. Mutating home state follows propose → preview → commit → audit → undo. Projects, MCP, OpenAI, Google Drive, and ElevenLabs remain later layers.
 
 The default database is `./data/homely.db`; override it with `HOMELY_DB_PATH`. Optional integration variables are documented in `.env.example` and disabled by default.
