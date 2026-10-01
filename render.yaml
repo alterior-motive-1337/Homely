@@ -1,0 +1,63 @@
+services:
+  - type: web
+    name: homely
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_VERSION
+        value: "24.21.0"
+
+      - key: HOST
+        value: "0.0.0.0"
+
+      - key: HOMELY_DB_PATH
+        value: "/tmp/homely/homely.db"
+
+      - key: AUTH_ENABLED
+        value: "true"
+
+      - key: HOMELY_OWNER_PASSWORD
+        sync: false
+
+      - key: HOMELY_SESSION_SECRET
+        generateValue: true
+
+      - key: HOMELY_SESSION_DAYS
+        value: "7"
+
+      - key: GOOGLE_DRIVE_ENABLED
+        value: "true"
+
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+      - key: GOOGLE_DRIVE_REFRESH_TOKEN
+        sync: false
+
+      - key: GOOGLE_DRIVE_BACKUP_FOLDER
+        value: "Homely Backups"
+
+      - key: BACKUP_ENABLED
+        value: "true"
+
+      - key: BACKUP_REQUIRED
+        value: "true"
+
+      - key: BACKUP_INTERVAL_MINUTES
+        value: "30"
+
+      - key: BACKUP_RETENTION
+        value: "72"
+
+      - key: AI_ENABLED
+        value: "false"
+
+      - key: VOICE_ENABLED
+        value: "false"
