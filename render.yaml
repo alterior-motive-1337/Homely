@@ -48,7 +48,7 @@ services:
         value: "true"
 
       - key: BACKUP_REQUIRED
-        value: "true"
+        value: "false"
 
       - key: BACKUP_INTERVAL_MINUTES
         value: "30"
@@ -58,6 +58,9 @@ services:
 
       - key: AI_ENABLED
         value: "false"
+
+      - key: OPENAI_API_KEY
+        sync: false
 
       - key: VOICE_ENABLED
         value: "false"
