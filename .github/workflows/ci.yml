@@ -25,6 +25,7 @@ jobs:
             npx playwright install --with-deps chromium
           fi
       - run: npm run db:reset
+      - run: npm run mcp:smoke
       - name: Start Homely and verify real state
         shell: bash
         run: |
@@ -63,6 +64,10 @@ jobs:
 
           const tap = await (await get("/api/assets/asset-tap")).json();
           assert(tap.history.some((event) => event.title.includes("aerator cleaned")), "kitchen tap history missing");
+
+          const documents = await (await get("/api/documents")).json();
+          assert(documents.length === 3, "expected three seeded documents");
+          assert(documents.some((doc) => doc.title.includes("inverter warranty") && doc.asset_name === "8 kW inverter"), "document association missing");
 
           const warranty = await get("/demo-documents/inverter-warranty.txt");
           assert((await warranty.text()).includes("20 January 2030"), "warranty document did not resolve");
@@ -151,8 +156,12 @@ jobs:
           await page.getByRole("button", { name: "Maintenance" }).click();
           await page.getByText("Inspect and clear north gutters").waitFor();
 
+          await page.getByRole("button", { name: "Documents" }).click();
+          await page.getByText("Sunsynk 8 kW inverter warranty").waitFor();
+
           await page.setViewportSize({ width: 390, height: 844 });
           await page.getByRole("button", { name: "Timeline" }).click();
+          await page.locator("#timeline-search").fill("aerator");
           await page.getByText("Kitchen tap aerator cleaned").waitFor();
 
           if (errors.length) throw new Error("Browser errors: " + errors.join(" | "));
