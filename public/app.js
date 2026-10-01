@@ -146,161 +146,119 @@ async function showOverview() {
   loading();
   try {
     const data = await api("/api/overview");
-    const healthySystems = data.systems.filter((system) => system.health === "HEALTHY").length;
     const totalAssets = data.systems.reduce((sum, system) => sum + Number(system.asset_count ?? 0), 0);
-    const attentionCount = data.attention.issues.length + data.attention.maintenance.length;
-
-    const attentionRows = [
-      ...data.attention.issues.map((item) => `
-        <div class="dashboard-list-row">
-          <div class="dashboard-list-icon issue-mark">!</div>
-          <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
-            <div class="row-title">${esc(item.title)}</div>
-            <div class="row-meta">${esc(item.asset_name)} · ${esc(item.system_name)}</div>
-          </div>
-          <span class="badge open">${esc(item.severity)}</span>
-        </div>`),
-      ...data.attention.maintenance.map((item) => `
-        <div class="dashboard-list-row">
-          <div class="dashboard-list-icon maintenance-mark">M</div>
-          <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
-            <div class="row-title">${esc(item.title)}</div>
-            <div class="row-meta">${esc(item.asset_name)} · due ${fmtDate(item.next_due_at)}</div>
-          </div>
-          <span class="badge overdue">${item.days_overdue}d overdue</span>
-        </div>`)
-    ].join("");
-
-    const recent = data.recent.slice(0, 5);
+    const attentionItems = [
+      ...data.attention.issues.map((item) => ({
+        kind: "ISSUE",
+        title: item.title,
+        meta: `${item.asset_name} · ${item.system_name}`,
+        assetId: item.asset_id,
+        status: item.severity
+      })),
+      ...data.attention.maintenance.map((item) => ({
+        kind: "DUE",
+        title: item.title,
+        meta: `${item.asset_name} · ${item.days_overdue}d overdue`,
+        assetId: item.asset_id,
+        status: "OVERDUE"
+      }))
+    ].slice(0, 4);
 
     content.innerHTML = `
-      <div class="dashboard">
-        <section class="dashboard-property">
+      <div class="overview-onepage">
+        <header class="overview-identity">
           <div>
             <p class="eyebrow">ACTIVE PROPERTY</p>
-            <div class="dashboard-property-name">${esc(data.home.name)}</div>
-            <p class="dashboard-property-copy">Operational memory, maintenance and property state in one view.</p>
+            <div class="overview-home-name">${esc(data.home.name)}</div>
           </div>
-          <div class="dashboard-actions" aria-label="Quick actions">
-            <button class="button" data-dashboard-view="issues">Report issue</button>
-            <button class="button" data-dashboard-view="maintenance">Plan maintenance</button>
-            <button class="button primary" data-dashboard-view="agent">Ask Homely</button>
+          <div class="overview-actions">
+            <button class="text-action" data-route-view="work" data-route-tab="issues">+ issue</button>
+            <button class="text-action" data-route-view="work" data-route-tab="maintenance">+ maintenance</button>
+            <button class="text-action strong" data-route-view="agent">ask Homely</button>
           </div>
+        </header>
+
+        <section class="overview-metrics" aria-label="Home status">
+          <div><span>Attention</span><strong>${data.summary.systems_needing_attention}</strong></div>
+          <div><span>Open issues</span><strong>${data.summary.open_issues}</strong></div>
+          <div><span>Overdue</span><strong>${data.summary.overdue_maintenance}</strong></div>
+          <div><span>Assets</span><strong>${totalAssets}</strong></div>
         </section>
 
-        <section class="dashboard-kpis" aria-label="Property status">
-          <article class="kpi-card ${data.summary.systems_needing_attention ? "kpi-attention" : ""}">
-            <span class="kpi-label">Systems</span>
-            <strong>${healthySystems}<small>/${data.systems.length}</small></strong>
-            <span class="kpi-note">${healthySystems === data.systems.length ? "All healthy" : `${data.summary.systems_needing_attention} need attention`}</span>
-          </article>
-          <article class="kpi-card ${data.summary.open_issues ? "kpi-alert" : ""}">
-            <span class="kpi-label">Active issues</span>
-            <strong>${data.summary.open_issues}</strong>
-            <span class="kpi-note">${data.summary.open_issues ? "Requires review" : "None open"}</span>
-          </article>
-          <article class="kpi-card ${data.summary.overdue_maintenance ? "kpi-attention" : ""}">
-            <span class="kpi-label">Overdue</span>
-            <strong>${data.summary.overdue_maintenance}</strong>
-            <span class="kpi-note">Maintenance obligations</span>
-          </article>
-          <article class="kpi-card">
-            <span class="kpi-label">Recorded assets</span>
-            <strong>${totalAssets}</strong>
-            <span class="kpi-note">${data.systems.length} home systems</span>
-          </article>
-        </section>
-
-        <div class="dashboard-main-grid">
-          <section class="dashboard-panel dashboard-attention">
-            <div class="dashboard-panel-head">
-              <div>
-                <span class="dashboard-panel-kicker">Priority</span>
-                <h2>Needs attention</h2>
-              </div>
-              <span class="dashboard-count">${attentionCount}</span>
+        <div class="overview-grid">
+          <section class="overview-column overview-priority">
+            <div class="overview-section-head">
+              <h2>Needs attention</h2>
+              <button class="bare-link" data-route-view="work" data-route-tab="issues">Work</button>
             </div>
-            <div class="dashboard-list">
-              ${attentionRows || '<div class="dashboard-empty">Nothing currently requires attention.</div>'}
+            <div class="overview-rows">
+              ${attentionItems.map((item) => `
+                <button class="overview-row" data-asset="${esc(item.assetId)}">
+                  <span class="overview-kind">${esc(item.kind)}</span>
+                  <span class="overview-row-copy">
+                    <strong>${esc(item.title)}</strong>
+                    <small>${esc(item.meta)}</small>
+                  </span>
+                  <span class="overview-row-status">${esc(item.status)}</span>
+                </button>
+              `).join("") || '<div class="overview-empty">Nothing requires attention.</div>'}
             </div>
           </section>
 
-          <section class="dashboard-panel">
-            <div class="dashboard-panel-head">
-              <div>
-                <span class="dashboard-panel-kicker">Next 30 days</span>
-                <h2>Upcoming</h2>
-              </div>
-              <button class="dashboard-link" data-dashboard-view="maintenance">View maintenance</button>
+          <section class="overview-column">
+            <div class="overview-section-head">
+              <h2>Upcoming</h2>
+              <button class="bare-link" data-route-view="work" data-route-tab="maintenance">30 days</button>
             </div>
-            <div class="dashboard-list">
-              ${data.upcoming.slice(0, 5).map((item) => `
-                <div class="dashboard-list-row">
-                  <div class="dashboard-list-icon upcoming-mark">${Math.max(0, Number(item.days_until))}</div>
-                  <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
-                    <div class="row-title">${esc(item.title)}</div>
-                    <div class="row-meta">${esc(item.asset_name)} · ${fmtDate(item.next_due_at)}</div>
-                  </div>
+            <div class="overview-rows">
+              ${data.upcoming.slice(0, 4).map((item) => `
+                <button class="overview-row" data-asset="${esc(item.asset_id)}">
+                  <span class="overview-kind">${Math.max(0, Number(item.days_until))}D</span>
+                  <span class="overview-row-copy">
+                    <strong>${esc(item.title)}</strong>
+                    <small>${esc(item.asset_name)} · ${fmtDate(item.next_due_at)}</small>
+                  </span>
+                </button>
+              `).join("") || '<div class="overview-empty">Nothing due soon.</div>'}
+            </div>
+          </section>
+
+          <section class="overview-column overview-health">
+            <div class="overview-section-head">
+              <h2>Systems</h2>
+              <button class="bare-link" data-route-view="assets">Assets</button>
+            </div>
+            <div class="health-matrix">
+              ${data.systems.map((system) => `
+                <div class="health-matrix-row">
+                  <span>${esc(system.name)}</span>
+                  ${health(system.health)}
                 </div>
-              `).join("") || '<div class="dashboard-empty">No maintenance due soon.</div>'}
+              `).join("")}
             </div>
           </section>
         </div>
 
-        <section class="dashboard-panel dashboard-systems">
-          <div class="dashboard-panel-head">
-            <div>
-              <span class="dashboard-panel-kicker">Deterministic state</span>
-              <h2>System health</h2>
-            </div>
-            <button class="dashboard-link" data-dashboard-view="assets">View assets</button>
+        <section class="overview-recent">
+          <div class="overview-section-head">
+            <h2>Recent</h2>
+            <button class="bare-link" data-route-view="history" data-route-tab="timeline">History</button>
           </div>
-          <div class="dashboard-system-grid">
-            ${data.systems.map((system) => `
-              <article class="dashboard-system">
-                <div class="dashboard-system-head">
-                  <span>${esc(system.name)}</span>
-                  ${health(system.health)}
-                </div>
-                <div class="dashboard-system-meta">${system.asset_count} asset${Number(system.asset_count) === 1 ? "" : "s"}</div>
-                <div class="health-line"><span class="${esc(system.health)}"></span></div>
-              </article>
-            `).join("")}
-          </div>
-        </section>
-
-        <section class="dashboard-panel dashboard-activity">
-          <div class="dashboard-panel-head">
-            <div>
-              <span class="dashboard-panel-kicker">Latest events</span>
-              <h2>Recent activity</h2>
-            </div>
-            <button class="dashboard-link" data-dashboard-view="timeline">Open timeline</button>
-          </div>
-          <div class="dashboard-activity-list">
-            ${recent.map((item) => `
-              <article class="dashboard-activity-row">
+          <div class="recent-strip">
+            ${data.recent.slice(0, 3).map((item) => `
+              <div class="recent-item">
                 <time>${fmtDate(item.occurred_at)}</time>
-                <div>
-                  <div class="row-title">${esc(item.title)}</div>
-                  <div class="row-meta">${esc(item.summary ?? "")}</div>
-                </div>
-                <span class="dashboard-event-type">${esc(item.event_type.replaceAll("_", " "))}</span>
-              </article>
-            `).join("") || '<div class="dashboard-empty">No recent activity.</div>'}
+                <span>${esc(item.title)}</span>
+              </div>
+            `).join("") || '<div class="overview-empty">No recent activity.</div>'}
           </div>
         </section>
       </div>
     `;
 
     wireAssetLinks();
-    document.querySelectorAll("[data-dashboard-view]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const view = button.dataset.dashboardView;
-        if (!view || !(view in views)) return;
-        history.pushState({ view }, "", viewUrl(view));
-        void selectView(view);
-      });
+    document.querySelectorAll("[data-route-view]").forEach((button) => {
+      button.addEventListener("click", () => navigateTo(button.dataset.routeView, button.dataset.routeTab ?? null));
     });
   } catch (error) { fail(error); }
 }
