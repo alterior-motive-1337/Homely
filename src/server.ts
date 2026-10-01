@@ -18,19 +18,41 @@ import {
 import { hasHome, seedDemo } from "./seed.js";
 import { createAgentRuntime } from "./agent/runtime.js";
 import { GoogleDriveIntegration } from "./integrations/googleDrive.js";
+import { DriveBackupService } from "./integrations/driveBackup.js";
+import { loginPage, OwnerAuth } from "./security/auth.js";
 
-const db = openDatabase();
-migrate(db);
-if (!hasHome(db)) seedDemo(db);
-const agentRuntime = createAgentRuntime(db);
-const googleDrive = new GoogleDriveIntegration();
+function securityHeaders(res: http.ServerResponse): void {
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("x-frame-options", "DENY");
+  res.setHeader("referrer-policy", "no-referrer");
+  res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
+}
 
-function sendJson(res: http.ServerResponse, status: number, body: unknown) {
+function sendJson(
+  res: http.ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {}
+) {
+  securityHeaders(res);
+  for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
 }
 
-async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+function sendHtml(
+  res: http.ServerResponse,
+  status: number,
+  body: string,
+  headers: Record<string, string> = {}
+) {
+  securityHeaders(res);
+  for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
+  res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
+  res.end(body);
+}
+
+async function readBody(req: http.IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -39,12 +61,22 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
     if (size > 1_000_000) throw new DomainError("Request body is too large.", 413);
     chunks.push(buffer);
   }
-  if (!chunks.length) return {};
+  return Buffer.concat(chunks);
+}
+
+async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  const body = await readBody(req);
+  if (!body.length) return {};
   try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+    return JSON.parse(body.toString("utf8")) as Record<string, unknown>;
   } catch {
     throw new DomainError("Request body must be valid JSON.");
   }
+}
+
+async function readForm(req: http.IncomingMessage): Promise<URLSearchParams> {
+  const body = await readBody(req);
+  return new URLSearchParams(body.toString("utf8"));
 }
 
 function mimeType(filePath: string): string {
@@ -64,146 +96,267 @@ function serveStatic(res: http.ServerResponse, pathname: string) {
   }
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     const indexPath = path.join(config.publicDir, "index.html");
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    return res.end(fs.readFileSync(indexPath));
+    return sendHtml(res, 200, fs.readFileSync(indexPath, "utf8"));
   }
+  securityHeaders(res);
   res.writeHead(200, { "content-type": mimeType(filePath) });
   return res.end(fs.readFileSync(filePath));
 }
 
-const server = http.createServer(async (req, res) => {
-  if (!req.url) return sendJson(res, 400, { error: "Missing URL" });
-  const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+async function main(): Promise<void> {
+  const auth = new OwnerAuth({
+    enabled: config.authEnabled,
+    password: config.ownerPassword,
+    secret: config.sessionSecret,
+    sessionDays: config.sessionDays,
+    secureCookies: config.secureCookies
+  });
 
-  try {
-    if (req.method === "GET" && url.pathname === "/api/health") return sendJson(res, 200, { ok: true, service: "Homely" });
-    if (req.method === "GET" && url.pathname === "/api/overview") return sendJson(res, 200, getOverview(db));
-    if (req.method === "GET" && url.pathname === "/api/systems") return sendJson(res, 200, listSystems(db));
-    if (req.method === "GET" && url.pathname === "/api/assets") return sendJson(res, 200, listAssets(db));
-    if (req.method === "GET" && url.pathname.startsWith("/api/assets/")) {
-      const asset = getAsset(db, decodeURIComponent(url.pathname.slice("/api/assets/".length)));
-      return asset ? sendJson(res, 200, asset) : sendJson(res, 404, { error: "Asset not found" });
-    }
-    if (req.method === "GET" && url.pathname === "/api/issues") return sendJson(res, 200, listIssues(db));
-    if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
-    if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
-    if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
-    if (req.method === "GET" && url.pathname === "/api/transactions") return sendJson(res, 200, listTransactions(db));
-    if (req.method === "GET" && url.pathname === "/api/integrations/status") {
-      return sendJson(res, 200, {
-        ai: agentRuntime.status,
-        voice: { enabled: config.voiceEnabled, available: false },
-        googleDrive: googleDrive.status
-      });
-    }
+  const googleDrive = new GoogleDriveIntegration();
+  const backups = new DriveBackupService(googleDrive);
+  backups.assertReady();
+  await backups.restoreIfDatabaseMissing();
 
-    if (req.method === "GET" && url.pathname === "/api/google-drive/connect") {
-      const location = googleDrive.getAuthorizationUrl();
-      res.writeHead(302, { location });
-      return res.end();
-    }
+  const db = openDatabase();
+  migrate(db);
+  const seeded = !hasHome(db);
+  if (seeded) seedDemo(db);
 
-    if (req.method === "GET" && url.pathname === "/api/google-drive/callback") {
-      const error = url.searchParams.get("error");
-      if (error) {
-        res.writeHead(302, { location: "/?view=documents&driveError=" + encodeURIComponent(error) });
+  const agentRuntime = createAgentRuntime(db);
+
+  if (seeded && config.backupEnabled) {
+    await backups.backupNow(db, "initial-seed");
+  }
+  backups.startPeriodic(db);
+
+  async function durable<T extends Record<string, unknown>>(result: T, reason: string): Promise<T & {
+    durability: { driveBackup: "OK" | "DISABLED" | "DEGRADED" };
+  }> {
+    if (!config.backupEnabled) {
+      return { ...result, durability: { driveBackup: "DISABLED" } };
+    }
+    try {
+      await backups.backupNow(db, reason);
+      return { ...result, durability: { driveBackup: "OK" } };
+    } catch (error) {
+      console.error("Homely state committed but off-site backup is degraded:", error);
+      return { ...result, durability: { driveBackup: "DEGRADED" } };
+    }
+  }
+
+  const server = http.createServer(async (req, res) => {
+    if (!req.url) return sendJson(res, 400, { error: "Missing URL" });
+    const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+
+    try {
+      if (req.method === "GET" && url.pathname === "/api/health") {
+        return sendJson(res, 200, { ok: true, service: "Homely" });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/auth/status") {
+        return sendJson(res, 200, {
+          enabled: auth.enabled,
+          authenticated: auth.isAuthenticated(req)
+        });
+      }
+
+      if (req.method === "GET" && url.pathname === "/auth/login") {
+        if (!auth.enabled || auth.isAuthenticated(req)) {
+          res.writeHead(303, { location: "/" });
+          return res.end();
+        }
+        return sendHtml(res, 200, loginPage());
+      }
+
+      if (req.method === "POST" && url.pathname === "/auth/login") {
+        const form = await readForm(req);
+        const password = form.get("password") ?? "";
+        if (!auth.verifyPassword(password)) {
+          return sendHtml(res, 401, loginPage("Incorrect owner password."));
+        }
+        res.writeHead(303, {
+          location: "/",
+          "set-cookie": auth.sessionCookie(),
+          "cache-control": "no-store"
+        });
         return res.end();
       }
 
-      const code = url.searchParams.get("code");
-      if (!code) throw new DomainError("Google Drive authorization code is missing.");
-      await googleDrive.exchangeCode(code);
-
-      const picked = url.searchParams.get("picked_file_ids") ?? "";
-      const location = picked
-        ? "/?view=documents&drivePicked=" + encodeURIComponent(picked)
-        : "/?view=documents&driveConnected=1";
-      res.writeHead(302, { location });
-      return res.end();
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/google-drive/files") {
-      const ids = (url.searchParams.get("ids") ?? "").split(",").map((id) => id.trim()).filter(Boolean);
-      if (!ids.length) throw new DomainError("No Drive file IDs were selected.");
-      return sendJson(res, 200, await googleDrive.getSelectedFiles(ids));
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/google-drive/disconnect") {
-      googleDrive.disconnect();
-      return sendJson(res, 200, { connected: false });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/agent/respond") {
-      const body = await readJson(req);
-      const message = String(body.message ?? "").trim();
-      if (!message) throw new DomainError("Message is required.");
-      if (message.length > 4000) throw new DomainError("Message is too long.");
-      if (!agentRuntime.provider) {
-        return sendJson(res, 503, {
-          error: "Agent unavailable. Structured Homely functionality remains operational."
+      if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+        return sendJson(res, 200, { authenticated: false }, {
+          "set-cookie": auth.clearCookie(),
+          "cache-control": "no-store"
         });
       }
 
-      try {
-        const response = await agentRuntime.provider.respond({
-          message,
-          previousResponseId: body.previousResponseId === null || body.previousResponseId === undefined
-            ? null
-            : String(body.previousResponseId)
+      if (!auth.isAuthenticated(req)) {
+        if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
+          res.writeHead(303, { location: "/auth/login" });
+          return res.end();
+        }
+        return sendJson(res, 401, { error: "Owner authentication required." });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/overview") return sendJson(res, 200, getOverview(db));
+      if (req.method === "GET" && url.pathname === "/api/systems") return sendJson(res, 200, listSystems(db));
+      if (req.method === "GET" && url.pathname === "/api/assets") return sendJson(res, 200, listAssets(db));
+      if (req.method === "GET" && url.pathname.startsWith("/api/assets/")) {
+        const asset = getAsset(db, decodeURIComponent(url.pathname.slice("/api/assets/".length)));
+        return asset ? sendJson(res, 200, asset) : sendJson(res, 404, { error: "Asset not found" });
+      }
+      if (req.method === "GET" && url.pathname === "/api/issues") return sendJson(res, 200, listIssues(db));
+      if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
+      if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
+      if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
+      if (req.method === "GET" && url.pathname === "/api/transactions") return sendJson(res, 200, listTransactions(db));
+      if (req.method === "GET" && url.pathname === "/api/integrations/status") {
+        return sendJson(res, 200, {
+          auth: { enabled: auth.enabled },
+          ai: agentRuntime.status,
+          voice: { enabled: config.voiceEnabled, available: false },
+          googleDrive: googleDrive.status,
+          backup: backups.status
         });
-        return sendJson(res, 200, response);
-      } catch (error) {
-        console.error("Homely agent provider failed:", error);
-        return sendJson(res, 503, {
-          error: "Agent temporarily unavailable. Structured Homely functionality remains operational."
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/google-drive/connect") {
+        const location = googleDrive.getAuthorizationUrl();
+        res.writeHead(302, { location });
+        return res.end();
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/google-drive/callback") {
+        const error = url.searchParams.get("error");
+        if (error) {
+          res.writeHead(302, { location: "/?view=documents&driveError=" + encodeURIComponent(error) });
+          return res.end();
+        }
+
+        const code = url.searchParams.get("code");
+        if (!code) throw new DomainError("Google Drive authorization code is missing.");
+        await googleDrive.exchangeCode(code);
+
+        const picked = url.searchParams.get("picked_file_ids") ?? "";
+        const location = picked
+          ? "/?view=documents&drivePicked=" + encodeURIComponent(picked)
+          : "/?view=documents&driveConnected=1";
+        res.writeHead(302, { location });
+        return res.end();
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/google-drive/files") {
+        const ids = (url.searchParams.get("ids") ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+        if (!ids.length) throw new DomainError("No Drive file IDs were selected.");
+        return sendJson(res, 200, await googleDrive.getSelectedFiles(ids));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/google-drive/disconnect") {
+        googleDrive.disconnect();
+        return sendJson(res, 200, { connected: false });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/agent/respond") {
+        const body = await readJson(req);
+        const message = String(body.message ?? "").trim();
+        if (!message) throw new DomainError("Message is required.");
+        if (message.length > 4000) throw new DomainError("Message is too long.");
+        if (!agentRuntime.provider) {
+          return sendJson(res, 503, {
+            error: "Agent unavailable. Structured Homely functionality remains operational."
+          });
+        }
+
+        try {
+          const response = await agentRuntime.provider.respond({
+            message,
+            previousResponseId: body.previousResponseId === null || body.previousResponseId === undefined
+              ? null
+              : String(body.previousResponseId)
+          });
+          return sendJson(res, 200, response);
+        } catch (error) {
+          console.error("Homely agent provider failed:", error);
+          return sendJson(res, 503, {
+            error: "Agent temporarily unavailable. Structured Homely functionality remains operational."
+          });
+        }
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/transactions/preview") {
+        const body = await readJson(req);
+        const result = proposeTransaction(db, {
+          actionType: String(body.actionType ?? "") as ActionType,
+          payload: (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>,
+          reason: String(body.reason ?? ""),
+          requestText: body.requestText === undefined ? null : String(body.requestText),
+          origin: "WEB_UI"
         });
+        return sendJson(res, 201, result);
       }
+
+      const transactionMatch = url.pathname.match(/^\/api\/transactions\/([^/]+)(?:\/(commit|reject|undo))?$/);
+      if (transactionMatch) {
+        const transactionId = decodeURIComponent(transactionMatch[1] ?? "");
+        const operation = transactionMatch[2];
+
+        if (req.method === "GET" && !operation) {
+          const transaction = getTransaction(db, transactionId);
+          return transaction
+            ? sendJson(res, 200, transaction)
+            : sendJson(res, 404, { error: "Transaction not found" });
+        }
+
+        if (req.method === "POST" && operation === "commit") {
+          const result = commitTransaction(db, transactionId);
+          return sendJson(res, 200, await durable(result, "transaction-commit"));
+        }
+
+        if (req.method === "POST" && operation === "reject") {
+          const result = rejectTransaction(db, transactionId);
+          return sendJson(res, 200, await durable(result, "transaction-reject"));
+        }
+
+        if (req.method === "POST" && operation === "undo") {
+          const result = undoTransaction(db, transactionId);
+          return sendJson(res, 200, await durable(result, "transaction-undo"));
+        }
+      }
+
+      if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "Not found" });
+      return serveStatic(res, url.pathname);
+    } catch (error) {
+      if (error instanceof DomainError) return sendJson(res, error.status, { error: error.message });
+      console.error(error);
+      return sendJson(res, 500, { error: "Homely could not complete this request." });
     }
+  });
 
-    if (req.method === "POST" && url.pathname === "/api/transactions/preview") {
-      const body = await readJson(req);
-      const result = proposeTransaction(db, {
-        actionType: String(body.actionType ?? "") as ActionType,
-        payload: (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>,
-        reason: String(body.reason ?? ""),
-        requestText: body.requestText === undefined ? null : String(body.requestText),
-        origin: "WEB_UI"
-      });
-      return sendJson(res, 201, result);
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`Homely received ${signal}; preserving state before shutdown.`);
+    backups.stopPeriodic();
+    try {
+      if (config.backupEnabled) await backups.backupNow(db, "shutdown");
+    } catch (error) {
+      console.error("Final Homely backup failed during shutdown:", error);
     }
+    server.close(() => {
+      db.close();
+      process.exit(0);
+    });
+  };
 
-    const transactionMatch = url.pathname.match(/^\/api\/transactions\/([^/]+)(?:\/(commit|reject|undo))?$/);
-    if (transactionMatch) {
-      const transactionId = decodeURIComponent(transactionMatch[1] ?? "");
-      const operation = transactionMatch[2];
+  process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
+  process.once("SIGINT", () => { void shutdown("SIGINT"); });
 
-      if (req.method === "GET" && !operation) {
-        const transaction = getTransaction(db, transactionId);
-        return transaction
-          ? sendJson(res, 200, transaction)
-          : sendJson(res, 404, { error: "Transaction not found" });
-      }
+  server.listen(config.port, config.host, () => {
+    console.log(`Homely running at http://${config.host}:${config.port}`);
+  });
+}
 
-      if (req.method === "POST" && operation === "commit") {
-        return sendJson(res, 200, commitTransaction(db, transactionId));
-      }
-
-      if (req.method === "POST" && operation === "reject") {
-        return sendJson(res, 200, rejectTransaction(db, transactionId));
-      }
-
-      if (req.method === "POST" && operation === "undo") {
-        return sendJson(res, 200, undoTransaction(db, transactionId));
-      }
-    }
-
-    if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "Not found" });
-    return serveStatic(res, url.pathname);
-  } catch (error) {
-    if (error instanceof DomainError) return sendJson(res, error.status, { error: error.message });
-    console.error(error);
-    return sendJson(res, 500, { error: "Homely could not complete this request." });
-  }
+main().catch((error) => {
+  console.error("Homely failed to start:", error);
+  process.exit(1);
 });
-
-server.listen(config.port, () => console.log(`Homely running at http://localhost:${config.port}`));
