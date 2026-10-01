@@ -42,6 +42,24 @@ const fmtDateTime = (value) => value
 const todayInput = () => new Date().toISOString().slice(0, 10);
 const health = (value) => `<span class="health ${esc(value)}">${esc(value)}</span>`;
 
+function documentHref(doc) {
+  const value = String(doc?.web_view_link ?? doc?.local_path ?? "").trim();
+  if (!value) return null;
+  if (value.startsWith("/")) return value;
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.protocol === "https:" || url.protocol === "http:") return value;
+  } catch {}
+  return null;
+}
+
+function documentLink(doc) {
+  const href = documentHref(doc);
+  return href
+    ? `<a class="doc-link" href="${esc(href)}" target="_blank" rel="noreferrer">${esc(doc.title)}</a>`
+    : esc(doc.title);
+}
+
 async function api(path, options = {}) {
   const init = { ...options };
   if (init.body && typeof init.body !== "string") {
@@ -451,9 +469,7 @@ async function showDocuments() {
           <tbody>
             ${documents.map((doc) => `
               <tr>
-                <td>${doc.local_path
-                  ? `<a class="doc-link" href="${esc(doc.local_path)}" target="_blank" rel="noreferrer">${esc(doc.title)}</a>`
-                  : esc(doc.title)}</td>
+                <td>${documentLink(doc)}</td>
                 <td>${esc(doc.type)}</td>
                 <td>${esc(doc.provider)}</td>
                 <td>${doc.asset_id ? `<button class="button small" data-asset="${esc(doc.asset_id)}">${esc(doc.asset_name ?? "Asset")}</button>` : "—"}</td>
@@ -761,7 +777,7 @@ async function openAsset(assetId) {
       <section class="detail-section">
         <h3>Documents</h3>
         <div class="list">
-          ${asset.documents.map((doc) => `<div class="list-row"><a class="doc-link" href="${esc(doc.local_path ?? "#")}" target="_blank" rel="noreferrer">${esc(doc.title)}</a><div class="row-meta">${esc(doc.type)} · ${esc(doc.provider)}</div></div>`).join("") || '<div class="empty">No documents attached.</div>'}
+          ${asset.documents.map((doc) => `<div class="list-row">${documentLink(doc)}<div class="row-meta">${esc(doc.type)} · ${esc(doc.provider)}</div></div>`).join("") || '<div class="empty">No documents attached.</div>'}
         </div>
       </section>
       <section class="detail-section"><h3>History</h3>${timelineMarkup(asset.history)}</section>
