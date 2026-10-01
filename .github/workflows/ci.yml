@@ -133,7 +133,8 @@ jobs:
           await page.getByRole("button", { name: "Preview" }).click();
           await page.getByText("PROPOSED TRANSACTION").waitFor();
           await page.getByRole("button", { name: "Approve & commit" }).click();
-          await page.getByText("Browser transaction issue").waitFor();
+          await page.locator("#action-dialog").waitFor({ state: "hidden" });
+          await page.locator(".list-row .row-title").filter({ hasText: "Browser transaction issue" }).waitFor();
 
           await page.getByRole("button", { name: "Transactions" }).click();
           const transactionRow = page.locator(".transaction-row").filter({ hasText: 'Homeowner reported "Browser transaction issue"' });
