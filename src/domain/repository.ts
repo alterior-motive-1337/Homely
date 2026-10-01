@@ -61,6 +61,7 @@ export function getAsset(db: HomelyDatabase, assetId: string) {
     health: healthForAsset(db, assetId, asset.health_observed_at),
     issues: db.prepare("SELECT * FROM issues WHERE asset_id = ? ORDER BY detected_at DESC").all(assetId),
     maintenance: db.prepare("SELECT * FROM maintenance_rules WHERE asset_id = ? ORDER BY next_due_at").all(assetId),
+    maintenance_tasks: db.prepare("SELECT * FROM maintenance_tasks WHERE asset_id = ? AND status != 'CANCELLED' ORDER BY due_at").all(assetId),
     documents: db.prepare("SELECT * FROM documents WHERE asset_id = ? ORDER BY created_at DESC").all(assetId),
     history: db.prepare("SELECT * FROM timeline_events WHERE asset_id = ? ORDER BY occurred_at DESC LIMIT 30").all(assetId)
   };
@@ -86,6 +87,19 @@ export function listMaintenance(db: HomelyDatabase) {
      JOIN assets a ON a.id = m.asset_id JOIN systems s ON s.id = a.system_id
      WHERE m.active = 1 ORDER BY m.next_due_at`
   ).all(today, today);
+}
+
+export function listMaintenanceTasks(db: HomelyDatabase) {
+  return db.prepare(
+    `SELECT t.*, a.name AS asset_name, s.name AS system_name
+     FROM maintenance_tasks t
+     JOIN assets a ON a.id = t.asset_id
+     JOIN systems s ON s.id = a.system_id
+     WHERE t.status != 'CANCELLED'
+     ORDER BY
+       CASE t.status WHEN 'OPEN' THEN 1 WHEN 'IN_PROGRESS' THEN 2 ELSE 3 END,
+       COALESCE(t.due_at, '9999-12-31'), t.created_at DESC`
+  ).all();
 }
 
 export function getTimeline(db: HomelyDatabase, limit = 80) {
