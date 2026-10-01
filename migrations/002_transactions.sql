@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   approved_at TEXT,
   committed_at TEXT,
   reversed_at TEXT,
+  rejected_at TEXT,
   reversal_of TEXT REFERENCES transactions(id) ON DELETE SET NULL
 );
 
