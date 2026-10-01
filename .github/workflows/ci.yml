@@ -157,7 +157,7 @@ jobs:
           await page.getByText("Inspect and clear north gutters").waitFor();
 
           await page.getByRole("button", { name: "Documents" }).click();
-          await page.getByText("Sunsynk 8 kW inverter warranty").waitFor();
+          await page.locator("#content").getByText("Sunsynk 8 kW inverter warranty").waitFor();
 
           await page.setViewportSize({ width: 390, height: 844 });
           await page.getByRole("button", { name: "Timeline" }).click();
