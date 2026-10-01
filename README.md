@@ -65,16 +65,17 @@ Initial tools:
 - `get_home_summary`
 - `list_assets`
 - `get_asset`
+- `list_issues`
+- `list_documents`
 - `get_asset_history`
 - `search_history`
 - `list_maintenance_due`
 - `preview_action`
-- `commit_action`
-- `reject_action`
-- `undo_action`
 - `get_transaction`
 
-Read tools query the same SQLite/domain state as the web application. Mutation tools route through Homely transactions; `preview_action` is inert, while commit and undo require an explicit `userApproved: true` argument and remain audited.
+Read tools query the same SQLite/domain state as the web application and advertise explicit MCP read-only/closed-world annotations. `preview_action` may create an audited transaction proposal but cannot change home state.
+
+Homely intentionally does **not** expose commit, reject, or undo operations through MCP. An MCP host/model can investigate the property and propose a structured action; the human approves or rejects that proposal inside Homely, and only Homely's own transaction interface can commit or reverse state. This preserves the core rule: **AI proposes. Homely commits.**
 
 
 ## Optional OpenAI agent
