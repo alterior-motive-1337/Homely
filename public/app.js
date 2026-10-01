@@ -146,84 +146,162 @@ async function showOverview() {
   loading();
   try {
     const data = await api("/api/overview");
+    const healthySystems = data.systems.filter((system) => system.health === "HEALTHY").length;
+    const totalAssets = data.systems.reduce((sum, system) => sum + Number(system.asset_count ?? 0), 0);
+    const attentionCount = data.attention.issues.length + data.attention.maintenance.length;
+
     const attentionRows = [
       ...data.attention.issues.map((item) => `
-        <div class="list-row">
-          <div class="row-main">
-            <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
-              <div class="row-title">${esc(item.title)}</div>
-              <div class="row-meta">${esc(item.asset_name)} · ${esc(item.system_name)}</div>
-            </div>
-            <span class="badge open">${esc(item.severity)}</span>
+        <div class="dashboard-list-row">
+          <div class="dashboard-list-icon issue-mark">!</div>
+          <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
+            <div class="row-title">${esc(item.title)}</div>
+            <div class="row-meta">${esc(item.asset_name)} · ${esc(item.system_name)}</div>
           </div>
+          <span class="badge open">${esc(item.severity)}</span>
         </div>`),
       ...data.attention.maintenance.map((item) => `
-        <div class="list-row">
-          <div class="row-main">
-            <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
-              <div class="row-title">${esc(item.title)}</div>
-              <div class="row-meta">${esc(item.asset_name)} · due ${fmtDate(item.next_due_at)}</div>
-            </div>
-            <span class="badge overdue">${item.days_overdue}d overdue</span>
+        <div class="dashboard-list-row">
+          <div class="dashboard-list-icon maintenance-mark">M</div>
+          <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
+            <div class="row-title">${esc(item.title)}</div>
+            <div class="row-meta">${esc(item.asset_name)} · due ${fmtDate(item.next_due_at)}</div>
           </div>
+          <span class="badge overdue">${item.days_overdue}d overdue</span>
         </div>`)
     ].join("");
 
+    const recent = data.recent.slice(0, 5);
+
     content.innerHTML = `
-      <div class="hero">
-        <div>
-          <p class="eyebrow">ACTIVE PROPERTY</p>
-          <div class="home-title">${esc(data.home.name)}</div>
-          <p class="lede">Authoritative property state with deterministic health and audited changes. ${data.summary.systems_needing_attention} systems currently require attention.</p>
-        </div>
-        <div class="summary-strip">
-          <div class="metric"><strong>${data.summary.systems_needing_attention}</strong><span>systems need attention</span></div>
-          <div class="metric"><strong>${data.summary.open_issues}</strong><span>active issues</span></div>
-          <div class="metric"><strong>${data.summary.overdue_maintenance}</strong><span>overdue maintenance</span></div>
-        </div>
-      </div>
-      <section class="section">
-        <div class="section-head">
-          <h2>Home health</h2>
-          <span class="section-note">Derived from recorded state</span>
-        </div>
-        <div class="system-grid">
-          ${data.systems.map((system) => `
-            <article class="system">
-              <div class="system-top"><h3>${esc(system.name)}</h3>${health(system.health)}</div>
-              <p>${system.asset_count} recorded asset${system.asset_count === 1 ? "" : "s"}</p>
-            </article>
-          `).join("")}
-        </div>
-      </section>
-      <div class="two-col">
-        <section class="section">
-          <div class="section-head"><h2>Needs attention</h2></div>
-          <div class="list">${attentionRows || '<div class="empty">Nothing requires attention.</div>'}</div>
+      <div class="dashboard">
+        <section class="dashboard-property">
+          <div>
+            <p class="eyebrow">ACTIVE PROPERTY</p>
+            <div class="dashboard-property-name">${esc(data.home.name)}</div>
+            <p class="dashboard-property-copy">Operational memory, maintenance and property state in one view.</p>
+          </div>
+          <div class="dashboard-actions" aria-label="Quick actions">
+            <button class="button" data-dashboard-view="issues">Report issue</button>
+            <button class="button" data-dashboard-view="maintenance">Plan maintenance</button>
+            <button class="button primary" data-dashboard-view="agent">Ask Homely</button>
+          </div>
         </section>
-        <section class="section">
-          <div class="section-head"><h2>Upcoming</h2><span class="section-note">Next 30 days</span></div>
-          <div class="list">
-            ${data.upcoming.map((item) => `
-              <div class="list-row">
-                <div class="row-main">
+
+        <section class="dashboard-kpis" aria-label="Property status">
+          <article class="kpi-card ${data.summary.systems_needing_attention ? "kpi-attention" : ""}">
+            <span class="kpi-label">Systems</span>
+            <strong>${healthySystems}<small>/${data.systems.length}</small></strong>
+            <span class="kpi-note">${healthySystems === data.systems.length ? "All healthy" : `${data.summary.systems_needing_attention} need attention`}</span>
+          </article>
+          <article class="kpi-card ${data.summary.open_issues ? "kpi-alert" : ""}">
+            <span class="kpi-label">Active issues</span>
+            <strong>${data.summary.open_issues}</strong>
+            <span class="kpi-note">${data.summary.open_issues ? "Requires review" : "None open"}</span>
+          </article>
+          <article class="kpi-card ${data.summary.overdue_maintenance ? "kpi-attention" : ""}">
+            <span class="kpi-label">Overdue</span>
+            <strong>${data.summary.overdue_maintenance}</strong>
+            <span class="kpi-note">Maintenance obligations</span>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">Recorded assets</span>
+            <strong>${totalAssets}</strong>
+            <span class="kpi-note">${data.systems.length} home systems</span>
+          </article>
+        </section>
+
+        <div class="dashboard-main-grid">
+          <section class="dashboard-panel dashboard-attention">
+            <div class="dashboard-panel-head">
+              <div>
+                <span class="dashboard-panel-kicker">Priority</span>
+                <h2>Needs attention</h2>
+              </div>
+              <span class="dashboard-count">${attentionCount}</span>
+            </div>
+            <div class="dashboard-list">
+              ${attentionRows || '<div class="dashboard-empty">Nothing currently requires attention.</div>'}
+            </div>
+          </section>
+
+          <section class="dashboard-panel">
+            <div class="dashboard-panel-head">
+              <div>
+                <span class="dashboard-panel-kicker">Next 30 days</span>
+                <h2>Upcoming</h2>
+              </div>
+              <button class="dashboard-link" data-dashboard-view="maintenance">View maintenance</button>
+            </div>
+            <div class="dashboard-list">
+              ${data.upcoming.slice(0, 5).map((item) => `
+                <div class="dashboard-list-row">
+                  <div class="dashboard-list-icon upcoming-mark">${Math.max(0, Number(item.days_until))}</div>
                   <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
                     <div class="row-title">${esc(item.title)}</div>
                     <div class="row-meta">${esc(item.asset_name)} · ${fmtDate(item.next_due_at)}</div>
                   </div>
-                  <span class="badge">${item.days_until}d</span>
                 </div>
-              </div>
-            `).join("") || '<div class="empty">No maintenance due in the next 30 days.</div>'}
+              `).join("") || '<div class="dashboard-empty">No maintenance due soon.</div>'}
+            </div>
+          </section>
+        </div>
+
+        <section class="dashboard-panel dashboard-systems">
+          <div class="dashboard-panel-head">
+            <div>
+              <span class="dashboard-panel-kicker">Deterministic state</span>
+              <h2>System health</h2>
+            </div>
+            <button class="dashboard-link" data-dashboard-view="assets">View assets</button>
+          </div>
+          <div class="dashboard-system-grid">
+            ${data.systems.map((system) => `
+              <article class="dashboard-system">
+                <div class="dashboard-system-head">
+                  <span>${esc(system.name)}</span>
+                  ${health(system.health)}
+                </div>
+                <div class="dashboard-system-meta">${system.asset_count} asset${Number(system.asset_count) === 1 ? "" : "s"}</div>
+                <div class="health-line"><span class="${esc(system.health)}"></span></div>
+              </article>
+            `).join("")}
+          </div>
+        </section>
+
+        <section class="dashboard-panel dashboard-activity">
+          <div class="dashboard-panel-head">
+            <div>
+              <span class="dashboard-panel-kicker">Latest events</span>
+              <h2>Recent activity</h2>
+            </div>
+            <button class="dashboard-link" data-dashboard-view="timeline">Open timeline</button>
+          </div>
+          <div class="dashboard-activity-list">
+            ${recent.map((item) => `
+              <article class="dashboard-activity-row">
+                <time>${fmtDate(item.occurred_at)}</time>
+                <div>
+                  <div class="row-title">${esc(item.title)}</div>
+                  <div class="row-meta">${esc(item.summary ?? "")}</div>
+                </div>
+                <span class="dashboard-event-type">${esc(item.event_type.replaceAll("_", " "))}</span>
+              </article>
+            `).join("") || '<div class="dashboard-empty">No recent activity.</div>'}
           </div>
         </section>
       </div>
-      <section class="section">
-        <div class="section-head"><h2>Recent history</h2></div>
-        ${timelineMarkup(data.recent)}
-      </section>
     `;
+
     wireAssetLinks();
+    document.querySelectorAll("[data-dashboard-view]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const view = button.dataset.dashboardView;
+        if (!view || !(view in views)) return;
+        history.pushState({ view }, "", viewUrl(view));
+        void selectView(view);
+      });
+    });
   } catch (error) { fail(error); }
 }
 
