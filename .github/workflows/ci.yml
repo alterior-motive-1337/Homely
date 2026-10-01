@@ -65,6 +65,10 @@ jobs:
           const tap = await (await get("/api/assets/asset-tap")).json();
           assert(tap.history.some((event) => event.title.includes("aerator cleaned")), "kitchen tap history missing");
 
+          const integrations = await (await get("/api/integrations/status")).json();
+          assert(integrations.ai.available === false, "AI should be optional and disabled in CI");
+          assert(integrations.ai.provider === "openai", "OpenAI provider status missing");
+
           const documents = await (await get("/api/documents")).json();
           assert(documents.length === 3, "expected three seeded documents");
           assert(documents.some((doc) => doc.title.includes("inverter warranty") && doc.asset_name === "8 kW inverter"), "document association missing");
@@ -158,6 +162,9 @@ jobs:
 
           await page.getByRole("button", { name: "Documents" }).click();
           await page.locator("#content").getByText("Sunsynk 8 kW inverter warranty").waitFor();
+
+          await page.getByRole("button", { name: "Agent" }).click();
+          await page.locator("#content").getByText("Structured Homely remains operational.").waitFor();
 
           await page.setViewportSize({ width: 390, height: 844 });
           await page.getByRole("button", { name: "Timeline" }).click();
