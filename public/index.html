@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b0d0e">
+  <title>Homely</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand"><span class="brand-mark">H</span><div><strong>Homely</strong><small>Home memory</small></div></div>
+      <nav id="nav">
+        <button class="nav-item active" data-view="overview">Overview</button>
+        <button class="nav-item" data-view="assets">Assets</button>
+        <button class="nav-item" data-view="issues">Issues</button>
+        <button class="nav-item" data-view="maintenance">Maintenance</button>
+        <button class="nav-item" data-view="timeline">Timeline</button>
+      </nav>
+      <div class="sidebar-foot"><span class="status-dot"></span><span>Local state active</span></div>
+    </aside>
+    <main class="workspace">
+      <header class="topbar">
+        <div><p class="eyebrow">PROPERTY OPERATING MEMORY</p><h1 id="page-title">Overview</h1></div>
+        <div class="date" id="today"></div>
+      </header>
+      <section id="content" class="content" aria-live="polite"></section>
+    </main>
+  </div>
+  <dialog id="asset-dialog" class="asset-dialog">
+    <button class="dialog-close" id="dialog-close" aria-label="Close asset details">×</button>
+    <div id="asset-detail"></div>
+  </dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

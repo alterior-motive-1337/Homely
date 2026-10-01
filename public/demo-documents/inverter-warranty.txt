@@ -1,0 +1,15 @@
+HOMELY DEMO RECORD — SUNSYNK INVERTER WARRANTY
+
+Asset: 8 kW inverter
+Manufacturer: Sunsynk
+Model: SUN-8K-SG01LP1
+Serial: INV-8K-24-0417
+
+Installation date: 21 January 2025
+Warranty commencement: 21 January 2025
+Recorded warranty period: 5 years
+Recorded warranty expiry: 20 January 2030
+
+Installer: SolarCore Gauteng
+
+This file is realistic seeded demonstration data for Homely and is not a manufacturer-issued warranty certificate.

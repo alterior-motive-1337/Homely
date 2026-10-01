@@ -1,0 +1,12 @@
+HOMELY DEMO RECORD — REFRIGERATOR WARRANTY
+
+Manufacturer: Samsung
+Model: RF65A967ES9
+Serial: RF65-770142
+
+Purchase date: 15 March 2025
+Installation date: 18 March 2025
+Recorded warranty start: 18 March 2025
+Recorded warranty expiry: 17 March 2028
+
+This file is seeded demonstration data for Homely.

@@ -1,0 +1,15 @@
+HOMELY DEMO RECORD — SOLAR INSTALLATION INVOICE
+
+Reference: SC-250121
+Date: 21 January 2025
+Installer: SolarCore Gauteng
+
+Installed equipment:
+- Sunsynk 8 kW hybrid inverter
+- 2 x Hubble AM-5 batteries
+- 16 x JA Solar 420 W modules
+
+Recorded project equipment value: R111,000.00
+Commissioning status: Complete
+
+This file is seeded demonstration data for Homely.
