@@ -6,7 +6,8 @@ import {
   listAssets,
   listDocuments,
   listIssues,
-  listMaintenance
+  listMaintenance,
+  listProjects
 } from "../domain/repository.js";
 import { DomainError, getTransaction, proposeTransaction, type ActionType } from "../domain/transactions.js";
 
@@ -19,6 +20,7 @@ export type HomelyToolName =
   | "get_asset_history"
   | "search_history"
   | "list_maintenance_due"
+  | "list_projects"
   | "preview_action"
   | "get_transaction";
 
@@ -147,6 +149,25 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
   },
   {
     type: "function",
+    name: "list_projects",
+    description: "List property projects with status, dates, budget and notes.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        status: {
+          anyOf: [
+            { type: "string", enum: ["PLANNED","ACTIVE","PAUSED","COMPLETE","CANCELLED","ALL"] },
+            { type: "null" }
+          ]
+        }
+      },
+      required: ["status"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
     name: "preview_action",
     description: "Create an inert Homely transaction proposal after grounding the action in home state/history. This never changes home state. The application will separately ask the human to approve or reject it.",
     strict: true,
@@ -155,7 +176,7 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
       properties: {
         actionType: {
           type: "string",
-          enum: ["REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE"]
+          enum: ["REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]
         },
         payload: {
           type: "object",
@@ -250,6 +271,11 @@ export function executeHomelyTool(
   if (name === "list_maintenance_due") {
     const state = String(args.state ?? "ALL");
     return listMaintenance(db).filter((row) => state === "ALL" || String(row.due_state) === state);
+  }
+
+  if (name === "list_projects") {
+    const status = args.status === null || args.status === undefined ? "ALL" : String(args.status);
+    return listProjects(db).filter((row) => status === "ALL" || String(row.status) === status);
   }
 
   if (name === "preview_action") {
