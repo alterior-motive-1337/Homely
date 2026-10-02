@@ -47,6 +47,8 @@ jobs:
 
           const health = await (await get("/api/health")).json();
           assert(health.ok === true, "health endpoint not ready");
+          assert(health.database === "OK", "database readiness missing");
+          assert(["LOCAL","READY","DEGRADED"].includes(health.durability), "durability readiness missing");
 
           const overview = await (await get("/api/overview")).json();
           assert(overview.home.name === "14 Hawthorn Residence", "seed home missing");
@@ -74,6 +76,12 @@ jobs:
           const documents = await (await get("/api/documents")).json();
           assert(documents.length === 3, "expected three seeded documents");
           assert(documents.some((doc) => doc.title.includes("inverter warranty") && doc.asset_name === "8 kW inverter"), "document association missing");
+
+          const projects = await (await get("/api/projects")).json();
+          assert(projects.some((project) => project.title === "Battery storage expansion" && project.status === "PLANNED"), "seed project missing");
+
+          const backupProbe = await fetch("http://127.0.0.1:4173/api/backups/now", { method: "POST" });
+          assert(backupProbe.status === 409, "manual backup should report disabled backup state in CI");
 
           const warranty = await get("/demo-documents/inverter-warranty.txt");
           assert((await warranty.text()).includes("20 January 2030"), "warranty document did not resolve");
@@ -169,6 +177,9 @@ jobs:
 
           await page.locator(".view-tabs").getByRole("button", { name: "Maintenance", exact: true }).click();
           await page.getByText("Inspect and clear north gutters").waitFor();
+
+          await page.locator(".view-tabs").getByRole("button", { name: "Projects", exact: true }).click();
+          await page.getByText("Battery storage expansion").waitFor();
 
           await page.locator("#nav").getByRole("button", { name: "Assets", exact: true }).click();
           await page.locator(".view-tabs").getByRole("button", { name: "Documents", exact: true }).click();
