@@ -101,3 +101,57 @@ test("Drive document association is proposed, committed and reversible", () => {
   );
   db.close();
 });
+
+
+test("project creation and status changes are transactional and reversible", () => {
+  const db = demoDb();
+
+  const created = proposeTransaction(db, {
+    actionType: "CREATE_PROJECT",
+    reason: "Plan inverter battery expansion.",
+    payload: {
+      title: "Battery expansion",
+      description: "Add storage capacity before summer outages.",
+      status: "ACTIVE",
+      startDate: "2026-10-10",
+      targetDate: "2026-12-15",
+      budgetCents: 2500000
+    }
+  });
+
+  const createdTxId = String(created.transaction?.id);
+  commitTransaction(db, createdTxId);
+
+  const project = db.prepare("SELECT * FROM projects WHERE title = 'Battery expansion'").get();
+  assert.equal(project?.status, "ACTIVE");
+  assert.equal(project?.budget_cents, 2500000);
+
+  const statusChange = proposeTransaction(db, {
+    actionType: "UPDATE_PROJECT_STATUS",
+    reason: "Project work has finished.",
+    payload: {
+      projectId: String(project?.id),
+      status: "COMPLETE",
+      completedAt: "2026-12-01",
+      note: "Installation signed off."
+    }
+  });
+
+  const statusTxId = String(statusChange.transaction?.id);
+  commitTransaction(db, statusTxId);
+  const completed = db.prepare("SELECT * FROM projects WHERE id = ?").get(String(project?.id));
+  assert.equal(completed?.status, "COMPLETE");
+  assert.equal(completed?.completed_at, "2026-12-01");
+
+  undoTransaction(db, statusTxId);
+  const restored = db.prepare("SELECT * FROM projects WHERE id = ?").get(String(project?.id));
+  assert.equal(restored?.status, "ACTIVE");
+  assert.equal(restored?.completed_at, null);
+
+  undoTransaction(db, createdTxId);
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM projects WHERE id = ?").get(String(project?.id))?.count ?? 0),
+    0
+  );
+  db.close();
+});
