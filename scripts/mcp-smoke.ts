@@ -45,6 +45,7 @@ try {
     "get_asset_history",
     "search_history",
     "list_maintenance_due",
+    "list_projects",
     "preview_action",
     "get_transaction"
   ]) {
@@ -80,6 +81,12 @@ try {
   }));
   assert.equal(documents.length, 3);
   assert.ok(documents.some((document: { title: string }) => document.title.includes("inverter warranty")));
+
+  const projects = parseText(await client.callTool({
+    name: "list_projects",
+    arguments: { status: "ALL" }
+  }));
+  assert.ok(projects.some((project: { title: string }) => project.title === "Battery storage expansion"));
 
   const preview = parseText(await client.callTool({
     name: "preview_action",
