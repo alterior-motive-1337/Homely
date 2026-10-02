@@ -6,7 +6,9 @@ export type ActionType =
   | "CREATE_MAINTENANCE"
   | "RESOLVE_ISSUE"
   | "COMPLETE_MAINTENANCE"
-  | "ATTACH_DOCUMENT";
+  | "ATTACH_DOCUMENT"
+  | "CREATE_PROJECT"
+  | "UPDATE_PROJECT_STATUS";
 
 export class DomainError extends Error {
   constructor(message: string, public readonly status = 400) {
@@ -82,6 +84,12 @@ function getMaintenance(db: HomelyDatabase, maintenanceId: string) {
   const rule = db.prepare("SELECT * FROM maintenance_rules WHERE id = ?").get(maintenanceId);
   if (!rule) throw new DomainError("Maintenance rule not found.", 404);
   return rule;
+}
+
+function getProject(db: HomelyDatabase, projectId: string) {
+  const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
+  if (!project) throw new DomainError("Project not found.", 404);
+  return project;
 }
 
 function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRecord): JsonRecord {
@@ -160,6 +168,56 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
     };
   }
 
+  if (actionType === "CREATE_PROJECT") {
+    const startDate = raw.startDate ? requireDate(raw.startDate, "Start date") : null;
+    const targetDate = raw.targetDate ? requireDate(raw.targetDate, "Target date") : null;
+    if (startDate && targetDate && targetDate < startDate) {
+      throw new DomainError("Target date cannot be before the start date.");
+    }
+
+    let budgetCents: number | null = null;
+    if (raw.budgetCents !== null && raw.budgetCents !== undefined && String(raw.budgetCents).trim() !== "") {
+      budgetCents = Number(raw.budgetCents);
+      if (!Number.isInteger(budgetCents) || budgetCents < 0 || budgetCents > 100_000_000_000) {
+        throw new DomainError("Project budget must be a non-negative whole number of cents.");
+      }
+    }
+
+    const status = raw.status ? requireText(raw.status, "Project status", 20).toUpperCase() : "PLANNED";
+    if (!["PLANNED","ACTIVE"].includes(status)) {
+      throw new DomainError("New projects must start as PLANNED or ACTIVE.");
+    }
+
+    return {
+      title: requireText(raw.title, "Project title", 180),
+      description: optionalText(raw.description, 4000),
+      status,
+      startDate,
+      targetDate,
+      budgetCents
+    };
+  }
+
+  if (actionType === "UPDATE_PROJECT_STATUS") {
+    const projectId = requireText(raw.projectId, "Project", 120);
+    const project = getProject(db, projectId);
+    const status = requireText(raw.status, "Project status", 20).toUpperCase();
+    if (!["PLANNED","ACTIVE","PAUSED","COMPLETE","CANCELLED"].includes(status)) {
+      throw new DomainError("Unsupported project status.");
+    }
+    if (String(project.status) === status) {
+      throw new DomainError("Project is already in that status.", 409);
+    }
+    return {
+      projectId,
+      status,
+      note: optionalText(raw.note, 2000),
+      completedAt: status === "COMPLETE"
+        ? (raw.completedAt ? requireDate(raw.completedAt, "Completion date") : todayIso())
+        : null
+    };
+  }
+
   throw new DomainError("Unsupported action type.");
 }
 
@@ -207,6 +265,23 @@ function previewFor(db: HomelyDatabase, actionType: ActionType, payload: JsonRec
       title: `Resolve issue: ${issue.title}`,
       summary: String(payload.resolution),
       effects: ["Mark the issue resolved", "Recalculate health", "Add a house timeline event"]
+    };
+  }
+
+  if (actionType === "CREATE_PROJECT") {
+    return {
+      title: `Create project: ${payload.title}`,
+      summary: payload.targetDate ? `${payload.status} · target ${payload.targetDate}` : String(payload.status),
+      effects: ["Create a property project", "Add a house timeline event", "Expose the project to Homely tools"]
+    };
+  }
+
+  if (actionType === "UPDATE_PROJECT_STATUS") {
+    const project = getProject(db, String(payload.projectId));
+    return {
+      title: `Update project: ${project.title}`,
+      summary: `${project.status} → ${payload.status}`,
+      effects: ["Update project status", "Preserve the previous state for undo", "Add a house timeline event"]
     };
   }
 
@@ -288,6 +363,7 @@ function createTimelineEvent(
     issueId?: string | null;
     maintenanceRuleId?: string | null;
     documentId?: string | null;
+    projectId?: string | null;
   },
   createdAt: string
 ): JsonRecord {
@@ -298,8 +374,8 @@ function createTimelineEvent(
   db.prepare(`
     INSERT INTO timeline_events(
       id,home_id,event_type,title,summary,occurred_at,asset_id,issue_id,
-      maintenance_rule_id,document_id,metadata_json,created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+      maintenance_rule_id,document_id,project_id,metadata_json,created_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     eventId,
     String(home.id),
@@ -311,6 +387,7 @@ function createTimelineEvent(
     input.issueId ?? null,
     input.maintenanceRuleId ?? null,
     input.documentId ?? null,
+    input.projectId ?? null,
     JSON.stringify({ transactionId }),
     createdAt
   );
@@ -454,6 +531,59 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
       }, createdAt);
     }
 
+    if (actionType === "CREATE_PROJECT") {
+      const home = db.prepare("SELECT id FROM homes ORDER BY created_at LIMIT 1").get();
+      if (!home) throw new DomainError("Home record is missing.", 500);
+      const projectId = newId("project");
+      db.prepare(`
+        INSERT INTO projects(
+          id,home_id,title,status,description,start_date,target_date,budget_cents,completed_at,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      `).run(
+        projectId,
+        String(home.id),
+        String(payload.title),
+        String(payload.status),
+        payload.description === null || payload.description === undefined ? null : String(payload.description),
+        payload.startDate === null || payload.startDate === undefined ? null : String(payload.startDate),
+        payload.targetDate === null || payload.targetDate === undefined ? null : String(payload.targetDate),
+        payload.budgetCents === null || payload.budgetCents === undefined ? null : Number(payload.budgetCents),
+        null,
+        createdAt,
+        createdAt
+      );
+      const project = getProject(db, projectId) as JsonRecord;
+      recordChange(db, transactionId, "project", projectId, "CREATE", null, project, createdAt);
+      createTimelineEvent(db, transactionId, {
+        eventType: "PROJECT_CREATED",
+        title: `Project created: ${payload.title}`,
+        summary: payload.description ? String(payload.description) : `${payload.status} project created.`,
+        occurredAt: createdAt,
+        projectId
+      }, createdAt);
+    }
+
+    if (actionType === "UPDATE_PROJECT_STATUS") {
+      const before = getProject(db, String(payload.projectId)) as JsonRecord;
+      db.prepare(
+        "UPDATE projects SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?"
+      ).run(
+        String(payload.status),
+        payload.completedAt === null || payload.completedAt === undefined ? null : String(payload.completedAt),
+        createdAt,
+        String(payload.projectId)
+      );
+      const after = getProject(db, String(payload.projectId)) as JsonRecord;
+      recordChange(db, transactionId, "project", String(payload.projectId), "UPDATE", before, after, createdAt);
+      createTimelineEvent(db, transactionId, {
+        eventType: "PROJECT_STATUS_CHANGED",
+        title: `Project ${payload.status}: ${before.title}`,
+        summary: payload.note ? String(payload.note) : `Status changed from ${before.status} to ${payload.status}.`,
+        occurredAt: payload.completedAt ? String(payload.completedAt) + "T12:00:00.000Z" : createdAt,
+        projectId: String(payload.projectId)
+      }, createdAt);
+    }
+
     if (actionType === "COMPLETE_MAINTENANCE") {
       const before = getMaintenance(db, String(payload.maintenanceId)) as JsonRecord;
       if (Number(before.active) !== 1) throw new DomainError("Maintenance rule is inactive.", 409);
@@ -523,6 +653,10 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
       const current = db.prepare("SELECT * FROM documents WHERE id = ?").get(entityId);
       if (!sameRow(current, after)) throw new DomainError("Document association changed after this transaction and cannot be safely undone.", 409);
       db.prepare("DELETE FROM documents WHERE id = ?").run(entityId);
+    } else if (entityType === "project") {
+      const current = db.prepare("SELECT * FROM projects WHERE id = ?").get(entityId);
+      if (!sameRow(current, after)) throw new DomainError("Project changed after this transaction and cannot be safely undone.", 409);
+      db.prepare("DELETE FROM projects WHERE id = ?").run(entityId);
     } else {
       throw new DomainError("This transaction contains an unsupported undo operation.", 409);
     }
@@ -545,6 +679,22 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
         entityId
       );
       const restored = db.prepare("SELECT * FROM issues WHERE id = ?").get(entityId);
+      recordChange(db, undoId, entityType, entityId, "UPDATE", after, restored, changedAt);
+      return;
+    }
+
+    if (entityType === "project") {
+      const current = db.prepare("SELECT * FROM projects WHERE id = ?").get(entityId);
+      if (!sameRow(current, after)) throw new DomainError("Project changed after this transaction and cannot be safely undone.", 409);
+      db.prepare(
+        "UPDATE projects SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?"
+      ).run(
+        String(before.status),
+        before.completed_at === null || before.completed_at === undefined ? null : String(before.completed_at),
+        String(before.updated_at),
+        entityId
+      );
+      const restored = db.prepare("SELECT * FROM projects WHERE id = ?").get(entityId);
       recordChange(db, undoId, entityType, entityId, "UPDATE", after, restored, changedAt);
       return;
     }
