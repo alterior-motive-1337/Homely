@@ -381,6 +381,50 @@ async function showMaintenance() {
   } catch (error) { fail(error); }
 }
 
+async function showProjects() {
+  loading();
+  try {
+    const items = await api("/api/projects");
+    content.innerHTML = `
+      <section class="section">
+        <div class="section-head">
+          <div><h2>Projects</h2><span class="section-note">Planned property work with auditable status changes</span></div>
+          <div class="section-actions"><button class="button primary" id="create-project">New project</button></div>
+        </div>
+        <div class="list">
+          ${items.map((item) => `
+            <div class="list-row">
+              <div class="row-main">
+                <div class="row-copy">
+                  <div class="row-title">${esc(item.title)}</div>
+                  <div class="row-meta">${esc(item.description ?? "")}</div>
+                  <div class="row-meta">
+                    ${item.start_date ? `Start ${fmtDate(item.start_date)}` : "Start not set"}
+                    ${item.target_date ? ` · target ${fmtDate(item.target_date)}` : ""}
+                    ${item.budget_cents !== null && item.budget_cents !== undefined ? ` · R${(Number(item.budget_cents) / 100).toLocaleString("en-ZA", { maximumFractionDigits: 0 })}` : ""}
+                  </div>
+                </div>
+                <div class="row-actions">
+                  <span class="badge">${esc(item.status)}</span>
+                  ${!["COMPLETE","CANCELLED"].includes(item.status)
+                    ? `<button class="button small" data-project-status="${esc(item.id)}" data-title="${esc(item.title)}" data-current-status="${esc(item.status)}">Update</button>`
+                    : ""}
+                </div>
+              </div>
+            </div>
+          `).join("") || '<div class="empty">No projects recorded.</div>'}
+        </div>
+      </section>
+    `;
+    document.querySelector("#create-project").addEventListener("click", openProjectForm);
+    document.querySelectorAll("[data-project-status]").forEach((button) =>
+      button.addEventListener("click", () =>
+        openProjectStatusForm(button.dataset.projectStatus, button.dataset.title, button.dataset.currentStatus)
+      )
+    );
+  } catch (error) { fail(error); }
+}
+
 async function showTimeline() {
   loading();
   try {
@@ -917,6 +961,69 @@ async function openMaintenanceForm() {
   });
 }
 
+function openProjectForm() {
+  openAction(`
+    <p class="eyebrow">STRUCTURED ACTION</p>
+    <h2>New project</h2>
+    <div class="muted">Nothing changes until you review and approve the transaction.</div>
+    <form class="action-form" id="project-form">
+      <div class="form-grid">
+        <div class="field full"><label>Title</label><input name="title" maxlength="180" required placeholder="Battery storage expansion"></div>
+        <div class="field full"><label>Description</label><textarea name="description" maxlength="4000" placeholder="What is this project for?"></textarea></div>
+        <div class="field"><label>Status</label><select name="status"><option>PLANNED</option><option>ACTIVE</option></select></div>
+        <div class="field"><label>Budget (R)</label><input type="number" name="budgetRand" min="0" step="1" placeholder="Optional"></div>
+        <div class="field"><label>Start date</label><input type="date" name="startDate"></div>
+        <div class="field"><label>Target date</label><input type="date" name="targetDate"></div>
+      </div>
+      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview</button></div>
+    </form>
+  `);
+  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
+  document.querySelector("#project-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const title = String(data.get("title"));
+    const budgetRand = String(data.get("budgetRand") ?? "").trim();
+    await createPreview("CREATE_PROJECT", {
+      title,
+      description: data.get("description"),
+      status: data.get("status"),
+      startDate: data.get("startDate") || null,
+      targetDate: data.get("targetDate") || null,
+      budgetCents: budgetRand ? Math.round(Number(budgetRand) * 100) : null
+    }, `Homeowner created project "${title}" through the structured project form.`);
+  });
+}
+
+function openProjectStatusForm(projectId, title, currentStatus) {
+  const statuses = ["PLANNED","ACTIVE","PAUSED","COMPLETE","CANCELLED"].filter((status) => status !== currentStatus);
+  openAction(`
+    <p class="eyebrow">STRUCTURED ACTION</p>
+    <h2>Update project</h2>
+    <div class="muted">${esc(title)} · current status ${esc(currentStatus)}</div>
+    <form class="action-form" id="project-status-form">
+      <div class="form-grid">
+        <div class="field"><label>New status</label><select name="status">${statuses.map((status) => `<option>${status}</option>`).join("")}</select></div>
+        <div class="field"><label>Completion date</label><input type="date" name="completedAt"></div>
+        <div class="field full"><label>Note</label><textarea name="note" maxlength="2000" placeholder="Optional project update"></textarea></div>
+      </div>
+      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview</button></div>
+    </form>
+  `);
+  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
+  document.querySelector("#project-status-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const status = String(data.get("status"));
+    await createPreview("UPDATE_PROJECT_STATUS", {
+      projectId,
+      status,
+      completedAt: status === "COMPLETE" ? (data.get("completedAt") || todayInput()) : null,
+      note: data.get("note")
+    }, `Homeowner changed project "${title}" from ${currentStatus} to ${status}.`);
+  });
+}
+
 function openResolveForm(issueId, title) {
   openAction(`
     <p class="eyebrow">STRUCTURED ACTION</p>
@@ -1069,12 +1176,14 @@ async function showAssetsHub() {
 }
 
 async function showWork() {
-  const tab = activeRouteTab(["issues", "maintenance"], "issues");
+  const tab = activeRouteTab(["issues", "maintenance", "projects"], "issues");
   if (tab === "maintenance") await showMaintenance();
+  else if (tab === "projects") await showProjects();
   else await showIssues();
   renderViewTabs("work", [
     { id: "issues", label: "Issues" },
-    { id: "maintenance", label: "Maintenance" }
+    { id: "maintenance", label: "Maintenance" },
+    { id: "projects", label: "Projects" }
   ], tab);
 }
 
@@ -1099,6 +1208,7 @@ const views = {
 const legacyRoutes = {
   issues: ["work", "issues"],
   maintenance: ["work", "maintenance"],
+  projects: ["work", "projects"],
   timeline: ["history", "timeline"],
   transactions: ["history", "transactions"],
   documents: ["assets", "documents"]
