@@ -14,6 +14,7 @@ export function seedDemo(db: HomelyDatabase): void {
       DELETE FROM transaction_changes;
       DELETE FROM transactions;
       DELETE FROM timeline_events;
+      DELETE FROM projects;
       DELETE FROM documents;
       DELETE FROM maintenance_rules;
       DELETE FROM issues;
@@ -24,6 +25,24 @@ export function seedDemo(db: HomelyDatabase): void {
 
     db.prepare("INSERT INTO homes(id,name,address_label,created_at,updated_at) VALUES (?,?,?,?,?)")
       .run(HOME, "14 Hawthorn Residence", "North-west Johannesburg demo property", "2024-04-13T09:00:00.000Z", NOW);
+
+    db.prepare(`
+      INSERT INTO projects(
+        id,home_id,title,status,description,start_date,target_date,budget_cents,completed_at,created_at,updated_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      "project-battery-expansion",
+      HOME,
+      "Battery storage expansion",
+      "PLANNED",
+      "Evaluate and add additional battery capacity before the summer outage season.",
+      "2026-10-15",
+      "2026-12-15",
+      2500000,
+      null,
+      "2026-09-30T10:00:00.000Z",
+      NOW
+    );
 
     const systems = [
       ["sys-electrical","Electrical","ELECTRICAL","Distribution and fixed electrical infrastructure",1],
@@ -118,6 +137,22 @@ export function seedDemo(db: HomelyDatabase): void {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     for (const e of events) insEvent.run(e[0],HOME,e[1],e[2],e[3],e[4],e[5],e[6],e[7],e[8],"{}",NOW);
+
+    db.prepare(`
+      INSERT INTO timeline_events(
+        id,home_id,event_type,title,summary,occurred_at,project_id,metadata_json,created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?)
+    `).run(
+      "event-project-battery-expansion",
+      HOME,
+      "PROJECT_CREATED",
+      "Battery storage expansion planned",
+      "Project opened to evaluate and add additional battery capacity.",
+      "2026-09-30T10:00:00.000Z",
+      "project-battery-expansion",
+      "{}",
+      NOW
+    );
 
     db.exec("COMMIT;");
   } catch (error) {

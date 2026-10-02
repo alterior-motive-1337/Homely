@@ -4,7 +4,7 @@ import http from "node:http";
 import { URL } from "node:url";
 import { config } from "./config.js";
 import { migrate, openDatabase } from "./db.js";
-import { getAsset, getOverview, getTimeline, listAssets, listDocuments, listIssues, listMaintenance, listSystems } from "./domain/repository.js";
+import { getAsset, getOverview, getProject, getTimeline, listAssets, listDocuments, listIssues, listMaintenance, listProjects, listSystems } from "./domain/repository.js";
 import {
   commitTransaction,
   DomainError,
@@ -19,7 +19,7 @@ import { hasHome, seedDemo } from "./seed.js";
 import { createAgentRuntime } from "./agent/runtime.js";
 import { GoogleDriveIntegration } from "./integrations/googleDrive.js";
 import { DriveBackupService } from "./integrations/driveBackup.js";
-import { loginPage, OwnerAuth } from "./security/auth.js";
+import { LoginAttemptLimiter, loginPage, OwnerAuth } from "./security/auth.js";
 
 function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-content-type-options", "nosniff");
@@ -79,6 +79,12 @@ async function readForm(req: http.IncomingMessage): Promise<URLSearchParams> {
   return new URLSearchParams(body.toString("utf8"));
 }
 
+function loginAttemptKey(req: http.IncomingMessage): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  return raw?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+}
+
 function mimeType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === ".html") return "text/html; charset=utf-8";
@@ -112,6 +118,7 @@ async function main(): Promise<void> {
     secureCookies: config.secureCookies
   });
 
+  const loginLimiter = new LoginAttemptLimiter();
   const googleDrive = new GoogleDriveIntegration();
   const backups = new DriveBackupService(googleDrive);
   backups.assertReady();
@@ -150,7 +157,13 @@ async function main(): Promise<void> {
 
     try {
       if (req.method === "GET" && url.pathname === "/api/health") {
-        return sendJson(res, 200, { ok: true, service: "Homely" });
+        db.prepare("SELECT 1 AS ok").get();
+        const durability = !config.backupEnabled
+          ? "LOCAL"
+          : googleDrive.status.connected
+            ? "READY"
+            : "DEGRADED";
+        return sendJson(res, 200, { ok: true, service: "Homely", database: "OK", durability });
       }
 
       if (req.method === "GET" && url.pathname === "/api/auth/status") {
@@ -169,11 +182,28 @@ async function main(): Promise<void> {
       }
 
       if (req.method === "POST" && url.pathname === "/auth/login") {
+        const key = loginAttemptKey(req);
+        const blockedFor = loginLimiter.retryAfterSeconds(key);
+        if (blockedFor > 0) {
+          return sendHtml(res, 429, loginPage("Too many failed attempts. Try again later."), {
+            "retry-after": String(blockedFor),
+            "cache-control": "no-store"
+          });
+        }
+
         const form = await readForm(req);
         const password = form.get("password") ?? "";
         if (!auth.verifyPassword(password)) {
-          return sendHtml(res, 401, loginPage("Incorrect owner password."));
+          const retryAfter = loginLimiter.recordFailure(key);
+          return sendHtml(
+            res,
+            retryAfter > 0 ? 429 : 401,
+            loginPage(retryAfter > 0 ? "Too many failed attempts. Try again later." : "Incorrect owner password."),
+            retryAfter > 0 ? { "retry-after": String(retryAfter), "cache-control": "no-store" } : { "cache-control": "no-store" }
+          );
         }
+
+        loginLimiter.clear(key);
         res.writeHead(303, {
           location: "/",
           "set-cookie": auth.sessionCookie(),
@@ -208,6 +238,11 @@ async function main(): Promise<void> {
       if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
       if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
       if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
+      if (req.method === "GET" && url.pathname === "/api/projects") return sendJson(res, 200, listProjects(db));
+      if (req.method === "GET" && url.pathname.startsWith("/api/projects/")) {
+        const project = getProject(db, decodeURIComponent(url.pathname.slice("/api/projects/".length)));
+        return project ? sendJson(res, 200, project) : sendJson(res, 404, { error: "Project not found" });
+      }
       if (req.method === "GET" && url.pathname === "/api/transactions") return sendJson(res, 200, listTransactions(db));
       if (req.method === "GET" && url.pathname === "/api/integrations/status") {
         return sendJson(res, 200, {
@@ -253,6 +288,14 @@ async function main(): Promise<void> {
       if (req.method === "POST" && url.pathname === "/api/google-drive/disconnect") {
         googleDrive.disconnect();
         return sendJson(res, 200, { connected: false });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/backups/now") {
+        if (!config.backupEnabled) throw new DomainError("Off-site backups are disabled.", 409);
+        if (!googleDrive.status.connected) throw new DomainError("Google Drive backup credentials are not ready.", 503);
+        const backup = await backups.backupNow(db, "manual");
+        if (!backup) throw new DomainError("Backup did not complete.", 503);
+        return sendJson(res, 200, { backup, status: backups.status });
       }
 
       if (req.method === "POST" && url.pathname === "/api/agent/respond") {

@@ -168,11 +168,27 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
   );
 
   server.registerTool(
+    "list_projects",
+    {
+      description: "List property projects and their current status, dates, budget and notes.",
+      inputSchema: z.object({
+        status: z.enum(["PLANNED","ACTIVE","PAUSED","COMPLETE","CANCELLED","ALL"]).default("ALL")
+      }),
+      annotations: readOnlyAnnotations
+    },
+    async ({ status }) => {
+      try {
+        return ok(executeHomelyTool(db, "list_projects", { status }, "MCP"));
+      } catch (error) { return fail(error); }
+    }
+  );
+
+  server.registerTool(
     "preview_action",
     {
       description: "Validate and create an inert Homely transaction proposal. This does not change home state. Homely itself must separately approve, commit, reject, or undo transactions; those operations are intentionally not exposed through MCP.",
       inputSchema: z.object({
-        actionType: z.enum(["REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE"]),
+        actionType: z.enum(["REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]),
         payload: z.record(z.string(), z.unknown()),
         reason: z.string().trim().min(1).max(500),
         requestText: z.string().max(2000).optional()

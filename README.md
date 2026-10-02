@@ -45,9 +45,9 @@ HTTP API              Homely tool layer       Homely MCP server
 
 SQLite owns truth. OpenAI is optional and sits behind an AgentProvider boundary. Mutations are committed only through Homely's transaction service; model-created proposals are inert until explicitly approved in Homely.
 
-Current domain surface: Home, Systems, Assets, Issues, Maintenance Rules, Timeline Events, Documents, and auditable Transactions. Mutating home state follows propose → preview → commit → audit → undo.
+Current domain surface: Home, Systems, Assets, Issues, Maintenance Rules, Projects, Timeline Events, Documents, and auditable Transactions. Mutating home state follows propose → preview → commit → audit → undo.
 
-Homely also exposes the same domain through a local stdio MCP server. The OpenAI agent uses the same provider-neutral Homely tool executor for grounded reads and proposals. Google Drive, ElevenLabs, and richer project workflows remain later layers.
+Homely also exposes the same domain through a local stdio MCP server. The OpenAI agent uses the same provider-neutral Homely tool executor for grounded reads and proposals. Google Drive and optional voice remain integration layers; Projects are now part of the core structured domain.
 
 The default local database is `./data/homely.db`; override it with `HOMELY_DB_PATH`. The supported cloud-primary deployment runs Homely on Render with an ephemeral SQLite working copy, single-owner authentication, and verified Google Drive database recovery. Optional integration variables are documented in `.env.example`.
 
@@ -70,6 +70,7 @@ Initial tools:
 - `get_asset_history`
 - `search_history`
 - `list_maintenance_due`
+- `list_projects`
 - `preview_action`
 - `get_transaction`
 
@@ -124,7 +125,7 @@ The repository includes a root `render.yaml` for the low-infrastructure deployme
 Browser → Render → Homely/SQLite → Google Drive backups
 ```
 
-The Render service binds to `0.0.0.0:$PORT`, requires the owner password before exposing property data, and stores long-lived Google credentials only in Render's secret environment variables. Important transaction commits, rejections, and reversals trigger a Drive backup; periodic backups run while the service is awake.
+The Render service binds to `0.0.0.0:$PORT`, requires the owner password before exposing property data, throttles repeated failed logins, and invalidates prior sessions when the owner password changes. Long-lived Google credentials remain in Render's secret environment variables. Important transaction commits, rejections, and reversals trigger a Drive backup; periodic backups run while the service is awake.
 
 On a fresh ephemeral boot, Homely attempts to restore the newest Drive snapshot **before** it opens/migrates SQLite. Restored databases must pass SQLite integrity checking. If no backup exists yet, the demo home is seeded and backed up before the server starts accepting traffic.
 

@@ -119,10 +119,10 @@ After signing in:
 
 1. Open the application normally.
 2. Check the integration status from the UI/API.
-3. Create a harmless test issue.
-4. Preview it.
-5. Approve the transaction.
-6. Open Google Drive and confirm a **Homely Backups** folder exists with a recent `homely-*.db` file.
+3. Trigger a manual backup with an authenticated `POST /api/backups/now` request. This verifies Drive durability without changing home state.
+4. Confirm the response includes backup metadata and a healthy backup status.
+5. Open Google Drive and confirm a **Homely Backups** folder exists with a recent `homely-*.db` file.
+6. Create a harmless test issue, preview it, approve it, and confirm another backup is produced.
 
 The commit response is not rolled back if Drive is temporarily unavailable. Homely records backup health separately and retries on later backup opportunities. This avoids duplicating an already-committed home transaction.
 
@@ -137,6 +137,8 @@ Before treating the deployment as authoritative, perform one controlled recovery
 5. Sign in and confirm the test change is still present.
 
 That proves the restore path, not merely the upload path.
+
+After the upload and recovery checks pass, set `BACKUP_REQUIRED=true` in Render and redeploy. From that point forward Homely will fail closed at startup if its configured recovery storage is unavailable instead of accepting a cloud boot without the required durability layer.
 
 ## Optional Google Drive document connection
 

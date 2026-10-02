@@ -149,3 +149,32 @@ export function getOverview(db: HomelyDatabase) {
     recent: getTimeline(db, 6)
   };
 }
+
+
+export function listProjects(db: HomelyDatabase) {
+  return db.prepare(`
+    SELECT *
+    FROM projects
+    ORDER BY
+      CASE status
+        WHEN 'ACTIVE' THEN 1
+        WHEN 'PLANNED' THEN 2
+        WHEN 'PAUSED' THEN 3
+        WHEN 'COMPLETE' THEN 4
+        ELSE 5
+      END,
+      COALESCE(target_date, '9999-12-31'),
+      created_at DESC
+  `).all();
+}
+
+export function getProject(db: HomelyDatabase, projectId: string) {
+  const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
+  if (!project) return null;
+  return {
+    ...project,
+    history: db.prepare(
+      "SELECT * FROM timeline_events WHERE project_id = ? ORDER BY occurred_at DESC LIMIT 30"
+    ).all(projectId)
+  };
+}

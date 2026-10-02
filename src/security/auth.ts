@@ -52,9 +52,10 @@ export class OwnerAuth {
   }
 
   private sign(expiresAt: number): string {
+    const passwordFingerprint = digest(this.options.password).toString("hex");
     return crypto
       .createHmac("sha256", this.options.secret)
-      .update(String(expiresAt))
+      .update(`${expiresAt}.${passwordFingerprint}`)
       .digest("base64url");
   }
 
@@ -87,6 +88,47 @@ export class OwnerAuth {
   clearCookie(): string {
     const secure = this.options.secureCookies ? "; Secure" : "";
     return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+  }
+}
+
+export class LoginAttemptLimiter {
+  private readonly attempts = new Map<string, {
+    failures: number;
+    windowStartedAt: number;
+    blockedUntil: number;
+  }>();
+
+  constructor(
+    private readonly maxAttempts = 5,
+    private readonly windowMs = 15 * 60_000,
+    private readonly blockMs = 15 * 60_000
+  ) {}
+
+  retryAfterSeconds(key: string, now = Date.now()): number {
+    const current = this.attempts.get(key);
+    if (!current) return 0;
+    if (current.blockedUntil > now) return Math.max(1, Math.ceil((current.blockedUntil - now) / 1000));
+    if (now - current.windowStartedAt > this.windowMs) {
+      this.attempts.delete(key);
+      return 0;
+    }
+    return 0;
+  }
+
+  recordFailure(key: string, now = Date.now()): number {
+    const existing = this.attempts.get(key);
+    const current = !existing || now - existing.windowStartedAt > this.windowMs
+      ? { failures: 0, windowStartedAt: now, blockedUntil: 0 }
+      : existing;
+
+    current.failures += 1;
+    if (current.failures >= this.maxAttempts) current.blockedUntil = now + this.blockMs;
+    this.attempts.set(key, current);
+    return this.retryAfterSeconds(key, now);
+  }
+
+  clear(key: string): void {
+    this.attempts.delete(key);
   }
 }
 
