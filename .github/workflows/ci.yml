@@ -199,7 +199,7 @@ jobs:
           await page.locator("#viewer-close").click();
 
           await page.getByText("Structured memory only").waitFor();
-          if (!(await page.locator("#chat-form button").isDisabled())) throw new Error("chat should be disabled when AI is unavailable");
+          if (!(await page.locator('#chat-form button[type="submit"]').isDisabled())) throw new Error("chat should be disabled when AI is unavailable");
 
           await page.setViewportSize({ width: 390, height: 844 });
           await page.locator("#nav").getByRole("button", { name: "Home", exact: true }).click();
