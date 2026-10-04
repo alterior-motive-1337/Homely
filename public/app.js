@@ -2,7 +2,7 @@ const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 const content=$("#content"), pageTitle=$("#page-title"), nav=$("#nav");
 const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewerBody=$("#viewer-body"), viewerTitle=$("#viewer-title");
-const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input");
+const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input"), voiceButton=$("#voice-button");
 const runtime=$("#runtime-status"), runtimeText=$("#runtime-text"), agentState=$("#agent-state");
 const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null};
 
@@ -181,12 +181,35 @@ $("#viewer-close").onclick=function(){viewer.close()};
 viewer.addEventListener("close",function(){if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
 
 async function openDriveImport(file){
-  const options=await assetOptions("");
-  openModal('<p class="eyebrow">Google Drive import</p><h2>Attach selected file</h2><div class="row-meta">'+esc(file.name)+' · '+esc(file.mimeType||"unknown type")+'</div><form class="form" id="drive-import-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>File type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Title</label><input name="title" maxlength="240" value="'+esc(file.name)+'" required></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview association</button></div></form>');
+  const results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
+  const options=results[0],issues=results[1],repairs=results[2],charges=results[3],purchases=results[4];
+  const optional=function(label,items,display){return '<option value="">'+esc(label)+'</option>'+items.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(display(x))+'</option>'}).join("")};
+  const issueOptions=optional("No linked issue",issues,function(x){return x.title+" · "+x.asset_name});
+  const repairOptions=optional("No linked repair",repairs,function(x){return x.title+" · "+x.asset_name});
+  const chargeOptions=optional("No linked charge",charges,function(x){return x.name+" · "+x.billing_cycle});
+  const purchaseOptions=optional("No linked purchase",purchases,function(x){return x.title+" · "+x.status});
+  const assetOptionsHtml='<option value="">No direct asset link</option>'+options;
+  openModal('<p class="eyebrow">Google Drive evidence</p><h2>Attach selected file</h2><div class="row-meta">'+esc(file.name)+' · '+esc(file.mimeType||"unknown type")+'</div><form class="form" id="drive-import-form"><div class="form-grid"><div class="field full"><label>Title</label><input name="title" maxlength="240" value="'+esc(file.name)+'" required></div><div class="field"><label>File type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>VIDEO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Evidence date</label><input type="date" name="occurredAt" value="'+today()+'" required></div><div class="field"><label>Status</label><select name="evidenceStatus"><option selected>ACTIVE</option><option>REFERENCE</option><option>ARCHIVED</option></select></div><div class="field full"><label>Asset</label><select name="assetId">'+assetOptionsHtml+'</select></div><div class="field full"><label>Issue</label><select name="issueId">'+issueOptions+'</select></div><div class="field full"><label>Repair</label><select name="repairId">'+repairOptions+'</select></div><div class="field full"><label>Recurring charge</label><select name="chargeId">'+chargeOptions+'</select></div><div class="field full"><label>Potential purchase</label><select name="purchaseCandidateId">'+purchaseOptions+'</select></div><div class="field full"><label>Provenance</label><input name="provenance" maxlength="1000" value="Selected by homeowner from Google Drive."></div><div class="field full"><label>Why keep this evidence?</label><textarea name="evidenceReason" maxlength="2000" placeholder="Warranty proof, repair invoice, before/after photo, product research…"></textarea></div><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" value="'+esc(file.webViewLink||"")+'"></div></div><div class="row-note">You can link the same evidence to an asset and the issue, repair, charge or purchase it explains.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview evidence</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#drive-import-form").onsubmit=async function(e){
     e.preventDefault();const d=new FormData(e.currentTarget);
-    await previewAction("ATTACH_DOCUMENT",{assetId:d.get("assetId"),title:d.get("title"),documentType:d.get("documentType"),providerFileId:file.id,mimeType:file.mimeType,webViewLink:file.webViewLink},"Homeowner explicitly selected a Google Drive file and associated it with a home asset.");
+    await previewAction("ATTACH_DOCUMENT",{
+      assetId:d.get("assetId")||null,
+      issueId:d.get("issueId")||null,
+      repairId:d.get("repairId")||null,
+      chargeId:d.get("chargeId")||null,
+      purchaseCandidateId:d.get("purchaseCandidateId")||null,
+      title:d.get("title"),
+      documentType:d.get("documentType"),
+      providerFileId:file.id,
+      mimeType:file.mimeType,
+      webViewLink:file.webViewLink,
+      sourceUrl:d.get("sourceUrl")||null,
+      provenance:d.get("provenance"),
+      occurredAt:d.get("occurredAt"),
+      evidenceReason:d.get("evidenceReason"),
+      evidenceStatus:d.get("evidenceStatus")
+    },"Homeowner explicitly selected this file as household evidence.");
   };
 }
 
@@ -195,7 +218,7 @@ async function showFiles(){
   try{
     const both=await Promise.all([api("/api/documents"),api("/api/integrations/status")]),docs=both[0],integrations=both[1],drive=integrations.googleDrive;
     const driveActions=drive&&drive.enabled&&drive.configured?(drive.connected?'<button class="button" id="drive-select">Select from Drive</button><button class="button" id="drive-disconnect">Disconnect</button>':'<button class="button" id="drive-connect">Connect Drive</button>'):"";
-    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links.</p></div><div class="hero-actions">'+driveActions+'</div></div><div class="file-grid">'+(docs.map(function(d){return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.provider||"")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc(d.asset_name||d.repair_title||d.issue_title||d.charge_name||d.purchase_title||"Home record")+" · "+fmtDate(d.occurred_at||d.created_at)+"</small></button>"}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
+    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links with preserved context.</p></div><div class="hero-actions">'+driveActions+'</div></div><div class="file-grid">'+(docs.map(function(d){const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.evidence_status||"ACTIVE")+" · "+esc(d.provider||"")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"General home evidence")+" · "+fmtDate(d.occurred_at||d.created_at))+'</small>'+(d.evidence_reason?'<span class="file-reason">'+esc(d.evidence_reason)+'</span>':"")+'</button>"}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
     if($("#drive-connect"))$("#drive-connect").onclick=function(){location.href="/api/google-drive/connect"};
     if($("#drive-select"))$("#drive-select").onclick=function(){location.href="/api/google-drive/connect"};
     if($("#drive-disconnect"))$("#drive-disconnect").onclick=async function(){await api("/api/google-drive/disconnect",{method:"POST"});notify("Google Drive disconnected. Existing file records were preserved.");await showFiles()};
@@ -224,6 +247,27 @@ chatForm.onsubmit=async function(e){
   finally{button.disabled=!(state.integrations&&state.integrations.ai&&state.integrations.ai.available);button.textContent="Send";renderChat()}
 };
 
+function setupVoiceInput(){
+  const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!voiceButton)return;
+  if(!Recognition){voiceButton.hidden=true;return}
+  const recognition=new Recognition();
+  recognition.lang="en-ZA";
+  recognition.interimResults=true;
+  recognition.continuous=false;
+  let prefix="";
+  recognition.onstart=function(){prefix=chatInput.value.trim();voiceButton.classList.add("listening");voiceButton.textContent="Listening…"};
+  recognition.onresult=function(event){
+    let transcript="";
+    for(let i=event.resultIndex;i<event.results.length;i++)transcript+=event.results[i][0].transcript;
+    chatInput.value=(prefix?prefix+" ":"")+transcript.trim();
+    chatInput.focus();
+  };
+  recognition.onerror=function(event){notify(event.error==="not-allowed"?"Microphone permission was denied.":"Voice input could not start.");};
+  recognition.onend=function(){voiceButton.classList.remove("listening");voiceButton.textContent="Voice"};
+  voiceButton.onclick=function(){try{recognition.start()}catch(_){}};
+}
+
 const views={home:["Home",showHome],issues:["Issues",showIssues],repairs:["Repairs",showRepairs],appliances:["Appliances & furniture",showAppliances],files:["Files",showFiles]};
 function normalizeView(v){if(v==="overview")return"home";if(v==="assets")return"appliances";if(v==="documents")return"files";return views[v]?v:"home"}
 async function selectView(view){state.view=normalizeView(view);pageTitle.textContent=views[state.view][0];document.title=views[state.view][0]+" · Homely";$$(".nav-item").forEach(function(b){b.classList.toggle("active",b.dataset.view===state.view)});await views[state.view][1]()}
@@ -233,4 +277,4 @@ window.onpopstate=function(){selectView(new URLSearchParams(location.search).get
 $("#logout-button").onclick=async function(){try{await api("/api/auth/logout",{method:"POST"})}finally{location.href="/auth/login"}};
 $("#chat-open").onclick=function(){chatRail.classList.add("open")};$("#chat-close").onclick=function(){chatRail.classList.remove("open")};
 const initial=normalizeView(new URLSearchParams(location.search).get("view")||"home");
-void refreshStatus();void selectView(initial);renderChat();
+void refreshStatus();void selectView(initial);renderChat();setupVoiceInput();
