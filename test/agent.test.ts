@@ -83,3 +83,34 @@ test("OpenAI provider can only create an inert proposal", async () => {
   assert.equal(db.prepare("SELECT status FROM transactions WHERE id = ?").get(result.proposals[0]?.transactionId)?.status, "PROPOSED");
   db.close();
 });
+
+
+test("Groq provider carries conversation history without previous_response_id", async () => {
+  const db = openDatabase(":memory:");
+  migrate(db);
+  seedDemo(db);
+
+  const calls: Record<string, unknown>[] = [];
+  const fake = {
+    responses: {
+      create: async (input: Record<string, unknown>) => {
+        calls.push(input);
+        return response("groq-" + calls.length, [], calls.length === 1 ? "First answer." : "Second answer.");
+      }
+    }
+  };
+
+  const provider = new OpenAIAgentProvider(db, fake as never, "openai/gpt-oss-20b", undefined, "GROQ");
+  const first = await provider.respond({ message: "What needs attention?" });
+  await provider.respond({ message: "And what was repaired recently?", previousResponseId: first.responseId });
+
+  assert.equal(calls.length, 2);
+  assert.equal("previous_response_id" in calls[0]!, false);
+  assert.equal("previous_response_id" in calls[1]!, false);
+  assert.deepEqual(calls[0]!.input, [{ role: "user", content: "What needs attention?" }]);
+  assert.deepEqual(calls[1]!.input, [
+    { role: "user", content: "What needs attention?" },
+    { role: "user", content: "And what was repaired recently?" }
+  ]);
+  db.close();
+});
