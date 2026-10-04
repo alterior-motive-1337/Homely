@@ -715,7 +715,7 @@ async function showAgent() {
             <div>
               <p class="eyebrow">AGENT UNAVAILABLE</p>
               <h3>Structured Homely remains operational.</h3>
-              <p>The OpenAI agent is ${integrations.ai.enabled ? "enabled but not configured" : "disabled"}. Assets, issues, maintenance, documents, timeline and transactions remain available from Homely\'s structured property state.</p>
+              <p>The Groq agent is ${integrations.ai.enabled ? "enabled but not configured" : "disabled"}. Assets, issues, maintenance, documents, timeline and transactions remain available from Homely\'s structured property state.</p>
             </div>
             <div class="agent-config">
               <span>AI_ENABLED</span><strong>${integrations.ai.enabled ? "true" : "false"}</strong>
