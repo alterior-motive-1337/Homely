@@ -180,6 +180,36 @@ async function openFile(doc){
 $("#viewer-close").onclick=function(){viewer.close()};
 viewer.addEventListener("close",function(){if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
 
+async function openLinkEvidenceForm(){
+  const results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
+  const options=results[0],issues=results[1],repairs=results[2],charges=results[3],purchases=results[4];
+  const optional=function(label,items,display){return '<option value="">'+esc(label)+'</option>'+items.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(display(x))+'</option>'}).join("")};
+  const assetOptionsHtml='<option value="">No direct asset link</option>'+options;
+  openModal('<p class="eyebrow">Link evidence</p><h2>Save a source link</h2><form class="form" id="link-evidence-form"><div class="form-grid"><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…" required></div><div class="field full"><label>Title</label><input name="title" maxlength="240" required placeholder="Product page, manual, receipt or reference"></div><div class="field"><label>Type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>VIDEO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Evidence date</label><input type="date" name="occurredAt" value="'+today()+'" required></div><div class="field"><label>Status</label><select name="evidenceStatus"><option selected>ACTIVE</option><option>REFERENCE</option><option>ARCHIVED</option></select></div><div class="field full"><label>Asset</label><select name="assetId">'+assetOptionsHtml+'</select></div><div class="field full"><label>Issue</label><select name="issueId">'+optional("No linked issue",issues,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field full"><label>Repair</label><select name="repairId">'+optional("No linked repair",repairs,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field full"><label>Recurring charge</label><select name="chargeId">'+optional("No linked charge",charges,function(x){return x.name+" · "+x.billing_cycle})+'</select></div><div class="field full"><label>Potential purchase</label><select name="purchaseCandidateId">'+optional("No linked purchase",purchases,function(x){return x.title+" · "+x.status})+'</select></div><div class="field full"><label>Provenance</label><input name="provenance" maxlength="1000" value="Saved directly by homeowner in Homely."></div><div class="field full"><label>Why keep this evidence?</label><textarea name="evidenceReason" maxlength="2000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview evidence</button></div></form>');
+  $("[data-cancel]",modalBody).onclick=closeModal;
+  $("#link-evidence-form").onsubmit=async function(e){
+    e.preventDefault();const d=new FormData(e.currentTarget),url=String(d.get("sourceUrl")||"").trim();
+    await previewAction("ATTACH_DOCUMENT",{
+      assetId:d.get("assetId")||null,
+      issueId:d.get("issueId")||null,
+      repairId:d.get("repairId")||null,
+      chargeId:d.get("chargeId")||null,
+      purchaseCandidateId:d.get("purchaseCandidateId")||null,
+      title:d.get("title"),
+      documentType:d.get("documentType"),
+      provider:"LOCAL",
+      providerFileId:null,
+      mimeType:"text/uri-list",
+      webViewLink:url,
+      sourceUrl:url,
+      provenance:d.get("provenance"),
+      occurredAt:d.get("occurredAt"),
+      evidenceReason:d.get("evidenceReason"),
+      evidenceStatus:d.get("evidenceStatus")
+    },"Homeowner saved this source link as household evidence.");
+  };
+}
+
 async function openDriveImport(file){
   const results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
   const options=results[0],issues=results[1],repairs=results[2],charges=results[3],purchases=results[4];
@@ -201,6 +231,7 @@ async function openDriveImport(file){
       purchaseCandidateId:d.get("purchaseCandidateId")||null,
       title:d.get("title"),
       documentType:d.get("documentType"),
+      provider:"GOOGLE_DRIVE",
       providerFileId:file.id,
       mimeType:file.mimeType,
       webViewLink:file.webViewLink,
@@ -217,8 +248,10 @@ async function showFiles(){
   loading();
   try{
     const both=await Promise.all([api("/api/documents"),api("/api/integrations/status")]),docs=both[0],integrations=both[1],drive=integrations.googleDrive;
-    const driveActions=drive&&drive.enabled&&drive.configured?(drive.connected?'<button class="button" id="drive-select">Select from Drive</button><button class="button" id="drive-disconnect">Disconnect</button>':'<button class="button" id="drive-connect">Connect Drive</button>'):"";
+    const driveControls=drive&&drive.enabled&&drive.configured?(drive.connected?'<button class="button" id="drive-select">Select from Drive</button><button class="button" id="drive-disconnect">Disconnect</button>':'<button class="button" id="drive-connect">Connect Drive</button>'):"";
+    const driveActions='<button class="button" id="save-link">Save link</button>'+driveControls;
     content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links with preserved context.</p></div><div class="hero-actions">'+driveActions+'</div></div><div class="file-grid">'+(docs.map(function(d){const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.evidence_status||"ACTIVE")+" · "+esc(d.provider||"")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"General home evidence")+" · "+fmtDate(d.occurred_at||d.created_at))+'</small>'+(d.evidence_reason?'<span class="file-reason">'+esc(d.evidence_reason)+'</span>':"")+'</button>'}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
+    $("#save-link").onclick=function(){openLinkEvidenceForm()};
     if($("#drive-connect"))$("#drive-connect").onclick=function(){location.href="/api/google-drive/connect"};
     if($("#drive-select"))$("#drive-select").onclick=function(){location.href="/api/google-drive/connect"};
     if($("#drive-disconnect"))$("#drive-disconnect").onclick=async function(){await api("/api/google-drive/disconnect",{method:"POST"});notify("Google Drive disconnected. Existing file records were preserved.");await showFiles()};
