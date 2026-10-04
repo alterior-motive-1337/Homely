@@ -1,10 +1,10 @@
 # Homely
 
-Homely is the persistent operating memory for a home.
+Homely is the persistent operating memory for one physical home.
 
-This foundation deliberately starts below the AI layer: local SQLite state, deterministic health rules, realistic household history, and a desktop-first operating interface. Optional agent, voice, and cloud integrations will sit on top of this substrate rather than own it.
+The application keeps structured household state in SQLite, preserves important history, and layers an optional home-aware agent on top. The AI layer is not the source of truth: Issues, Repairs, Assets, Files, Charges, Potential Purchases, Maintenance, Projects, Timeline Events and Transactions remain explicit domain records.
 
-## Run
+## Run locally
 
 Requires Node.js 24.x.
 
@@ -16,7 +16,7 @@ npm run dev
 
 Open http://localhost:4173.
 
-The server automatically applies migrations and only seeds the demo property when the database is empty.
+The server applies migrations automatically and seeds the demo property only when the database is empty.
 
 ## Commands
 
@@ -27,45 +27,124 @@ npm test
 npm run db:migrate
 npm run db:seed
 npm run db:reset
+npm run mcp
+npm run mcp:smoke
 ```
 
-## Current architecture
+## Architecture
 
 ```text
-Browser UI             OpenAI Agent             MCP hosts
-   |                         |                       |
-HTTP API              Homely tool layer       Homely MCP server
-   |                         |                       |
-   +-------------------------+-----------+-----------+
-                                         |
-                         Homely domain logic + guarded transactions
-                                         |
-                                       SQLite
+Browser UI        Groq / OpenAI agent        MCP hosts
+    |                    |                       |
+HTTP API          Homely tool layer         Homely MCP
+    |                    |                       |
+    +--------------------+-----------+-----------+
+                                     |
+                     guarded Homely transactions
+                                     |
+                                   SQLite
+                                     |
+                         optional Google Drive backup
 ```
 
-SQLite owns truth. OpenAI is optional and sits behind an AgentProvider boundary. Mutations are committed only through Homely's transaction service; model-created proposals are inert until explicitly approved in Homely.
+SQLite owns authoritative state. The agent and MCP layer can read that state and create inert proposals, but they are not given commit/undo authority.
 
-Current domain surface: Home, Systems, Assets, Issues, Maintenance Rules, Projects, Timeline Events, Documents, and auditable Transactions. Mutating home state follows propose → preview → commit → audit → undo.
+Mutations follow:
 
-Homely also exposes the same domain through a local stdio MCP server. The OpenAI agent uses the same provider-neutral Homely tool executor for grounded reads and proposals. Google Drive and optional voice remain integration layers; Projects are now part of the core structured domain.
+```text
+propose → preview → human approval → commit → audit
+```
 
-The default local database is `./data/homely.db`; override it with `HOMELY_DB_PATH`. The supported cloud-primary deployment runs Homely on Render with an ephemeral SQLite working copy, single-owner authentication, and verified Google Drive database recovery. Optional integration variables are documented in `.env.example`.
+Reversible record types may later be undone through Homely. Committed Issues and Repairs are historical records and are intentionally not deletable through transaction undo; corrections are recorded as additional history.
 
+## Primary product surface
+
+The main interface is intentionally small:
+
+- **Home** — current state, attention items, recent repairs, charges, purchases and timeline memory.
+- **Issues** — active and resolved problem history.
+- **Repairs** — permanent repair history including date, cost, contractor, outcome and linked issue.
+- **Appliances** — household assets/furniture with acquisition, condition, warranty and history.
+- **Files** — household evidence with provenance, evidence date, reason, status and associations.
+
+Maintenance, Projects, Timeline and Transactions remain available in the underlying domain/tooling without dominating primary navigation.
+
+## Files and evidence
+
+Evidence can be associated with any combination of:
+
+- asset
+- issue
+- repair
+- recurring charge
+- potential purchase
+
+Google Drive files can be selected and attached through the approval flow. Direct source/product/manual URLs can also be saved as evidence from the Files tab.
+
+Evidence metadata includes type, provenance, evidence date, reason and status. The built-in viewer opens local demo files, Drive links and saved source URLs. Photos and videos from supported file sources are treated as normal evidence records.
+
+## Agent
+
+Set `AI_ENABLED=true` and configure at least one supported provider.
+
+Groq is preferred when `GROQ_API_KEY` is present:
+
+```bash
+AI_ENABLED=true
+GROQ_API_KEY=...
+GROQ_MODEL=openai/gpt-oss-20b
+```
+
+OpenAI remains supported as a fallback:
+
+```bash
+AI_ENABLED=true
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-5.5
+```
+
+Provider credentials stay server-side.
+
+Groq's stateless Responses-compatible flow is handled by Homely carrying bounded conversation history in the application. Both providers use the same provider-neutral Homely tools and proposal-only mutation boundary.
+
+If no AI provider is configured, the structured home application continues to work.
+
+## Web research
+
+Optional research tools can be enabled with:
+
+```bash
+EXA_API_KEY=...
+FIRECRAWL_API_KEY=...
+```
+
+Exa provides current search results for products, prices, suppliers and local services. Firecrawl can read a page that came from a Homely search result.
+
+Local-service research requires a location explicitly supplied by the user; Homely does not infer a precise home location.
+
+## Voice input
+
+The chat includes browser speech input when the browser exposes the Web Speech recognition API. This path does not require a separate paid voice API key.
+
+Unsupported browsers simply hide the Voice control. Microphone permission remains user-controlled by the browser.
 
 ## MCP
 
-Homely uses the official MCP TypeScript v2 server package and exposes a local stdio server.
+Homely runs an official MCP v2 stdio server:
 
 ```bash
 npm run mcp
 ```
 
-Initial tools:
+Current read/proposal tools include:
 
 - `get_home_summary`
 - `list_assets`
 - `get_asset`
 - `list_issues`
+- `list_repairs`
+- `list_charges`
+- `list_purchases`
 - `list_documents`
 - `get_asset_history`
 - `search_history`
@@ -74,61 +153,43 @@ Initial tools:
 - `preview_action`
 - `get_transaction`
 
-Read tools query the same SQLite/domain state as the web application and advertise explicit MCP read-only/closed-world annotations. `preview_action` may create an audited transaction proposal but cannot change home state.
+MCP intentionally does **not** expose commit, reject or undo operations. Models may investigate the home and prepare a proposal; the human approves or rejects it inside Homely.
 
-Homely intentionally does **not** expose commit, reject, or undo operations through MCP. An MCP host/model can investigate the property and propose a structured action; the human approves or rejects that proposal inside Homely, and only Homely's own transaction interface can commit or reverse state. This preserves the core rule: **AI proposes. Homely commits.**
+## Google Drive
 
+Drive has two roles:
 
-## Optional OpenAI agent
+1. off-site SQLite backup/recovery for the cloud-primary deployment;
+2. optional household evidence import.
 
-The web application runs normally with AI disabled. To enable the reasoning layer, provide server-side environment configuration:
+Interactive file access uses the `drive.file` scope rather than unrestricted Drive access.
 
-```bash
-AI_ENABLED=true
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-5.5
-npm run dev
-```
+Relevant configuration is documented in `.env.example` and `docs/render-deployment.md`.
 
-The API key is never sent to the browser. The OpenAI provider uses the Responses API and can read Homely state or create an inert transaction proposal. It is not given commit or undo tools. Approval remains a Homely UI/API action, so a model response cannot silently mutate SQLite.
+## Render deployment
 
-If the provider is disabled, unconfigured, or temporarily unavailable, the structured property application remains operational.
-
-
-## Optional Google Drive
-
-Drive remains off unless explicitly enabled and configured. Homely requests only the non-sensitive per-file scope:
+The supported low-infrastructure deployment is:
 
 ```text
-https://www.googleapis.com/auth/drive.file
+Browser → Render → Homely / ephemeral SQLite → Google Drive backup
 ```
 
-Configure a Google OAuth web client with the callback URI shown in `.env.example`, enable the Google Drive API, and use the dedicated Homely Google account:
+The Render Blueprint in `render.yaml` configures owner authentication, Groq-first AI settings, optional web research, Google Drive recovery and the free-service SQLite path.
 
-```bash
-GOOGLE_DRIVE_ENABLED=true
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_DRIVE_REDIRECT_URI=http://localhost:4173/api/google-drive/callback
-```
+On startup, Homely restores the newest valid Drive snapshot before opening/migrating SQLite. Important committed transactions trigger durability backups, and periodic backups run while the service is awake.
 
-The connect flow invokes Google's file picker authorization flow. Homely receives only file IDs the user selected. OAuth credentials are stored locally under `./data/google-drive-token.json` by default, which is gitignored.
+See [docs/render-deployment.md](docs/render-deployment.md) for setup and recovery verification.
 
-Selecting a Drive file does **not** silently attach it. The user chooses a Homely asset and document type, previews an `ATTACH_DOCUMENT` transaction, and explicitly approves it. The document association and timeline event are reversible while the audit record remains.
+## Validation
 
+CI currently runs:
 
-## Cloud-primary Render deployment
+- TypeScript build
+- unit tests
+- JavaScript syntax validation
+- fresh database reset/migrations
+- MCP smoke test
+- desktop/mobile browser regression
+- browser voice-input regression
 
-The repository includes a root `render.yaml` for the low-infrastructure deployment path:
-
-```text
-Browser → Render → Homely/SQLite → Google Drive backups
-```
-
-The Render service binds to `0.0.0.0:$PORT`, requires the owner password before exposing property data, throttles repeated failed logins, and invalidates prior sessions when the owner password changes. Long-lived Google credentials remain in Render's secret environment variables. Important transaction commits, rejections, and reversals trigger a Drive backup; periodic backups run while the service is awake.
-
-On a fresh ephemeral boot, Homely attempts to restore the newest Drive snapshot **before** it opens/migrates SQLite. Restored databases must pass SQLite integrity checking. If no backup exists yet, the demo home is seeded and backed up before the server starts accepting traffic.
-
-See [docs/render-deployment.md](docs/render-deployment.md) for the Google OAuth refresh-token and Blueprint setup procedure.
-
-A paid persistent disk can be added later without replacing this design: point `HOMELY_DB_PATH` at the mounted disk and retain Drive as off-site recovery.
+The canonical October 2026 product model is documented in [docs/canonical-product-model.md](docs/canonical-product-model.md).
