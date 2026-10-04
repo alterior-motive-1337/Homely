@@ -25,7 +25,7 @@ function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-content-type-options", "nosniff");
   res.setHeader("x-frame-options", "DENY");
   res.setHeader("referrer-policy", "no-referrer");
-  res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("permissions-policy", "camera=(), microphone=(self), geolocation=()");
 }
 
 function sendJson(
