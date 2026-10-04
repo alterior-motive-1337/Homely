@@ -11,7 +11,7 @@ function demoDb() {
   return db;
 }
 
-test("report issue is inert until commit and undo removes its state but keeps audit", () => {
+test("committed issue reports are permanent history", () => {
   const db = demoDb();
   const before = Number(db.prepare("SELECT COUNT(*) AS count FROM issues").get()?.count ?? 0);
 
@@ -33,10 +33,46 @@ test("report issue is inert until commit and undo removes its state but keeps au
   assert.equal(committed?.status, "COMMITTED");
   assert.equal(Number(db.prepare("SELECT COUNT(*) AS count FROM issues").get()?.count ?? 0), before + 1);
 
-  const result = undoTransaction(db, String(proposal.transaction?.id));
-  assert.equal(result.original?.status, "REVERSED");
-  assert.equal(Number(db.prepare("SELECT COUNT(*) AS count FROM issues").get()?.count ?? 0), before);
-  assert.equal(Number(db.prepare("SELECT COUNT(*) AS count FROM transactions").get()?.count ?? 0), 2);
+  assert.throws(
+    () => undoTransaction(db, String(proposal.transaction?.id)),
+    /Issue records are permanent/
+  );
+  assert.equal(Number(db.prepare("SELECT COUNT(*) AS count FROM issues").get()?.count ?? 0), before + 1);
+  assert.equal(
+    db.prepare("SELECT status FROM transactions WHERE id = ?").get(String(proposal.transaction?.id))?.status,
+    "COMMITTED"
+  );
+  db.close();
+});
+
+test("repair records are permanent history", () => {
+  const db = demoDb();
+  const proposal = proposeTransaction(db, {
+    actionType: "RECORD_REPAIR",
+    reason: "Record completed kitchen tap repair.",
+    payload: {
+      assetId: "asset-tap",
+      title: "Replace tap cartridge",
+      repairDate: "2026-10-04",
+      costCents: 45000,
+      contractor: "Demo Plumbing",
+      outcome: "Pressure restored."
+    }
+  });
+
+  commitTransaction(db, String(proposal.transaction?.id));
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM repairs WHERE title = 'Replace tap cartridge'").get()?.count ?? 0),
+    1
+  );
+  assert.throws(
+    () => undoTransaction(db, String(proposal.transaction?.id)),
+    /Repair records are permanent/
+  );
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM repairs WHERE title = 'Replace tap cartridge'").get()?.count ?? 0),
+    1
+  );
   db.close();
 });
 
