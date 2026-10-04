@@ -4,7 +4,7 @@ import http from "node:http";
 import { URL } from "node:url";
 import { config } from "./config.js";
 import { migrate, openDatabase } from "./db.js";
-import { getAsset, getOverview, getProject, getTimeline, listAssets, listDocuments, listIssues, listMaintenance, listProjects, listSystems } from "./domain/repository.js";
+import { getAsset, getOverview, getProject, getTimeline, listAssets, listCharges, listDocuments, listIssues, listMaintenance, listProjects, listPurchaseCandidates, listRepairs, listSystems } from "./domain/repository.js";
 import {
   commitTransaction,
   DomainError,
@@ -235,6 +235,9 @@ async function main(): Promise<void> {
         return asset ? sendJson(res, 200, asset) : sendJson(res, 404, { error: "Asset not found" });
       }
       if (req.method === "GET" && url.pathname === "/api/issues") return sendJson(res, 200, listIssues(db));
+      if (req.method === "GET" && url.pathname === "/api/repairs") return sendJson(res, 200, listRepairs(db));
+      if (req.method === "GET" && url.pathname === "/api/charges") return sendJson(res, 200, listCharges(db));
+      if (req.method === "GET" && url.pathname === "/api/purchases") return sendJson(res, 200, listPurchaseCandidates(db));
       if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
       if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
       if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
