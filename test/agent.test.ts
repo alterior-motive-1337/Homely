@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { migrate, openDatabase } from "../src/db.js";
 import { seedDemo } from "../src/seed.js";
-import { OpenAIAgentProvider } from "../src/agent/openaiProvider.js";
+import { GroqAgentProvider } from "../src/agent/groqProvider.js";
 
 function response(id: string, output: unknown[], outputText = "") {
   return { id, output, output_text: outputText };
 }
 
-test("OpenAI provider executes grounded reads and returns final text", async () => {
+test("Groq provider executes grounded reads and returns final text", async () => {
   const db = openDatabase(":memory:");
   migrate(db);
   seedDemo(db);
@@ -31,7 +31,7 @@ test("OpenAI provider executes grounded reads and returns final text", async () 
     }
   };
 
-  const provider = new OpenAIAgentProvider(db, fake as never, "test-model");
+  const provider = new GroqAgentProvider(db, fake as never, "test-model");
   const result = await provider.respond({ message: "What happened with the kitchen tap before?" });
 
   assert.match(result.text, /sediment/i);
@@ -40,7 +40,7 @@ test("OpenAI provider executes grounded reads and returns final text", async () 
   db.close();
 });
 
-test("OpenAI provider can only create an inert proposal", async () => {
+test("Groq provider can only create an inert proposal", async () => {
   const db = openDatabase(":memory:");
   migrate(db);
   seedDemo(db);
@@ -74,7 +74,7 @@ test("OpenAI provider can only create an inert proposal", async () => {
     }
   };
 
-  const provider = new OpenAIAgentProvider(db, fake as never, "test-model");
+  const provider = new GroqAgentProvider(db, fake as never, "test-model");
   const result = await provider.respond({ message: "The kitchen tap is losing pressure again." });
 
   assert.equal(result.proposals.length, 1);
