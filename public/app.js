@@ -110,7 +110,7 @@ async function showHome(){
     html+='<section class="card"><div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">+ Charge</button></div><div class="card-body rows">'+(charges.slice(0,5).map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+"</span>")}).join("")||'<div class="empty">No recurring charges recorded.</div>')+'</div></section>';
     html+='<section class="card"><div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">+ Save</button></div><div class="card-body rows">'+(purchases.slice(0,5).map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+"</span>",p.rationale||"")}).join("")||'<div class="empty">No purchase research saved.</div>')+'</div></section>';
     html+='<section class="card"><div class="card-head"><h2>Recent memory</h2></div><div class="card-body rows">'+(d.recent.slice(0,5).map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")||'<div class="empty">No recent activity.</div>')+'</div></section></div>';
-    content.innerHTML=html;$("#home-issue").onclick=openIssueForm;$("#home-repair").onclick=function(){openRepairForm()};$("#add-charge").onclick=openChargeForm;$("#add-purchase").onclick=function(){openPurchaseForm()};$("[data-go]").forEach(function(b){b.onclick=function(){navigate(b.dataset.go)}})
+    content.innerHTML=html;$("#home-issue").onclick=openIssueForm;$("#home-repair").onclick=function(){openRepairForm()};$("#add-charge").onclick=openChargeForm;$("#add-purchase").onclick=function(){openPurchaseForm()};$$("[data-go]").forEach(function(b){b.onclick=function(){navigate(b.dataset.go)}})
   }catch(e){fail(e)}
 }
 
@@ -199,7 +199,7 @@ async function showFiles(){
     if($("#drive-connect"))$("#drive-connect").onclick=function(){location.href="/api/google-drive/connect"};
     if($("#drive-select"))$("#drive-select").onclick=function(){location.href="/api/google-drive/connect"};
     if($("#drive-disconnect"))$("#drive-disconnect").onclick=async function(){await api("/api/google-drive/disconnect",{method:"POST"});notify("Google Drive disconnected. Existing file records were preserved.");await showFiles()};
-    $("[data-file]",content).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.file}))}});
+    $$("[data-file]",content).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.file}))}});
     const params=new URLSearchParams(location.search),driveError=params.get("driveError"),picked=params.get("drivePicked"),connected=params.get("driveConnected");
     if(driveError){history.replaceState({view:"files"},"","/?view=files");notify("Google Drive selection was cancelled or failed.")}
     else if(picked&&drive&&drive.connected){history.replaceState({view:"files"},"","/?view=files");const files=await api("/api/google-drive/files?ids="+encodeURIComponent(picked));if(files.length)await openDriveImport(files[0])}
