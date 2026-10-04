@@ -1,1289 +1,199 @@
-const content = document.querySelector("#content");
-const pageTitle = document.querySelector("#page-title");
-const nav = document.querySelector("#nav");
-const assetDialog = document.querySelector("#asset-dialog");
-const assetDetail = document.querySelector("#asset-detail");
-const actionDialog = document.querySelector("#action-dialog");
-const actionDetail = document.querySelector("#action-detail");
-const toast = document.querySelector("#toast");
-const runtimeStatus = document.querySelector("#runtime-status");
-const runtimeStatusText = document.querySelector("#runtime-status-text");
-const logoutButton = document.querySelector("#logout-button");
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+const content=$("#content"), pageTitle=$("#page-title"), nav=$("#nav");
+const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewerBody=$("#viewer-body"), viewerTitle=$("#viewer-title");
+const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input");
+const runtime=$("#runtime-status"), runtimeText=$("#runtime-text"), agentState=$("#agent-state");
+const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null};
 
-document.querySelector("#today").textContent = new Intl.DateTimeFormat("en-ZA", {
-  day: "2-digit", month: "short", year: "numeric"
-}).format(new Date());
+function esc(v){return String(v==null?"":v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
+function fmtDate(v){return v?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(v)):"—"}
+function money(c){return c==null?"—":new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR",maximumFractionDigits:0}).format(Number(c)/100)}
+function today(){return new Date().toISOString().slice(0,10)}
+$("#today").textContent=new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date());
 
-const state = {
-  view: "overview",
-  assets: [],
-  pendingTransactionId: null,
-  agentMessages: [],
-  agentPreviousResponseId: null,
-  agentStatus: null,
-  integrations: null
+async function api(path,options){
+  const init=Object.assign({},options||{});
+  if(init.body&&typeof init.body!=="string"){init.headers=Object.assign({"content-type":"application/json"},init.headers||{});init.body=JSON.stringify(init.body)}
+  const res=await fetch(path,init);let data=null;try{data=await res.json()}catch(_){}
+  if(!res.ok)throw new Error(data&&data.error?data.error:"Request failed: "+res.status);
+  return data
+}
+function notify(message){toast.textContent=message;toast.classList.add("show");setTimeout(function(){toast.classList.remove("show")},2400)}
+function loading(label){content.innerHTML='<div class="loading">'+esc(label||"Loading home memory…")+"</div>"}
+function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
+function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(v||"UNKNOWN")+"</span>"}
+function row(title,meta,right,note){return '<div class="row"><div><div class="row-title">'+esc(title)+'</div><div class="row-meta">'+esc(meta||"")+'</div>'+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
+
+function setRuntime(x){
+  state.integrations=x;runtime.className="runtime-status";
+  const backup=x&&x.backup, ai=x&&x.ai;
+  if(backup&&backup.enabled&&!backup.connected){runtime.classList.add("warn");runtimeText.textContent="Backup not connected"}
+  else if(backup&&backup.lastError){runtime.classList.add("bad");runtimeText.textContent="Backup degraded"}
+  else{runtime.classList.add("good");runtimeText.textContent=backup&&backup.enabled?"Home memory durable":"Local memory active"}
+  agentState.textContent=ai&&ai.available?String(ai.provider||"AI")+" · "+String(ai.model):"Structured memory only";
+  chatInput.disabled=!(ai&&ai.available);chatForm.querySelector("button").disabled=!(ai&&ai.available)
+}
+async function refreshStatus(){try{setRuntime(await api("/api/integrations/status"))}catch(_){runtime.classList.add("bad");runtimeText.textContent="Status unavailable"}}
+
+function openModal(html){modalBody.innerHTML=html;modal.showModal()}
+function closeModal(){if(modal.open)modal.close();modalBody.innerHTML=""}
+$("#modal-close").onclick=closeModal;
+modal.addEventListener("cancel",function(e){e.preventDefault();closeModal()});
+
+async function assetOptions(selected){
+  if(!state.assets.length)state.assets=await api("/api/assets");
+  return state.assets.map(function(a){return '<option value="'+esc(a.id)+'" '+(a.id===selected?"selected":"")+">"+esc(a.name)+" · "+esc(a.system_name)+"</option>"}).join("")
+}
+
+async function previewAction(actionType,payload,reason,requestText){
+  const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
+  const p=result.preview,t=result.transaction;
+  openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div class="preview"><strong>'+esc(p.summary)+'</strong><ul>'+p.effects.map(function(x){return "<li>"+esc(x)+"</li>"}).join("")+'</ul></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
+  $("#reject-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected. No state changed.")};
+  $("#commit-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});closeModal();notify(actionType==="RECORD_REPAIR"?"Repair permanently recorded.":"Home memory updated.");await selectView(state.view)}
+}
+
+async function openIssueForm(){
+  const options=await assetOptions("");
+  openModal('<p class="eyebrow">New issue</p><h2>Report a problem</h2><form class="form" id="issue-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>Title</label><input name="title" maxlength="160" required></div><div class="field"><label>Severity</label><select name="severity"><option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div><div class="field"><label>Detected</label><input type="date" name="detectedAt" value="'+today()+'" required></div><div class="field full"><label>Description</label><textarea name="description"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  $("[data-cancel]",modalBody).onclick=closeModal;
+  $("#issue-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget);await previewAction("REPORT_ISSUE",{assetId:d.get("assetId"),title:d.get("title"),severity:d.get("severity"),description:d.get("description"),detectedAt:d.get("detectedAt")},"Homeowner reported an issue through Homely.")}
+}
+function openResolveForm(issue){
+  openModal('<p class="eyebrow">Resolve issue</p><h2>'+esc(issue.title)+'</h2><form class="form" id="resolve-form"><div class="form-grid"><div class="field"><label>Resolved</label><input type="date" name="resolvedAt" value="'+today()+'" required></div><div class="field full"><label>Resolution</label><textarea name="resolution" required placeholder="What fixed it?"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  $("[data-cancel]",modalBody).onclick=closeModal;
+  $("#resolve-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget);await previewAction("RESOLVE_ISSUE",{issueId:issue.id,resolvedAt:d.get("resolvedAt"),resolution:d.get("resolution")},"Homeowner marked the issue resolved.")}
+}
+async function openRepairForm(prefill){
+  prefill=prefill||{};
+  const options=await assetOptions(prefill.asset_id||"");
+  const issues=await api("/api/issues");
+  const issueOpts=['<option value="">No linked issue</option>'].concat(issues.map(function(i){return '<option value="'+esc(i.id)+'" '+(i.id===prefill.id?"selected":"")+">"+esc(i.title)+" · "+esc(i.asset_name)+"</option>"})).join("");
+  const title=prefill.title?"Repair: "+prefill.title:"";
+  openModal('<p class="eyebrow">Permanent repair history</p><h2>Record a repair</h2><form class="form" id="repair-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field full"><label>Linked issue</label><select name="issueId">'+issueOpts+'</select></div><div class="field full"><label>Repair title</label><input name="title" maxlength="180" required value="'+esc(title)+'"></div><div class="field"><label>Date</label><input type="date" name="repairDate" value="'+today()+'" required></div><div class="field"><label>Cost (ZAR)</label><input type="number" name="cost" min="0" step=".01" placeholder="0.00"></div><div class="field full"><label>Contractor / person</label><input name="contractor" maxlength="240"></div><div class="field full"><label>Work performed</label><textarea name="description"></textarea></div><div class="field full"><label>Outcome</label><textarea name="outcome" placeholder="What changed after the repair?"></textarea></div></div><div class="row-note">Repair records are permanent. Corrections are added as new history instead of deleting the original record.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  $("[data-cancel]",modalBody).onclick=closeModal;
+  $("#repair-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("cost")||"").trim();await previewAction("RECORD_REPAIR",{assetId:d.get("assetId"),issueId:d.get("issueId")||null,title:d.get("title"),repairDate:d.get("repairDate"),costCents:cost?Math.round(Number(cost)*100):null,contractor:d.get("contractor"),description:d.get("description"),outcome:d.get("outcome")},"Homeowner recorded completed repair work.")}
+}
+
+async function showHome(){
+  loading();
+  try{
+    const d=await api("/api/overview"), total=d.systems.reduce(function(n,s){return n+Number(s.asset_count||0)},0);
+    const memory=d.memory||{}, repairs=memory.repairs||[],charges=memory.charges||[],purchases=memory.purchases||[];
+    let html='<div class="hero"><div><p class="eyebrow">Active property</p><h2>'+esc(d.home&&d.home.name||"Home")+'</h2><p>'+esc(d.home&&d.home.address_label||"Persistent household record")+'</p></div><div class="hero-actions"><button class="button" id="home-issue">+ Issue</button><button class="primary-button" id="home-repair">+ Repair</button></div></div>';
+    html+='<section class="metrics"><div class="metric"><span>Open issues</span><strong>'+d.summary.open_issues+'</strong></div><div class="metric"><span>Attention</span><strong>'+d.summary.systems_needing_attention+'</strong></div><div class="metric"><span>Overdue</span><strong>'+d.summary.overdue_maintenance+'</strong></div><div class="metric"><span>Assets</span><strong>'+total+'</strong></div><div class="metric"><span>Saved buys</span><strong>'+(d.summary.saved_purchases||0)+'</strong></div></section>';
+    html+='<div class="grid">';
+    html+='<section class="card"><div class="card-head"><h2>Needs attention</h2><button class="button" data-go="issues">All issues</button></div><div class="card-body rows">'+(d.attention.issues.slice(0,5).map(function(i){return row(i.title,i.asset_name+" · "+fmtDate(i.detected_at),badge(i.severity))}).join("")||'<div class="empty">No active issues.</div>')+'</div></section>';
+    html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="button" data-go="repairs">History</button></div><div class="card-body rows">'+(repairs.map(function(r){return row(r.title,r.asset_name+" · "+fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repair records yet.</div>')+'</div></section>';
+    html+='<section class="card"><div class="card-head"><h2>Upcoming</h2></div><div class="card-body rows">'+(d.upcoming.slice(0,5).map(function(m){return row(m.title,m.asset_name+" · "+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+"d</span>")}).join("")||'<div class="empty">Nothing due in the next 30 days.</div>')+'</div></section>';
+    html+='<section class="card"><div class="card-head"><h2>Recurring charges</h2></div><div class="card-body rows">'+(charges.slice(0,5).map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+"</span>")}).join("")||'<div class="empty">No recurring charges recorded.</div>')+'</div></section>';
+    html+='<section class="card"><div class="card-head"><h2>Potential purchases</h2></div><div class="card-body rows">'+(purchases.slice(0,5).map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+"</span>",p.rationale||"")}).join("")||'<div class="empty">No purchase research saved.</div>')+'</div></section>';
+    html+='<section class="card"><div class="card-head"><h2>Recent memory</h2></div><div class="card-body rows">'+(d.recent.slice(0,5).map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")||'<div class="empty">No recent activity.</div>')+'</div></section></div>';
+    content.innerHTML=html;$("#home-issue").onclick=openIssueForm;$("#home-repair").onclick=function(){openRepairForm()};$$("[data-go]").forEach(function(b){b.onclick=function(){navigate(b.dataset.go)}})
+  }catch(e){fail(e)}
+}
+
+async function showIssues(){
+  loading();
+  try{
+    const items=await api("/api/issues");
+    let body=items.map(function(i){const active=!["RESOLVED","CLOSED"].includes(i.status);return '<div class="row"><button class="row-open" data-asset="'+esc(i.asset_id)+'"><div class="row-title">'+esc(i.title)+'</div><div class="row-meta">'+esc(i.asset_name)+" · detected "+fmtDate(i.detected_at)+'</div><div class="row-note">'+esc(i.description||"")+'</div></button><div class="row-actions">'+badge(i.severity)+badge(i.status)+(active?'<button class="button" data-repair="'+esc(i.id)+'">Repair</button><button class="button" data-resolve="'+esc(i.id)+'">Resolve</button>':"")+"</div></div>"}).join("");
+    content.innerHTML='<div class="hero"><div><p class="eyebrow">Problem register</p><h2>Issues</h2><p>Resolved history stays attached to the home.</p></div><div class="hero-actions"><button class="primary-button" id="new-issue">Report issue</button></div></div><section class="card"><div class="card-body rows">'+(body||'<div class="empty">No issues recorded.</div>')+"</div></section>";
+    $("#new-issue").onclick=openIssueForm;
+    $$("[data-resolve]").forEach(function(b){b.onclick=function(){openResolveForm(items.find(function(i){return i.id===b.dataset.resolve}))}});
+    $$("[data-repair]").forEach(function(b){b.onclick=function(){openRepairForm(items.find(function(i){return i.id===b.dataset.repair}))}});
+    $$("[data-asset]").forEach(function(b){b.onclick=function(){openAsset(b.dataset.asset)}})
+  }catch(e){fail(e)}
+}
+
+async function showRepairs(){
+  loading();
+  try{
+    const items=await api("/api/repairs");
+    const body=items.map(function(r){return '<div class="row"><button class="row-open" data-asset="'+esc(r.asset_id)+'"><div class="row-title">'+esc(r.title)+'</div><div class="row-meta">'+esc(r.asset_name)+" · "+fmtDate(r.repair_date)+(r.contractor?" · "+esc(r.contractor):"")+'</div><div class="row-note">'+esc(r.outcome||r.description||"")+'</div></button><div class="row-actions"><span class="money">'+money(r.cost_cents)+"</span>"+(r.issue_title?'<span class="badge">ISSUE LINKED</span>':"")+"</div></div>"}).join("");
+    content.innerHTML='<div class="hero"><div><p class="eyebrow">Permanent history</p><h2>Repairs</h2><p>What was fixed, when, by whom and what it cost.</p></div><div class="hero-actions"><button class="primary-button" id="new-repair">Record repair</button></div></div><section class="card"><div class="card-body rows">'+(body||'<div class="empty">No repair records yet.</div>')+"</div></section>";
+    $("#new-repair").onclick=function(){openRepairForm()};$$("[data-asset]").forEach(function(b){b.onclick=function(){openAsset(b.dataset.asset)}})
+  }catch(e){fail(e)}
+}
+
+function renderAssets(items){
+  $("#asset-results").innerHTML='<div class="table-wrap"><table><thead><tr><th>Asset</th><th>Condition</th><th>Health</th><th>System</th><th>Location</th><th>Purchase</th></tr></thead><tbody>'+items.map(function(a){return '<tr data-asset="'+esc(a.id)+'"><td><strong>'+esc(a.name)+'</strong><div class="row-meta">'+esc(a.manufacturer||"")+" "+esc(a.model||"")+'</div></td><td>'+badge(a.condition||"UNKNOWN")+"</td><td>"+badge(a.health)+"</td><td>"+esc(a.system_name)+"</td><td>"+esc(a.location||"—")+'</td><td>'+money(a.purchase_cost_cents)+"</td></tr>"}).join("")+"</tbody></table></div>";
+  $$("[data-asset]",$("#asset-results")).forEach(function(r){r.onclick=function(){openAsset(r.dataset.asset)}})
+}
+async function showAppliances(){
+  loading();
+  try{
+    state.assets=await api("/api/assets");
+    content.innerHTML='<div class="hero"><div><p class="eyebrow">Appliances & furniture</p><h2>Asset registry</h2><p>Condition, age, purchase information, faults, repairs and evidence.</p></div></div><div class="toolbar"><input class="search" id="asset-search" type="search" placeholder="Search assets, systems or rooms…"></div><div id="asset-results"></div>';
+    renderAssets(state.assets);$("#asset-search").oninput=function(e){const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(function(a){return [a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(function(v){return String(v||"").toLowerCase().includes(q)})}))}
+  }catch(e){fail(e)}
+}
+async function openAsset(id){
+  try{
+    const a=await api("/api/assets/"+encodeURIComponent(id));
+    let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(a.condition||"UNKNOWN")+badge(a.health)+'</div><div class="detail-grid">';
+    [["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]].forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
+    html+="</div>";if(a.notes)html+='<div class="detail-section"><h3>Notes</h3><div class="row-note">'+esc(a.notes)+"</div></div>";
+    html+='<div class="detail-section"><h3>Issues</h3><div class="rows">'+(a.issues.map(function(i){return row(i.title,fmtDate(i.detected_at)+" · "+i.severity,badge(i.status),i.description||"")}).join("")||'<div class="empty">No issues.</div>')+"</div></div>";
+    html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
+    html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>')}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
+    openModal(html);$$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)openFile(doc)}})
+  }catch(e){notify(e.message)}
+}
+
+function fileHref(d){return String(d.web_view_link||d.local_path||d.source_url||"").trim()}
+async function openFile(doc){
+  const href=fileHref(doc);viewerTitle.textContent=doc.title||"File";viewerBody.innerHTML="";
+  if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}
+  if(!href){viewerBody.innerHTML='<div class="viewer-link"><div><strong>File metadata is recorded, but no viewable location is attached.</strong></div></div>';viewer.showModal();return}
+  if(href.startsWith("/")){
+    try{
+      const res=await fetch(href);if(!res.ok)throw new Error("File unavailable");const blob=await res.blob();state.objectUrl=URL.createObjectURL(blob);const mt=doc.mime_type||blob.type||"";
+      if(mt.startsWith("image/"))viewerBody.innerHTML='<img src="'+esc(state.objectUrl)+'" alt="">';
+      else if(mt.startsWith("video/"))viewerBody.innerHTML='<video controls src="'+esc(state.objectUrl)+'"></video>';
+      else viewerBody.innerHTML='<iframe title="'+esc(doc.title)+'" src="'+esc(state.objectUrl)+'"></iframe>'
+    }catch(e){viewerBody.innerHTML='<div class="viewer-link"><div><strong>'+esc(e.message)+"</strong></div></div>"}
+  }else viewerBody.innerHTML='<div class="viewer-link"><div><strong>'+esc(doc.title)+'</strong><div class="row-meta">External file · '+esc(doc.provider||"source")+'</div><a class="primary-button" href="'+esc(href)+'" target="_blank" rel="noreferrer">Open source</a></div></div>';
+  viewer.showModal()
+}
+$("#viewer-close").onclick=function(){viewer.close()};
+viewer.addEventListener("close",function(){if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
+
+async function showFiles(){
+  loading();
+  try{
+    const both=await Promise.all([api("/api/documents"),api("/api/integrations/status")]),docs=both[0],integrations=both[1],drive=integrations.googleDrive;
+    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links.</p></div><div class="hero-actions">'+(drive&&drive.enabled&&drive.configured&&!drive.connected?'<button class="button" id="drive-connect">Connect Drive</button>':"")+'</div></div><div class="file-grid">'+(docs.map(function(d){return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.provider||"")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc(d.asset_name||d.repair_title||d.issue_title||d.charge_name||d.purchase_title||"Home record")+" · "+fmtDate(d.occurred_at||d.created_at)+"</small></button>"}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
+    if($("#drive-connect"))$("#drive-connect").onclick=function(){location.href="/api/google-drive/connect"};
+    $$("[data-file]",content).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.file}))}})
+  }catch(e){fail(e)}
+}
+
+function messageMarkup(m){
+  return '<article class="message '+m.role+'"><div class="message-role">'+(m.role==="user"?"You":"Homely")+'</div><p>'+esc(m.text)+'</p>'+(m.proposals||[]).map(function(p){return '<div class="proposal"><strong>'+esc(p.preview.title)+'</strong><div class="row-meta">'+esc(p.preview.summary)+'</div><div class="row-note">'+esc(p.reason)+'</div>'+(p.status==="PROPOSED"?'<div class="proposal-actions"><button class="button" data-reject="'+esc(p.transactionId)+'">Reject</button><button class="primary-button" data-approve="'+esc(p.transactionId)+'">Approve</button></div>':'<div class="row-meta">'+esc(p.status)+"</div>")+"</div>"}).join("")+"</article>"
+}
+function renderChat(){
+  chatBody.innerHTML=state.agentMessages.length?state.agentMessages.map(messageMarkup).join(""):'<div class="chat-empty">Ask about this home, its history, files, repairs, costs or what to do next.</div>';
+  $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
+  $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
+  chatBody.scrollTop=chatBody.scrollHeight
+}
+chatForm.onsubmit=async function(e){
+  e.preventDefault();const message=chatInput.value.trim();if(!message)return;
+  state.agentMessages.push({role:"user",text:message,proposals:[]});chatInput.value="";renderChat();const button=chatForm.querySelector("button");button.disabled=true;button.textContent="Working…";
+  try{const r=await api("/api/agent/respond",{method:"POST",body:{message:message,previousResponseId:state.previousResponseId}});state.previousResponseId=r.responseId;state.agentMessages.push({role:"assistant",text:r.text,proposals:(r.proposals||[]).map(function(p){return Object.assign({},p,{status:"PROPOSED"})})})}
+  catch(err){state.agentMessages.push({role:"assistant",text:err.message,proposals:[]})}
+  finally{button.disabled=!(state.integrations&&state.integrations.ai&&state.integrations.ai.available);button.textContent="Send";renderChat()}
 };
 
-const esc = (value = "") => String(value)
-  .replaceAll("&", "&amp;")
-  .replaceAll("<", "&lt;")
-  .replaceAll(">", "&gt;")
-  .replaceAll('"', "&quot;")
-  .replaceAll("'", "&#039;");
-
-const fmtDate = (value) => value
-  ? new Intl.DateTimeFormat("en-ZA", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value))
-  : "—";
-
-const fmtDateTime = (value) => value
-  ? new Intl.DateTimeFormat("en-ZA", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
-  : "—";
-
-const todayInput = () => new Date().toISOString().slice(0, 10);
-const health = (value) => `<span class="health ${esc(value)}">${esc(value)}</span>`;
-
-function documentHref(doc) {
-  const value = String(doc?.web_view_link ?? doc?.local_path ?? "").trim();
-  if (!value) return null;
-  if (value.startsWith("/")) return value;
-  try {
-    const url = new URL(value, window.location.origin);
-    if (url.protocol === "https:" || url.protocol === "http:") return value;
-  } catch {}
-  return null;
-}
-
-function documentLink(doc) {
-  const href = documentHref(doc);
-  return href
-    ? `<a class="doc-link" href="${esc(href)}" target="_blank" rel="noreferrer">${esc(doc.title)}</a>`
-    : esc(doc.title);
-}
-
-async function api(path, options = {}) {
-  const init = { ...options };
-  if (init.body && typeof init.body !== "string") {
-    init.headers = { "content-type": "application/json", ...(init.headers ?? {}) };
-    init.body = JSON.stringify(init.body);
-  }
-  const response = await fetch(path, init);
-  let data = null;
-  try { data = await response.json(); } catch { data = null; }
-  if (!response.ok) throw new Error(data?.error ?? `Request failed: ${response.status}`);
-  return data;
-}
-
-function notify(message) {
-  toast.textContent = message;
-  toast.classList.add("show");
-  window.setTimeout(() => toast.classList.remove("show"), 2600);
-}
-
-function loading(label = "Loading home state…") {
-  content.innerHTML = '<div class="loading-state"><span class="loading-pulse" aria-hidden="true"></span><span>' + esc(label) + '</span></div>';
-}
-
-function setRuntimeStatus(integrations) {
-  if (!runtimeStatus || !runtimeStatusText) return;
-  const backup = integrations?.backup;
-  let tone = "good";
-  let label = "Cloud runtime active";
-
-  if (backup?.enabled) {
-    if (!backup.connected) {
-      tone = "attention";
-      label = "Backup not connected";
-    } else if (backup.lastError) {
-      tone = "failed";
-      label = "Backup degraded";
-    } else if (backup.lastBackupAt) {
-      label = "Drive backup active";
-    } else {
-      tone = "attention";
-      label = "Drive backup ready";
-    }
-  }
-
-  runtimeStatus.dataset.tone = tone;
-  runtimeStatusText.textContent = label;
-  runtimeStatus.title = backup?.lastBackupAt ? "Last off-site backup: " + fmtDateTime(backup.lastBackupAt) : label;
-}
-
-async function refreshRuntimeStatus() {
-  try {
-    const integrations = await api("/api/integrations/status");
-    state.integrations = integrations;
-    setRuntimeStatus(integrations);
-    return integrations;
-  } catch (error) {
-    if (runtimeStatus) runtimeStatus.dataset.tone = "failed";
-    if (runtimeStatusText) runtimeStatusText.textContent = "Cloud status unavailable";
-    console.error(error);
-    return null;
-  }
-}
-
-function fail(error) {
-  console.error(error);
-  content.innerHTML = `<div class="error">${esc(error?.message ?? "Homely could not load this view.")}</div>`;
-}
-
-function timelineMarkup(items) {
-  if (!items.length) return '<div class="empty">No history recorded.</div>';
-  return `<div>${items.map((item) => `
-    <article class="timeline-item">
-      <div class="timeline-date">${fmtDate(item.occurred_at)}</div>
-      <div>
-        <h3>${esc(item.title)}</h3>
-        <p>${esc(item.summary ?? "")}</p>
-        ${item.asset_name ? `<div class="row-meta">${esc(item.asset_name)} · ${esc(item.event_type.replaceAll("_", " "))}</div>` : ""}
-      </div>
-    </article>
-  `).join("")}</div>`;
-}
-
-async function showOverview() {
-  loading();
-  try {
-    const data = await api("/api/overview");
-    const totalAssets = data.systems.reduce((sum, system) => sum + Number(system.asset_count ?? 0), 0);
-    const attentionItems = [
-      ...data.attention.issues.map((item) => ({
-        kind: "ISSUE",
-        title: item.title,
-        meta: `${item.asset_name} · ${item.system_name}`,
-        assetId: item.asset_id,
-        status: item.severity
-      })),
-      ...data.attention.maintenance.map((item) => ({
-        kind: "DUE",
-        title: item.title,
-        meta: `${item.asset_name} · ${item.days_overdue}d overdue`,
-        assetId: item.asset_id,
-        status: "OVERDUE"
-      }))
-    ].slice(0, 4);
-
-    content.innerHTML = `
-      <div class="overview-onepage">
-        <header class="overview-identity">
-          <div>
-            <p class="eyebrow">ACTIVE PROPERTY</p>
-            <div class="overview-home-name">${esc(data.home.name)}</div>
-          </div>
-          <div class="overview-actions">
-            <button class="text-action" data-route-view="work" data-route-tab="issues">+ issue</button>
-            <button class="text-action" data-route-view="work" data-route-tab="maintenance">+ maintenance</button>
-            <button class="text-action strong" data-route-view="agent">ask Homely</button>
-          </div>
-        </header>
-
-        <section class="overview-metrics" aria-label="Home status">
-          <div><span>Attention</span><strong>${data.summary.systems_needing_attention}</strong></div>
-          <div><span>Open issues</span><strong>${data.summary.open_issues}</strong></div>
-          <div><span>Overdue</span><strong>${data.summary.overdue_maintenance}</strong></div>
-          <div><span>Assets</span><strong>${totalAssets}</strong></div>
-        </section>
-
-        <div class="overview-grid">
-          <section class="overview-column overview-priority">
-            <div class="overview-section-head">
-              <h2>Needs attention</h2>
-              <button class="bare-link" data-route-view="work" data-route-tab="issues">Work</button>
-            </div>
-            <div class="overview-rows">
-              ${attentionItems.map((item) => `
-                <button class="overview-row" data-asset="${esc(item.assetId)}">
-                  <span class="overview-kind">${esc(item.kind)}</span>
-                  <span class="overview-row-copy">
-                    <strong>${esc(item.title)}</strong>
-                    <small>${esc(item.meta)}</small>
-                  </span>
-                  <span class="overview-row-status">${esc(item.status)}</span>
-                </button>
-              `).join("") || '<div class="overview-empty">Nothing requires attention.</div>'}
-            </div>
-          </section>
-
-          <section class="overview-column">
-            <div class="overview-section-head">
-              <h2>Upcoming</h2>
-              <button class="bare-link" data-route-view="work" data-route-tab="maintenance">30 days</button>
-            </div>
-            <div class="overview-rows">
-              ${data.upcoming.slice(0, 4).map((item) => `
-                <button class="overview-row" data-asset="${esc(item.asset_id)}">
-                  <span class="overview-kind">${Math.max(0, Number(item.days_until))}D</span>
-                  <span class="overview-row-copy">
-                    <strong>${esc(item.title)}</strong>
-                    <small>${esc(item.asset_name)} · ${fmtDate(item.next_due_at)}</small>
-                  </span>
-                </button>
-              `).join("") || '<div class="overview-empty">Nothing due soon.</div>'}
-            </div>
-          </section>
-
-          <section class="overview-column overview-health">
-            <div class="overview-section-head">
-              <h2>Systems</h2>
-              <button class="bare-link" data-route-view="assets">Assets</button>
-            </div>
-            <div class="health-matrix">
-              ${data.systems.map((system) => `
-                <div class="health-matrix-row">
-                  <span>${esc(system.name)}</span>
-                  ${health(system.health)}
-                </div>
-              `).join("")}
-            </div>
-          </section>
-        </div>
-
-        <section class="overview-recent">
-          <div class="overview-section-head">
-            <h2>Recent</h2>
-            <button class="bare-link" data-route-view="history" data-route-tab="timeline">History</button>
-          </div>
-          <div class="recent-strip">
-            ${data.recent.slice(0, 3).map((item) => `
-              <div class="recent-item">
-                <time>${fmtDate(item.occurred_at)}</time>
-                <span>${esc(item.title)}</span>
-              </div>
-            `).join("") || '<div class="overview-empty">No recent activity.</div>'}
-          </div>
-        </section>
-      </div>
-    `;
-
-    wireAssetLinks();
-    document.querySelectorAll("[data-route-view]").forEach((button) => {
-      button.addEventListener("click", () => navigateTo(button.dataset.routeView, button.dataset.routeTab ?? null));
-    });
-  } catch (error) { fail(error); }
-}
-
-async function showAssets() {
-  loading();
-  try {
-    state.assets = await api("/api/assets");
-    content.innerHTML = `
-      <div class="asset-toolbar">
-        <input id="asset-search" class="search" type="search" placeholder="Search assets, systems, locations…" aria-label="Search assets">
-      </div>
-      <div id="asset-results"></div>
-    `;
-    renderAssets(state.assets);
-    document.querySelector("#asset-search").addEventListener("input", (event) => {
-      const query = event.target.value.trim().toLowerCase();
-      renderAssets(state.assets.filter((asset) =>
-        [asset.name, asset.system_name, asset.location, asset.manufacturer, asset.model]
-          .some((value) => String(value ?? "").toLowerCase().includes(query))
-      ));
-    });
-  } catch (error) { fail(error); }
-}
-
-function renderAssets(assets) {
-  document.querySelector("#asset-results").innerHTML = `
-    <table class="asset-table">
-      <thead><tr><th>Asset</th><th>Health</th><th>System</th><th>Location</th><th>Model</th></tr></thead>
-      <tbody>
-        ${assets.map((asset) => `
-          <tr data-asset="${esc(asset.id)}">
-            <td>${esc(asset.name)}</td>
-            <td>${health(asset.health)}</td>
-            <td>${esc(asset.system_name)}</td>
-            <td>${esc(asset.location ?? "—")}</td>
-            <td>${esc(asset.model ?? "—")}</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
-  `;
-  wireAssetLinks();
-}
-
-async function showIssues() {
-  loading();
-  try {
-    const items = await api("/api/issues");
-    content.innerHTML = `
-      <section class="section">
-        <div class="section-head">
-          <div><h2>Issue register</h2><span class="section-note">Resolved history is retained</span></div>
-          <div class="section-actions"><button class="button primary" id="report-issue">Report issue</button></div>
-        </div>
-        <div class="list">
-          ${items.map((item) => {
-            const active = !["RESOLVED", "CLOSED"].includes(item.status);
-            return `
-              <div class="list-row">
-                <div class="row-main">
-                  <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
-                    <div class="row-title">${esc(item.title)}</div>
-                    <div class="row-meta">${esc(item.asset_name)} · detected ${fmtDate(item.detected_at)}</div>
-                    <div class="row-meta">${esc(item.description ?? "")}</div>
-                  </div>
-                  <div class="row-actions">
-                    <span class="badge ${active ? "open" : ""}">${esc(item.status)}</span>
-                    ${active ? `<button class="button small" data-resolve="${esc(item.id)}" data-title="${esc(item.title)}">Resolve</button>` : ""}
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      </section>
-    `;
-    document.querySelector("#report-issue").addEventListener("click", openIssueForm);
-    document.querySelectorAll("[data-resolve]").forEach((button) =>
-      button.addEventListener("click", () => openResolveForm(button.dataset.resolve, button.dataset.title))
-    );
-    wireAssetLinks();
-  } catch (error) { fail(error); }
-}
-
-async function showMaintenance() {
-  loading();
-  try {
-    const items = await api("/api/maintenance");
-    content.innerHTML = `
-      <section class="section">
-        <div class="section-head">
-          <div><h2>Maintenance obligations</h2><span class="section-note">Deterministic due dates</span></div>
-          <div class="section-actions"><button class="button primary" id="plan-maintenance">Plan maintenance</button></div>
-        </div>
-        <div class="list">
-          ${items.map((item) => `
-            <div class="list-row">
-              <div class="row-main">
-                <div class="row-copy clickable" data-asset="${esc(item.asset_id)}">
-                  <div class="row-title">${esc(item.title)}</div>
-                  <div class="row-meta">${esc(item.asset_name)} · due ${fmtDate(item.next_due_at)}</div>
-                  <div class="row-meta">Last completed: ${fmtDate(item.last_completed_at)}${item.interval_days ? ` · every ${item.interval_days} days` : " · one-off"}</div>
-                </div>
-                <div class="row-actions">
-                  <span class="badge ${item.due_state === "OVERDUE" ? "overdue" : ""}">${esc(item.due_state)}</span>
-                  <button class="button small" data-complete="${esc(item.id)}" data-title="${esc(item.title)}">Complete</button>
-                </div>
-              </div>
-            </div>
-          `).join("")}
-        </div>
-      </section>
-    `;
-    document.querySelector("#plan-maintenance").addEventListener("click", openMaintenanceForm);
-    document.querySelectorAll("[data-complete]").forEach((button) =>
-      button.addEventListener("click", () => openCompleteForm(button.dataset.complete, button.dataset.title))
-    );
-    wireAssetLinks();
-  } catch (error) { fail(error); }
-}
-
-async function showProjects() {
-  loading();
-  try {
-    const items = await api("/api/projects");
-    content.innerHTML = `
-      <section class="section">
-        <div class="section-head">
-          <div><h2>Projects</h2><span class="section-note">Planned property work with auditable status changes</span></div>
-          <div class="section-actions"><button class="button primary" id="create-project">New project</button></div>
-        </div>
-        <div class="list">
-          ${items.map((item) => `
-            <div class="list-row">
-              <div class="row-main">
-                <div class="row-copy">
-                  <div class="row-title">${esc(item.title)}</div>
-                  <div class="row-meta">${esc(item.description ?? "")}</div>
-                  <div class="row-meta">
-                    ${item.start_date ? `Start ${fmtDate(item.start_date)}` : "Start not set"}
-                    ${item.target_date ? ` · target ${fmtDate(item.target_date)}` : ""}
-                    ${item.budget_cents !== null && item.budget_cents !== undefined ? ` · R${(Number(item.budget_cents) / 100).toLocaleString("en-ZA", { maximumFractionDigits: 0 })}` : ""}
-                  </div>
-                </div>
-                <div class="row-actions">
-                  <span class="badge">${esc(item.status)}</span>
-                  ${!["COMPLETE","CANCELLED"].includes(item.status)
-                    ? `<button class="button small" data-project-status="${esc(item.id)}" data-title="${esc(item.title)}" data-current-status="${esc(item.status)}">Update</button>`
-                    : ""}
-                </div>
-              </div>
-            </div>
-          `).join("") || '<div class="empty">No projects recorded.</div>'}
-        </div>
-      </section>
-    `;
-    document.querySelector("#create-project").addEventListener("click", openProjectForm);
-    document.querySelectorAll("[data-project-status]").forEach((button) =>
-      button.addEventListener("click", () =>
-        openProjectStatusForm(button.dataset.projectStatus, button.dataset.title, button.dataset.currentStatus)
-      )
-    );
-  } catch (error) { fail(error); }
-}
-
-async function showTimeline() {
-  loading();
-  try {
-    const items = await api("/api/timeline");
-    const eventTypes = [...new Set(items.map((item) => item.event_type))].sort();
-    content.innerHTML = `
-      <section class="section">
-        <div class="section-head"><h2>House timeline</h2><span class="section-note">Unified property history</span></div>
-        <div class="asset-toolbar">
-          <input id="timeline-search" class="search" type="search" placeholder="Search history…" aria-label="Search timeline">
-          <select id="timeline-type" class="search" aria-label="Filter timeline by event type">
-            <option value="">All event types</option>
-            ${eventTypes.map((type) => `<option value="${esc(type)}">${esc(type.replaceAll("_", " "))}</option>`).join("")}
-          </select>
-        </div>
-        <div id="timeline-results"></div>
-      </section>
-    `;
-
-    const render = () => {
-      const query = document.querySelector("#timeline-search").value.trim().toLowerCase();
-      const type = document.querySelector("#timeline-type").value;
-      const filtered = items.filter((item) => {
-        const matchesType = !type || item.event_type === type;
-        const haystack = [item.title, item.summary, item.asset_name, item.event_type].map((value) => String(value ?? "").toLowerCase()).join(" ");
-        return matchesType && (!query || haystack.includes(query));
-      });
-      document.querySelector("#timeline-results").innerHTML = timelineMarkup(filtered);
-    };
-
-    document.querySelector("#timeline-search").addEventListener("input", render);
-    document.querySelector("#timeline-type").addEventListener("change", render);
-    render();
-  } catch (error) { fail(error); }
-}
-
-async function openDriveImport(file) {
-  const options = await assetOptions();
-  openAction(`
-    <p class="eyebrow">GOOGLE DRIVE IMPORT</p>
-    <h2>Attach selected document</h2>
-    <div class="muted">${esc(file.name)} · ${esc(file.mimeType ?? "unknown type")}</div>
-    <form class="action-form" id="drive-import-form">
-      <div class="form-grid">
-        <div class="field full"><label>Asset</label><select name="assetId" required>${options}</select></div>
-        <div class="field"><label>Document type</label>
-          <select name="documentType">
-            <option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option>
-            <option>INSPECTION</option><option>PHOTO</option><option>REPORT</option><option selected>OTHER</option>
-          </select>
-        </div>
-        <div class="field"><label>Title</label><input name="title" maxlength="240" value="${esc(file.name)}" required></div>
-      </div>
-      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview association</button></div>
-    </form>
-  `);
-  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
-  document.querySelector("#drive-import-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    await createPreview("ATTACH_DOCUMENT", {
-      assetId: data.get("assetId"),
-      title: data.get("title"),
-      documentType: data.get("documentType"),
-      providerFileId: file.id,
-      mimeType: file.mimeType,
-      webViewLink: file.webViewLink
-    }, `Homeowner selected "${file.name}" in Google Drive and chose an explicit asset association.`);
-  });
-}
-
-async function showDocuments() {
-  loading();
-  try {
-    const [items, integrations] = await Promise.all([
-      api("/api/documents"),
-      api("/api/integrations/status")
-    ]);
-    const drive = integrations.googleDrive;
-    const driveStatus = !drive.enabled
-      ? "Disabled"
-      : !drive.configured
-        ? "Not configured"
-        : drive.connected
-          ? "Connected"
-          : "Ready to connect";
-
-    content.innerHTML = `
-      <section class="section">
-        <div class="section-head">
-          <div><h2>Documents</h2><span class="section-note">Evidence remains separate from its storage provider</span></div>
-          <div class="section-actions">
-            <span class="badge">${esc(driveStatus)}</span>
-            ${drive.enabled && drive.configured
-              ? drive.connected
-                ? `<button class="button" id="drive-select">Select from Drive</button><button class="button small" id="drive-disconnect">Disconnect</button>`
-                : `<button class="button" id="drive-connect">Connect Google Drive</button>`
-              : ""}
-          </div>
-        </div>
-        <div class="drive-note">
-          <strong>Google Drive</strong>
-          <span>${drive.enabled
-            ? drive.configured
-              ? drive.connected
-                ? "Per-file access only. Select a file explicitly before Homely can associate it."
-                : "Configured with drive.file scope. Connect the dedicated Homely Google account to select files."
-              : "Enable Drive only after OAuth credentials are configured."
-            : "Optional integration is off. Existing Homely document metadata remains available."}</span>
-        </div>
-        <div class="asset-toolbar">
-          <input id="document-search" class="search" type="search" placeholder="Search warranties, invoices, manuals…" aria-label="Search documents">
-        </div>
-        <div id="document-results"></div>
-      </section>
-    `;
-
-    const render = (documents) => {
-      document.querySelector("#document-results").innerHTML = `
-        <table class="asset-table">
-          <thead><tr><th>Document</th><th>Type</th><th>Provider</th><th>Related asset</th><th>System</th></tr></thead>
-          <tbody>
-            ${documents.map((doc) => `
-              <tr>
-                <td>${documentLink(doc)}</td>
-                <td>${esc(doc.type)}</td>
-                <td>${esc(doc.provider)}</td>
-                <td>${doc.asset_id ? `<button class="button small" data-asset="${esc(doc.asset_id)}">${esc(doc.asset_name ?? "Asset")}</button>` : "—"}</td>
-                <td>${esc(doc.system_name ?? "—")}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      `;
-      wireAssetLinks();
-    };
-
-    render(items);
-    document.querySelector("#document-search").addEventListener("input", (event) => {
-      const query = event.target.value.trim().toLowerCase();
-      render(items.filter((doc) =>
-        [doc.title, doc.type, doc.provider, doc.asset_name, doc.system_name, doc.issue_title]
-          .some((value) => String(value ?? "").toLowerCase().includes(query))
-      ));
-    });
-
-    document.querySelector("#drive-connect")?.addEventListener("click", () => {
-      window.location.href = "/api/google-drive/connect";
-    });
-    document.querySelector("#drive-select")?.addEventListener("click", () => {
-      window.location.href = "/api/google-drive/connect";
-    });
-    document.querySelector("#drive-disconnect")?.addEventListener("click", async () => {
-      await api("/api/google-drive/disconnect", { method: "POST" });
-      notify("Google Drive disconnected. Existing Homely document metadata was preserved.");
-      await selectView("assets");
-    });
-
-    const params = new URLSearchParams(window.location.search);
-    const driveError = params.get("driveError");
-    const picked = params.get("drivePicked");
-    if (driveError) {
-      history.replaceState({}, "", "/?view=assets&tab=documents");
-      notify("Google Drive selection was cancelled or failed.");
-    } else if (picked && drive.connected) {
-      history.replaceState({}, "", "/?view=assets&tab=documents");
-      const files = await api("/api/google-drive/files?ids=" + encodeURIComponent(picked));
-      if (files.length) await openDriveImport(files[0]);
-    } else if (params.get("driveConnected")) {
-      history.replaceState({}, "", "/?view=assets&tab=documents");
-      notify("Google Drive connected. Select a file to attach it to Homely.");
-    }
-  } catch (error) { fail(error); }
-}
-
-function agentMessageMarkup(message) {
-  const proposals = Array.isArray(message.proposals) ? message.proposals : [];
-  return `
-    <article class="agent-message ${esc(message.role)}">
-      <div class="agent-role">${message.role === "user" ? "You" : "Homely"}</div>
-      <div class="agent-copy">${esc(message.text)}</div>
-      ${proposals.map((proposal) => `
-        <div class="agent-proposal" data-agent-proposal="${esc(proposal.transactionId)}">
-          <div class="row-main">
-            <div>
-              <div class="row-title">${esc(proposal.preview.title)}</div>
-              <div class="row-meta">${esc(proposal.preview.summary)}</div>
-            </div>
-            <span class="status ${esc(proposal.status ?? "PROPOSED")}">${esc(proposal.status ?? "PROPOSED")}</span>
-          </div>
-          <div class="proposal-reason"><strong>Reason</strong><br>${esc(proposal.reason)}</div>
-          <ul class="effect-list">${proposal.preview.effects.map((effect) => `<li>${esc(effect)}</li>`).join("")}</ul>
-          ${(proposal.status ?? "PROPOSED") === "PROPOSED" ? `
-            <div class="form-actions">
-              <button class="button small" data-agent-reject="${esc(proposal.transactionId)}">Reject</button>
-              <button class="button primary small" data-agent-approve="${esc(proposal.transactionId)}">Approve & commit</button>
-            </div>
-          ` : ""}
-        </div>
-      `).join("")}
-    </article>
-  `;
-}
-
-function renderAgentConversation() {
-  const target = document.querySelector("#agent-conversation");
-  if (!target) return;
-  target.innerHTML = state.agentMessages.length
-    ? state.agentMessages.map(agentMessageMarkup).join("")
-    : `<div class="empty">Ask about this home's condition, history, maintenance or a recurring problem.</div>`;
-
-  target.querySelectorAll("[data-agent-approve]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const id = button.dataset.agentApprove;
-      try {
-        await api(`/api/transactions/${encodeURIComponent(id)}/commit`, { method: "POST" });
-        void refreshRuntimeStatus();
-        for (const message of state.agentMessages) {
-          const proposal = message.proposals?.find((item) => item.transactionId === id);
-          if (proposal) proposal.status = "COMMITTED";
-        }
-        renderAgentConversation();
-        await renderAgentHomeState();
-        notify("Agent proposal committed. Home state and timeline updated.");
-      } catch (error) {
-        notify(error.message);
-      }
-    });
-  });
-
-  target.querySelectorAll("[data-agent-reject]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const id = button.dataset.agentReject;
-      try {
-        await api(`/api/transactions/${encodeURIComponent(id)}/reject`, { method: "POST" });
-        for (const message of state.agentMessages) {
-          const proposal = message.proposals?.find((item) => item.transactionId === id);
-          if (proposal) proposal.status = "REJECTED";
-        }
-        renderAgentConversation();
-        notify("Proposal rejected. No home state changed.");
-      } catch (error) {
-        notify(error.message);
-      }
-    });
-  });
-
-  target.scrollTop = target.scrollHeight;
-}
-
-async function renderAgentHomeState() {
-  const target = document.querySelector("#agent-home-state");
-  if (!target) return;
-  try {
-    const overview = await api("/api/overview");
-    target.innerHTML = `
-      <div class="agent-state-title">${esc(overview.home.name)}</div>
-      <div class="agent-state-metrics">
-        <div><strong>${overview.summary.systems_needing_attention}</strong><span>systems attention</span></div>
-        <div><strong>${overview.summary.open_issues}</strong><span>active issues</span></div>
-        <div><strong>${overview.summary.overdue_maintenance}</strong><span>overdue</span></div>
-      </div>
-      <div class="detail-section">
-        <h3>Current system state</h3>
-        <div class="list">
-          ${overview.systems.map((system) => `
-            <div class="list-row"><div class="row-main"><span class="row-title">${esc(system.name)}</span>${health(system.health)}</div></div>
-          `).join("")}
-        </div>
-      </div>
-    `;
-  } catch (error) {
-    target.innerHTML = `<div class="error">${esc(error.message)}</div>`;
-  }
-}
-
-async function showAgent() {
-  loading();
-  try {
-    const integrations = await api("/api/integrations/status");
-    state.agentStatus = integrations.ai;
-
-    if (!integrations.ai.available) {
-      content.innerHTML = `
-        <section class="section">
-          <div class="section-head"><h2>Homely Agent</h2><span class="section-note">Optional reasoning layer</span></div>
-          <div class="agent-disabled">
-            <div>
-              <p class="eyebrow">AGENT UNAVAILABLE</p>
-              <h3>Structured Homely remains operational.</h3>
-              <p>The OpenAI agent is ${integrations.ai.enabled ? "enabled but not configured" : "disabled"}. Assets, issues, maintenance, documents, timeline and transactions remain available from Homely\'s structured property state.</p>
-            </div>
-            <div class="agent-config">
-              <span>AI_ENABLED</span><strong>${integrations.ai.enabled ? "true" : "false"}</strong>
-              <span>API key</span><strong>${integrations.ai.configured ? "configured" : "not configured"}</strong>
-              <span>Model</span><strong>${esc(integrations.ai.model)}</strong>
-            </div>
-          </div>
-        </section>
-      `;
-      return;
-    }
-
-    content.innerHTML = `
-      <div class="agent-layout">
-        <aside class="agent-state" id="agent-home-state"><div class="empty">Loading current home state…</div></aside>
-        <section class="agent-panel">
-          <div class="section-head">
-            <div><h2>Homely Agent</h2><span class="section-note">Reads real state · proposals require approval</span></div>
-            <span class="badge">${esc(integrations.ai.model)}</span>
-          </div>
-          <div class="agent-conversation" id="agent-conversation"></div>
-          <form class="agent-input" id="agent-form">
-            <textarea id="agent-message" maxlength="4000" required placeholder="Ask Homely about this house…"></textarea>
-            <button class="button primary" type="submit">Send</button>
-          </form>
-        </section>
-      </div>
-    `;
-
-    await renderAgentHomeState();
-    renderAgentConversation();
-
-    document.querySelector("#agent-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const input = document.querySelector("#agent-message");
-      const message = input.value.trim();
-      if (!message) return;
-
-      state.agentMessages.push({ role: "user", text: message, proposals: [] });
-      input.value = "";
-      renderAgentConversation();
-      const submit = event.currentTarget.querySelector("button[type=submit]");
-      submit.disabled = true;
-      submit.textContent = "Working…";
-
-      try {
-        const response = await api("/api/agent/respond", {
-          method: "POST",
-          body: {
-            message,
-            previousResponseId: state.agentPreviousResponseId
-          }
-        });
-        state.agentPreviousResponseId = response.responseId;
-        state.agentMessages.push({
-          role: "assistant",
-          text: response.text,
-          proposals: response.proposals.map((proposal) => ({ ...proposal, status: "PROPOSED" }))
-        });
-        renderAgentConversation();
-      } catch (error) {
-        state.agentMessages.push({
-          role: "assistant",
-          text: error.message,
-          proposals: []
-        });
-        renderAgentConversation();
-      } finally {
-        submit.disabled = false;
-        submit.textContent = "Send";
-        input.focus();
-      }
-    });
-  } catch (error) { fail(error); }
-}
-
-async function showTransactions() {
-  loading();
-  try {
-    const items = await api("/api/transactions");
-    content.innerHTML = `
-      <section class="section">
-        <div class="section-head">
-          <div><h2>Transactions</h2><span class="section-note">Proposals, approvals, changes and reversals</span></div>
-        </div>
-        <div class="transaction-list">
-          ${items.map((item) => {
-            const canUndo = item.status === "COMMITTED" && item.action_type !== "UNDO";
-            return `
-              <article class="transaction-row">
-                <div>
-                  <div class="row-main">
-                    <div class="transaction-title">${esc(item.action_type.replaceAll("_", " "))}</div>
-                    <span class="status ${esc(item.status)}">${esc(item.status)}</span>
-                  </div>
-                  <div class="row-meta">${esc(item.reason)} · ${fmtDateTime(item.created_at)} · ${item.change_count} recorded change${Number(item.change_count) === 1 ? "" : "s"}</div>
-                  <div class="transaction-id">${esc(item.id)}</div>
-                </div>
-                <div class="row-actions">
-                  ${canUndo ? `<button class="button danger small" data-undo="${esc(item.id)}" data-reason="${esc(item.reason)}">Undo</button>` : ""}
-                </div>
-              </article>
-            `;
-          }).join("") || '<div class="empty">No transactions recorded yet.</div>'}
-        </div>
-      </section>
-    `;
-    document.querySelectorAll("[data-undo]").forEach((button) =>
-      button.addEventListener("click", () => openUndoConfirmation(button.dataset.undo, button.dataset.reason))
-    );
-  } catch (error) { fail(error); }
-}
-
-async function openAsset(assetId) {
-  try {
-    const asset = await api(`/api/assets/${encodeURIComponent(assetId)}`);
-    assetDetail.innerHTML = `
-      <div class="asset-detail-head">
-        <p class="eyebrow">${esc(asset.system_name)}</p>
-        <h2>${esc(asset.name)}</h2>
-        ${health(asset.health)}
-        <div class="row-meta">${esc(asset.location ?? "Location not recorded")}</div>
-      </div>
-      <div class="detail-grid">
-        ${field("Manufacturer", asset.manufacturer)}
-        ${field("Model", asset.model)}
-        ${field("Serial number", asset.serial_number)}
-        ${field("Installed", fmtDate(asset.installation_date))}
-        ${field("Contractor", asset.contractor)}
-        ${field("Warranty ends", fmtDate(asset.warranty_end))}
-      </div>
-      ${asset.notes ? `<section class="detail-section"><h3>Notes</h3><div class="muted">${esc(asset.notes)}</div></section>` : ""}
-      <section class="detail-section">
-        <h3>Issues</h3>
-        <div class="list">
-          ${asset.issues.map((issue) => `<div class="list-row"><div class="row-main"><div><div class="row-title">${esc(issue.title)}</div><div class="row-meta">${fmtDate(issue.detected_at)} · ${esc(issue.severity)}</div></div><span class="badge">${esc(issue.status)}</span></div></div>`).join("") || '<div class="empty">No issues recorded.</div>'}
-        </div>
-      </section>
-      <section class="detail-section">
-        <h3>Documents</h3>
-        <div class="list">
-          ${asset.documents.map((doc) => `<div class="list-row">${documentLink(doc)}<div class="row-meta">${esc(doc.type)} · ${esc(doc.provider)}</div></div>`).join("") || '<div class="empty">No documents attached.</div>'}
-        </div>
-      </section>
-      <section class="detail-section"><h3>History</h3>${timelineMarkup(asset.history)}</section>
-    `;
-    assetDialog.showModal();
-  } catch (error) { notify(error.message); }
-}
-
-function field(label, value) {
-  return `<div class="detail-field"><span>${esc(label)}</span><strong>${esc(value ?? "—")}</strong></div>`;
-}
-
-function wireAssetLinks() {
-  document.querySelectorAll("[data-asset]").forEach((element) => {
-    element.addEventListener("click", () => openAsset(element.dataset.asset));
-  });
-}
-
-async function assetOptions() {
-  if (!state.assets.length) state.assets = await api("/api/assets");
-  return state.assets.map((asset) =>
-    `<option value="${esc(asset.id)}">${esc(asset.system_name)} — ${esc(asset.name)}</option>`
-  ).join("");
-}
-
-function openAction(html) {
-  state.pendingTransactionId = null;
-  actionDetail.innerHTML = html;
-  actionDialog.showModal();
-}
-
-async function closeAction({ rejectPending = true } = {}) {
-  const pending = state.pendingTransactionId;
-  state.pendingTransactionId = null;
-  if (rejectPending && pending) {
-    try { await api(`/api/transactions/${encodeURIComponent(pending)}/reject`, { method: "POST" }); }
-    catch (error) { console.error(error); }
-  }
-  if (actionDialog.open) actionDialog.close();
-}
-
-async function openIssueForm() {
-  const options = await assetOptions();
-  openAction(`
-    <p class="eyebrow">STRUCTURED ACTION</p>
-    <h2>Report issue</h2>
-    <div class="muted">Nothing changes until you review and approve the transaction.</div>
-    <form class="action-form" id="issue-form">
-      <div class="form-grid">
-        <div class="field full"><label>Asset</label><select name="assetId" required>${options}</select></div>
-        <div class="field full"><label>Issue title</label><input name="title" maxlength="160" required placeholder="Kitchen tap losing pressure"></div>
-        <div class="field"><label>Severity</label><select name="severity"><option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div>
-        <div class="field"><label>Detected</label><input type="date" name="detectedAt" value="${todayInput()}" required></div>
-        <div class="field full"><label>Description</label><textarea name="description" placeholder="What is happening?"></textarea></div>
-      </div>
-      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview</button></div>
-    </form>
-  `);
-  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
-  document.querySelector("#issue-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const title = String(data.get("title"));
-    await createPreview("REPORT_ISSUE", {
-      assetId: data.get("assetId"),
-      title,
-      severity: data.get("severity"),
-      detectedAt: data.get("detectedAt"),
-      description: data.get("description")
-    }, `Homeowner reported "${title}" through the structured issue form.`);
-  });
-}
-
-async function openMaintenanceForm() {
-  const options = await assetOptions();
-  openAction(`
-    <p class="eyebrow">STRUCTURED ACTION</p>
-    <h2>Plan maintenance</h2>
-    <div class="muted">Create a one-off obligation or an optional recurring interval.</div>
-    <form class="action-form" id="maintenance-form">
-      <div class="form-grid">
-        <div class="field full"><label>Asset</label><select name="assetId" required>${options}</select></div>
-        <div class="field full"><label>Maintenance title</label><input name="title" maxlength="160" required placeholder="Inspect camera network connection"></div>
-        <div class="field"><label>Due date</label><input type="date" name="nextDueAt" value="${todayInput()}" required></div>
-        <div class="field"><label>Repeat every (days)</label><input type="number" name="intervalDays" min="1" max="3650" placeholder="Optional"></div>
-      </div>
-      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview</button></div>
-    </form>
-  `);
-  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
-  document.querySelector("#maintenance-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const title = String(data.get("title"));
-    await createPreview("CREATE_MAINTENANCE", {
-      assetId: data.get("assetId"),
-      title,
-      nextDueAt: data.get("nextDueAt"),
-      intervalDays: data.get("intervalDays") || null
-    }, `Homeowner planned "${title}" through the structured maintenance form.`);
-  });
-}
-
-function openProjectForm() {
-  openAction(`
-    <p class="eyebrow">STRUCTURED ACTION</p>
-    <h2>New project</h2>
-    <div class="muted">Nothing changes until you review and approve the transaction.</div>
-    <form class="action-form" id="project-form">
-      <div class="form-grid">
-        <div class="field full"><label>Title</label><input name="title" maxlength="180" required placeholder="Battery storage expansion"></div>
-        <div class="field full"><label>Description</label><textarea name="description" maxlength="4000" placeholder="What is this project for?"></textarea></div>
-        <div class="field"><label>Status</label><select name="status"><option>PLANNED</option><option>ACTIVE</option></select></div>
-        <div class="field"><label>Budget (R)</label><input type="number" name="budgetRand" min="0" step="1" placeholder="Optional"></div>
-        <div class="field"><label>Start date</label><input type="date" name="startDate"></div>
-        <div class="field"><label>Target date</label><input type="date" name="targetDate"></div>
-      </div>
-      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview</button></div>
-    </form>
-  `);
-  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
-  document.querySelector("#project-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const title = String(data.get("title"));
-    const budgetRand = String(data.get("budgetRand") ?? "").trim();
-    await createPreview("CREATE_PROJECT", {
-      title,
-      description: data.get("description"),
-      status: data.get("status"),
-      startDate: data.get("startDate") || null,
-      targetDate: data.get("targetDate") || null,
-      budgetCents: budgetRand ? Math.round(Number(budgetRand) * 100) : null
-    }, `Homeowner created project "${title}" through the structured project form.`);
-  });
-}
-
-function openProjectStatusForm(projectId, title, currentStatus) {
-  const statuses = ["PLANNED","ACTIVE","PAUSED","COMPLETE","CANCELLED"].filter((status) => status !== currentStatus);
-  openAction(`
-    <p class="eyebrow">STRUCTURED ACTION</p>
-    <h2>Update project</h2>
-    <div class="muted">${esc(title)} · current status ${esc(currentStatus)}</div>
-    <form class="action-form" id="project-status-form">
-      <div class="form-grid">
-        <div class="field"><label>New status</label><select name="status">${statuses.map((status) => `<option>${status}</option>`).join("")}</select></div>
-        <div class="field"><label>Completion date</label><input type="date" name="completedAt"></div>
-        <div class="field full"><label>Note</label><textarea name="note" maxlength="2000" placeholder="Optional project update"></textarea></div>
-      </div>
-      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview</button></div>
-    </form>
-  `);
-  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
-  document.querySelector("#project-status-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const status = String(data.get("status"));
-    await createPreview("UPDATE_PROJECT_STATUS", {
-      projectId,
-      status,
-      completedAt: status === "COMPLETE" ? (data.get("completedAt") || todayInput()) : null,
-      note: data.get("note")
-    }, `Homeowner changed project "${title}" from ${currentStatus} to ${status}.`);
-  });
-}
-
-function openResolveForm(issueId, title) {
-  openAction(`
-    <p class="eyebrow">STRUCTURED ACTION</p>
-    <h2>Resolve issue</h2>
-    <div class="muted">${esc(title)}</div>
-    <form class="action-form" id="resolve-form">
-      <div class="field"><label>Resolution note</label><textarea name="resolution" required placeholder="What fixed or closed this issue?"></textarea></div>
-      <div class="field"><label>Resolved date</label><input type="date" name="resolvedAt" value="${todayInput()}" required></div>
-      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview</button></div>
-    </form>
-  `);
-  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
-  document.querySelector("#resolve-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    await createPreview("RESOLVE_ISSUE", {
-      issueId,
-      resolution: data.get("resolution"),
-      resolvedAt: data.get("resolvedAt")
-    }, `Homeowner approved resolution of "${title}".`);
-  });
-}
-
-function openCompleteForm(maintenanceId, title) {
-  openAction(`
-    <p class="eyebrow">STRUCTURED ACTION</p>
-    <h2>Complete maintenance</h2>
-    <div class="muted">${esc(title)}</div>
-    <form class="action-form" id="complete-form">
-      <div class="field"><label>Completion date</label><input type="date" name="completedAt" value="${todayInput()}" required></div>
-      <div class="field"><label>Completion note</label><textarea name="note" placeholder="Optional notes or findings"></textarea></div>
-      <div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="button primary">Preview</button></div>
-    </form>
-  `);
-  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction());
-  document.querySelector("#complete-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    await createPreview("COMPLETE_MAINTENANCE", {
-      maintenanceId,
-      completedAt: data.get("completedAt"),
-      note: data.get("note")
-    }, `Homeowner recorded completion of "${title}".`);
-  });
-}
-
-async function createPreview(actionType, payload, reason) {
-  try {
-    const result = await api("/api/transactions/preview", {
-      method: "POST",
-      body: { actionType, payload, reason }
-    });
-    state.pendingTransactionId = result.transaction.id;
-    renderPreview(result);
-  } catch (error) {
-    notify(error.message);
-  }
-}
-
-function renderPreview(result) {
-  actionDetail.innerHTML = `
-    <p class="eyebrow">PROPOSED TRANSACTION</p>
-    <div class="proposal">
-      <h3>${esc(result.preview.title)}</h3>
-      <div class="muted">${esc(result.preview.summary)}</div>
-      <div class="proposal-reason"><strong>Reason</strong><br>${esc(result.transaction.reason)}</div>
-      <ul class="effect-list">${result.preview.effects.map((effect) => `<li>${esc(effect)}</li>`).join("")}</ul>
-      <div class="transaction-id">${esc(result.transaction.id)}</div>
-      <div class="form-actions">
-        <button class="button" id="reject-action">Reject</button>
-        <button class="button primary" id="approve-action">Approve & commit</button>
-      </div>
-    </div>
-  `;
-  document.querySelector("#reject-action").addEventListener("click", async () => {
-    const id = state.pendingTransactionId;
-    if (id) await api(`/api/transactions/${encodeURIComponent(id)}/reject`, { method: "POST" });
-    state.pendingTransactionId = null;
-    await closeAction({ rejectPending: false });
-    notify("Proposal rejected. No home state changed.");
-    if (state.view === "history") await selectView("history");
-  });
-  document.querySelector("#approve-action").addEventListener("click", async () => {
-    const id = state.pendingTransactionId;
-    if (!id) return;
-    try {
-      await api(`/api/transactions/${encodeURIComponent(id)}/commit`, { method: "POST" });
-      void refreshRuntimeStatus();
-      state.pendingTransactionId = null;
-      await closeAction({ rejectPending: false });
-      await selectView(state.view);
-      notify("Committed. Home state and timeline updated.");
-    } catch (error) {
-      notify(error.message);
-    }
-  });
-}
-
-function openUndoConfirmation(transactionId, reason) {
-  openAction(`
-    <p class="eyebrow">REVERSAL</p>
-    <h2>Undo transaction?</h2>
-    <div class="proposal-reason"><strong>Original reason</strong><br>${esc(reason)}</div>
-    <div class="muted">Homely will reverse the recorded state changes only if the affected entities have not changed since this transaction. The audit record will remain.</div>
-    <div class="form-actions">
-      <button class="button" data-cancel>Cancel</button>
-      <button class="button danger" id="confirm-undo">Undo transaction</button>
-    </div>
-  `);
-  document.querySelector("[data-cancel]").addEventListener("click", () => closeAction({ rejectPending: false }));
-  document.querySelector("#confirm-undo").addEventListener("click", async () => {
-    try {
-      await api(`/api/transactions/${encodeURIComponent(transactionId)}/undo`, { method: "POST" });
-      void refreshRuntimeStatus();
-      await closeAction({ rejectPending: false });
-      await selectView(state.view);
-      notify("Transaction reversed. Audit history retained.");
-    } catch (error) {
-      notify(error.message);
-    }
-  });
-}
-
-function activeRouteTab(allowed, fallback) {
-  const tab = new URLSearchParams(window.location.search).get("tab");
-  return allowed.includes(tab) ? tab : fallback;
-}
-
-function renderViewTabs(view, tabs, active) {
-  const bar = document.createElement("div");
-  bar.className = "view-tabs";
-  bar.setAttribute("aria-label", "Section");
-  bar.innerHTML = tabs.map((tab) => `
-    <button class="view-tab ${tab.id === active ? "active" : ""}" data-inner-tab="${esc(tab.id)}">${esc(tab.label)}</button>
-  `).join("");
-  content.prepend(bar);
-  bar.querySelectorAll("[data-inner-tab]").forEach((button) => {
-    button.addEventListener("click", () => navigateTo(view, button.dataset.innerTab));
-  });
-}
-
-async function showAssetsHub() {
-  const tab = activeRouteTab(["assets", "documents"], "assets");
-  if (tab === "documents") await showDocuments();
-  else await showAssets();
-  renderViewTabs("assets", [
-    { id: "assets", label: "Assets" },
-    { id: "documents", label: "Documents" }
-  ], tab);
-}
-
-async function showWork() {
-  const tab = activeRouteTab(["issues", "maintenance", "projects"], "issues");
-  if (tab === "maintenance") await showMaintenance();
-  else if (tab === "projects") await showProjects();
-  else await showIssues();
-  renderViewTabs("work", [
-    { id: "issues", label: "Issues" },
-    { id: "maintenance", label: "Maintenance" },
-    { id: "projects", label: "Projects" }
-  ], tab);
-}
-
-async function showHistory() {
-  const tab = activeRouteTab(["timeline", "transactions"], "timeline");
-  if (tab === "transactions") await showTransactions();
-  else await showTimeline();
-  renderViewTabs("history", [
-    { id: "timeline", label: "Timeline" },
-    { id: "transactions", label: "Transactions" }
-  ], tab);
-}
-
-const views = {
-  overview: ["Overview", showOverview],
-  assets: ["Assets", showAssetsHub],
-  work: ["Work", showWork],
-  history: ["History", showHistory],
-  agent: ["Agent", showAgent]
-};
-
-const legacyRoutes = {
-  issues: ["work", "issues"],
-  maintenance: ["work", "maintenance"],
-  projects: ["work", "projects"],
-  timeline: ["history", "timeline"],
-  transactions: ["history", "transactions"],
-  documents: ["assets", "documents"]
-};
-
-function normalizeRoute(view, tab = null) {
-  if (legacyRoutes[view]) {
-    const [nextView, nextTab] = legacyRoutes[view];
-    return { view: nextView, tab: nextTab };
-  }
-  return { view: view in views ? view : "overview", tab };
-}
-
-async function selectView(view) {
-  const entry = views[view] ?? views.overview;
-  state.view = view in views ? view : "overview";
-  pageTitle.textContent = entry[0];
-  document.title = entry[0] + " · Homely";
-  document.querySelectorAll(".nav-item").forEach((item) => {
-    const active = item.dataset.view === state.view;
-    item.classList.toggle("active", active);
-    if (active) item.setAttribute("aria-current", "page");
-    else item.removeAttribute("aria-current");
-  });
-  await entry[1]();
-}
-
-function viewUrl(view, tab = null) {
-  if (view === "overview") return "/";
-  const params = new URLSearchParams({ view });
-  if (tab) params.set("tab", tab);
-  return "/?" + params.toString();
-}
-
-function navigateTo(view, tab = null, { replace = false } = {}) {
-  const route = normalizeRoute(view, tab);
-  const url = viewUrl(route.view, route.tab);
-  if (replace) history.replaceState({ view: route.view, tab: route.tab }, "", url);
-  else history.pushState({ view: route.view, tab: route.tab }, "", url);
-  void selectView(route.view);
-}
-
-nav.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-view]");
-  if (!button) return;
-  const defaults = { assets: "assets", work: "issues", history: "timeline" };
-  navigateTo(button.dataset.view, defaults[button.dataset.view] ?? null);
-});
-
-window.addEventListener("popstate", () => {
-  const params = new URLSearchParams(window.location.search);
-  const route = normalizeRoute(params.get("view") ?? "overview", params.get("tab"));
-  void selectView(route.view);
-});
-
-logoutButton?.addEventListener("click", async () => {
-  logoutButton.disabled = true;
-  try {
-    await api("/api/auth/logout", { method: "POST" });
-  } finally {
-    window.location.href = "/auth/login";
-  }
-});
-
-document.querySelector("#dialog-close").addEventListener("click", () => assetDialog.close());
-document.querySelector("#action-dialog-close").addEventListener("click", () => closeAction());
-actionDialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  closeAction();
-});
-
-const initialParams = new URLSearchParams(window.location.search);
-const initialRoute = normalizeRoute(initialParams.get("view") ?? "overview", initialParams.get("tab"));
-if (initialParams.get("view") && initialRoute.view !== initialParams.get("view")) {
-  history.replaceState({ view: initialRoute.view, tab: initialRoute.tab }, "", viewUrl(initialRoute.view, initialRoute.tab));
-}
-void refreshRuntimeStatus();
-void selectView(initialRoute.view);
+const views={home:["Home",showHome],issues:["Issues",showIssues],repairs:["Repairs",showRepairs],appliances:["Appliances & furniture",showAppliances],files:["Files",showFiles]};
+function normalizeView(v){if(v==="overview")return"home";if(v==="assets")return"appliances";if(v==="documents")return"files";return views[v]?v:"home"}
+async function selectView(view){state.view=normalizeView(view);pageTitle.textContent=views[state.view][0];document.title=views[state.view][0]+" · Homely";$$(".nav-item").forEach(function(b){b.classList.toggle("active",b.dataset.view===state.view)});await views[state.view][1]()}
+function navigate(view,replace){view=normalizeView(view);const url=view==="home"?"/":"/?view="+encodeURIComponent(view);if(replace)history.replaceState({view:view},"",url);else history.pushState({view:view},"",url);void selectView(view)}
+nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.dataset.view,false)};
+window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
+$("#logout-button").onclick=async function(){try{await api("/api/auth/logout",{method:"POST"})}finally{location.href="/auth/login"}};
+$("#chat-open").onclick=function(){chatRail.classList.add("open")};$("#chat-close").onclick=function(){chatRail.classList.remove("open")};
+const initial=normalizeView(new URLSearchParams(location.search).get("view")||"home");
+void refreshStatus();void selectView(initial);renderChat();
