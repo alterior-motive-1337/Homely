@@ -58,7 +58,7 @@ export class OpenAIAgentProvider implements AgentProvider {
     private readonly db: HomelyDatabase,
     private readonly client: OpenAIClientLike,
     private readonly model: string,
-    private readonly research: HomeResearch,
+    private readonly research: HomeResearch = new HomeResearch(),
     private readonly origin = "OPENAI"
   ) {}
 
