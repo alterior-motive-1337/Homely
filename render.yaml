@@ -63,7 +63,7 @@ services:
         sync: false
 
       - key: GROQ_MODEL
-        value: "openai/gpt-oss-20b"
+        value: "openai/gpt-oss-120b"
 
       - key: VOICE_ENABLED
         value: "false"
