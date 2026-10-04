@@ -197,6 +197,42 @@ test("Drive evidence can link to issue and repair with provenance", () => {
   db.close();
 });
 
+test("web links can be saved as contextual evidence without Drive", () => {
+  const db = demoDb();
+  const proposal = proposeTransaction(db, {
+    actionType: "ATTACH_DOCUMENT",
+    reason: "Save the inverter manual source page.",
+    payload: {
+      assetId: "asset-inverter",
+      title: "Sunsynk inverter manual source",
+      documentType: "MANUAL",
+      provider: "LOCAL",
+      sourceUrl: "https://example.com/inverter-manual",
+      webViewLink: "https://example.com/inverter-manual",
+      mimeType: "text/uri-list",
+      occurredAt: "2026-10-04",
+      provenance: "Saved directly by homeowner in Homely.",
+      evidenceReason: "Reference manual for future troubleshooting.",
+      evidenceStatus: "REFERENCE"
+    }
+  });
+
+  const txId = String(proposal.transaction?.id);
+  commitTransaction(db, txId);
+  const document = db.prepare("SELECT * FROM documents WHERE title = 'Sunsynk inverter manual source'").get();
+  assert.equal(document?.provider, "LOCAL");
+  assert.equal(document?.asset_id, "asset-inverter");
+  assert.equal(document?.source_url, "https://example.com/inverter-manual");
+  assert.equal(document?.evidence_status, "REFERENCE");
+
+  undoTransaction(db, txId);
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM documents WHERE title = 'Sunsynk inverter manual source'").get()?.count ?? 0),
+    0
+  );
+  db.close();
+});
+
 test("project creation and status changes are transactional and reversible", () => {
   const db = demoDb();
 
