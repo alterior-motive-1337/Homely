@@ -22,8 +22,8 @@ export const config = {
   secureCookies: onRender || process.env.NODE_ENV === "production",
 
   aiEnabled: process.env.AI_ENABLED === "true",
-  openAiApiKey: process.env.OPENAI_API_KEY?.trim() ?? "",
-  openAiModel: process.env.OPENAI_MODEL?.trim() || "gpt-5.5",
+  groqApiKey: process.env.GROQ_API_KEY?.trim() ?? "",
+  groqModel: process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b",
   voiceEnabled: process.env.VOICE_ENABLED === "true",
 
   googleDriveEnabled: process.env.GOOGLE_DRIVE_ENABLED === "true",
