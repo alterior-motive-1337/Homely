@@ -139,6 +139,64 @@ test("Drive document association is proposed, committed and reversible", () => {
 });
 
 
+test("Drive evidence can link to issue and repair with provenance", () => {
+  const db = demoDb();
+
+  const repairProposal = proposeTransaction(db, {
+    actionType: "RECORD_REPAIR",
+    reason: "Record the repair that resolved the historical tap issue.",
+    payload: {
+      assetId: "asset-tap",
+      issueId: "issue-tap-2025",
+      title: "Tap aerator service",
+      repairDate: "2025-11-06",
+      costCents: 25000,
+      contractor: "Mokoena Plumbing",
+      outcome: "Sediment removed and pressure restored."
+    }
+  });
+  commitTransaction(db, String(repairProposal.transaction?.id));
+  const repair = db.prepare("SELECT * FROM repairs WHERE title = 'Tap aerator service'").get();
+  assert.ok(repair?.id);
+
+  const evidence = proposeTransaction(db, {
+    actionType: "ATTACH_DOCUMENT",
+    reason: "Attach the repair invoice as historical evidence.",
+    payload: {
+      issueId: "issue-tap-2025",
+      repairId: String(repair?.id),
+      title: "Tap repair invoice",
+      documentType: "INVOICE",
+      providerFileId: "drive-tap-invoice",
+      mimeType: "application/pdf",
+      webViewLink: "https://drive.google.com/file/d/drive-tap-invoice/view",
+      sourceUrl: "https://drive.google.com/file/d/drive-tap-invoice/view",
+      provenance: "Selected by homeowner from Google Drive.",
+      occurredAt: "2025-11-06",
+      evidenceReason: "Invoice proving the completed repair and cost.",
+      evidenceStatus: "REFERENCE"
+    }
+  });
+  const evidenceTxId = String(evidence.transaction?.id);
+  commitTransaction(db, evidenceTxId);
+
+  const document = db.prepare("SELECT * FROM documents WHERE provider_file_id = 'drive-tap-invoice'").get();
+  assert.equal(document?.asset_id, "asset-tap");
+  assert.equal(document?.issue_id, "issue-tap-2025");
+  assert.equal(document?.repair_id, repair?.id);
+  assert.equal(document?.provenance, "Selected by homeowner from Google Drive.");
+  assert.equal(document?.occurred_at, "2025-11-06T12:00:00.000Z");
+  assert.equal(document?.evidence_reason, "Invoice proving the completed repair and cost.");
+  assert.equal(document?.evidence_status, "REFERENCE");
+
+  undoTransaction(db, evidenceTxId);
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM documents WHERE provider_file_id = 'drive-tap-invoice'").get()?.count ?? 0),
+    0
+  );
+  db.close();
+});
+
 test("project creation and status changes are transactional and reversible", () => {
   const db = demoDb();
 
