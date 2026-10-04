@@ -965,8 +965,13 @@ export function undoTransaction(db: HomelyDatabase, transactionId: string) {
   if (!original) throw new DomainError("Transaction not found.", 404);
   if (String(original.status) !== "COMMITTED") throw new DomainError("Only committed transactions can be undone.", 409);
   if (String(original.action_type) === "UNDO") throw new DomainError("Undo transactions cannot be undone.", 409);
-  if (String(original.action_type) === "RECORD_REPAIR") {
-    throw new DomainError("Repair records are permanent. Add a correcting record instead of deleting history.", 409);
+  if (["REPORT_ISSUE","RECORD_REPAIR"].includes(String(original.action_type))) {
+    throw new DomainError(
+      String(original.action_type) === "REPORT_ISSUE"
+        ? "Issue records are permanent. Resolve the issue or add correcting history instead of deleting it."
+        : "Repair records are permanent. Add a correcting record instead of deleting history.",
+      409
+    );
   }
 
   const changes = db.prepare(
