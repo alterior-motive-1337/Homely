@@ -76,6 +76,26 @@ async function openRepairForm(prefill){
   $("#repair-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("cost")||"").trim();await previewAction("RECORD_REPAIR",{assetId:d.get("assetId"),issueId:d.get("issueId")||null,title:d.get("title"),repairDate:d.get("repairDate"),costCents:cost?Math.round(Number(cost)*100):null,contractor:d.get("contractor"),description:d.get("description"),outcome:d.get("outcome")},"Homeowner recorded completed repair work.")}
 }
 
+function openChargeForm(){
+  openModal('<p class="eyebrow">Household costs</p><h2>Add recurring charge</h2><form class="form" id="charge-form"><div class="form-grid"><div class="field full"><label>Name</label><input name="name" maxlength="180" required placeholder="Home internet"></div><div class="field"><label>Category</label><input name="category" maxlength="80" required placeholder="UTILITIES"></div><div class="field"><label>Amount (ZAR)</label><input type="number" name="amount" min="0" step=".01" required></div><div class="field"><label>Billing cycle</label><select name="billingCycle"><option selected>MONTHLY</option><option>QUARTERLY</option><option>ANNUAL</option><option>OTHER</option></select></div><div class="field"><label>Due day</label><input type="number" name="dueDay" min="1" max="31" placeholder="15"></div><div class="field full"><label>Provider</label><input name="provider" maxlength="240"></div><div class="field full"><label>Notes</label><textarea name="notes"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  $("[data-cancel]",modalBody).onclick=closeModal;
+  $("#charge-form").onsubmit=async function(e){
+    e.preventDefault();const d=new FormData(e.currentTarget),amount=String(d.get("amount")||"").trim(),due=String(d.get("dueDay")||"").trim();
+    await previewAction("CREATE_CHARGE",{name:d.get("name"),category:d.get("category"),amountCents:Math.round(Number(amount)*100),billingCycle:d.get("billingCycle"),dueDay:due?Number(due):null,provider:d.get("provider"),notes:d.get("notes")},"Homeowner recorded a recurring household charge.");
+  };
+}
+
+async function openPurchaseForm(){
+  const options=await assetOptions("");
+  const optionalAssets='<option value="">Not tied to an existing asset</option>'+options;
+  openModal('<p class="eyebrow">Purchase memory</p><h2>Save potential purchase</h2><form class="form" id="purchase-form"><div class="form-grid"><div class="field full"><label>Title</label><input name="title" maxlength="220" required placeholder="Replacement washing machine"></div><div class="field"><label>Category</label><input name="category" maxlength="80" required placeholder="APPLIANCE"></div><div class="field"><label>Status</label><select name="status"><option selected>SAVED</option><option>SHORTLISTED</option></select></div><div class="field full"><label>Related asset</label><select name="assetId">'+optionalAssets+'</select></div><div class="field"><label>Budget (ZAR)</label><input type="number" name="budget" min="0" step=".01"></div><div class="field"><label>Expected cost (ZAR)</label><input type="number" name="expected" min="0" step=".01"></div><div class="field full"><label>Source name</label><input name="sourceName" maxlength="240" placeholder="Store or website"></div><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…"></div><div class="field full"><label>Why save it?</label><textarea name="rationale"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  $("[data-cancel]",modalBody).onclick=closeModal;
+  $("#purchase-form").onsubmit=async function(e){
+    e.preventDefault();const d=new FormData(e.currentTarget),budget=String(d.get("budget")||"").trim(),expected=String(d.get("expected")||"").trim();
+    await previewAction("SAVE_PURCHASE",{assetId:d.get("assetId")||null,title:d.get("title"),category:d.get("category"),status:d.get("status"),budgetCents:budget?Math.round(Number(budget)*100):null,expectedCostCents:expected?Math.round(Number(expected)*100):null,sourceUrl:d.get("sourceUrl"),sourceName:d.get("sourceName"),rationale:d.get("rationale")},"Homeowner saved a potential household purchase.");
+  };
+}
+
 async function showHome(){
   loading();
   try{
@@ -87,10 +107,10 @@ async function showHome(){
     html+='<section class="card"><div class="card-head"><h2>Needs attention</h2><button class="button" data-go="issues">All issues</button></div><div class="card-body rows">'+(d.attention.issues.slice(0,5).map(function(i){return row(i.title,i.asset_name+" · "+fmtDate(i.detected_at),badge(i.severity))}).join("")||'<div class="empty">No active issues.</div>')+'</div></section>';
     html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="button" data-go="repairs">History</button></div><div class="card-body rows">'+(repairs.map(function(r){return row(r.title,r.asset_name+" · "+fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repair records yet.</div>')+'</div></section>';
     html+='<section class="card"><div class="card-head"><h2>Upcoming</h2></div><div class="card-body rows">'+(d.upcoming.slice(0,5).map(function(m){return row(m.title,m.asset_name+" · "+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+"d</span>")}).join("")||'<div class="empty">Nothing due in the next 30 days.</div>')+'</div></section>';
-    html+='<section class="card"><div class="card-head"><h2>Recurring charges</h2></div><div class="card-body rows">'+(charges.slice(0,5).map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+"</span>")}).join("")||'<div class="empty">No recurring charges recorded.</div>')+'</div></section>';
-    html+='<section class="card"><div class="card-head"><h2>Potential purchases</h2></div><div class="card-body rows">'+(purchases.slice(0,5).map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+"</span>",p.rationale||"")}).join("")||'<div class="empty">No purchase research saved.</div>')+'</div></section>';
+    html+='<section class="card"><div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">+ Charge</button></div><div class="card-body rows">'+(charges.slice(0,5).map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+"</span>")}).join("")||'<div class="empty">No recurring charges recorded.</div>')+'</div></section>';
+    html+='<section class="card"><div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">+ Save</button></div><div class="card-body rows">'+(purchases.slice(0,5).map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+"</span>",p.rationale||"")}).join("")||'<div class="empty">No purchase research saved.</div>')+'</div></section>';
     html+='<section class="card"><div class="card-head"><h2>Recent memory</h2></div><div class="card-body rows">'+(d.recent.slice(0,5).map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")||'<div class="empty">No recent activity.</div>')+'</div></section></div>';
-    content.innerHTML=html;$("#home-issue").onclick=openIssueForm;$("#home-repair").onclick=function(){openRepairForm()};$$("[data-go]").forEach(function(b){b.onclick=function(){navigate(b.dataset.go)}})
+    content.innerHTML=html;$("#home-issue").onclick=openIssueForm;$("#home-repair").onclick=function(){openRepairForm()};$("#add-charge").onclick=openChargeForm;$("#add-purchase").onclick=function(){openPurchaseForm()};$("[data-go]").forEach(function(b){b.onclick=function(){navigate(b.dataset.go)}})
   }catch(e){fail(e)}
 }
 
@@ -160,13 +180,30 @@ async function openFile(doc){
 $("#viewer-close").onclick=function(){viewer.close()};
 viewer.addEventListener("close",function(){if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
 
+async function openDriveImport(file){
+  const options=await assetOptions("");
+  openModal('<p class="eyebrow">Google Drive import</p><h2>Attach selected file</h2><div class="row-meta">'+esc(file.name)+' · '+esc(file.mimeType||"unknown type")+'</div><form class="form" id="drive-import-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>File type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Title</label><input name="title" maxlength="240" value="'+esc(file.name)+'" required></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview association</button></div></form>');
+  $("[data-cancel]",modalBody).onclick=closeModal;
+  $("#drive-import-form").onsubmit=async function(e){
+    e.preventDefault();const d=new FormData(e.currentTarget);
+    await previewAction("ATTACH_DOCUMENT",{assetId:d.get("assetId"),title:d.get("title"),documentType:d.get("documentType"),providerFileId:file.id,mimeType:file.mimeType,webViewLink:file.webViewLink},"Homeowner explicitly selected a Google Drive file and associated it with a home asset.");
+  };
+}
+
 async function showFiles(){
   loading();
   try{
     const both=await Promise.all([api("/api/documents"),api("/api/integrations/status")]),docs=both[0],integrations=both[1],drive=integrations.googleDrive;
-    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links.</p></div><div class="hero-actions">'+(drive&&drive.enabled&&drive.configured&&!drive.connected?'<button class="button" id="drive-connect">Connect Drive</button>':"")+'</div></div><div class="file-grid">'+(docs.map(function(d){return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.provider||"")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc(d.asset_name||d.repair_title||d.issue_title||d.charge_name||d.purchase_title||"Home record")+" · "+fmtDate(d.occurred_at||d.created_at)+"</small></button>"}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
+    const driveActions=drive&&drive.enabled&&drive.configured?(drive.connected?'<button class="button" id="drive-select">Select from Drive</button><button class="button" id="drive-disconnect">Disconnect</button>':'<button class="button" id="drive-connect">Connect Drive</button>'):"";
+    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links.</p></div><div class="hero-actions">'+driveActions+'</div></div><div class="file-grid">'+(docs.map(function(d){return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.provider||"")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc(d.asset_name||d.repair_title||d.issue_title||d.charge_name||d.purchase_title||"Home record")+" · "+fmtDate(d.occurred_at||d.created_at)+"</small></button>"}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
     if($("#drive-connect"))$("#drive-connect").onclick=function(){location.href="/api/google-drive/connect"};
-    $$("[data-file]",content).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.file}))}})
+    if($("#drive-select"))$("#drive-select").onclick=function(){location.href="/api/google-drive/connect"};
+    if($("#drive-disconnect"))$("#drive-disconnect").onclick=async function(){await api("/api/google-drive/disconnect",{method:"POST"});notify("Google Drive disconnected. Existing file records were preserved.");await showFiles()};
+    $("[data-file]",content).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.file}))}});
+    const params=new URLSearchParams(location.search),driveError=params.get("driveError"),picked=params.get("drivePicked"),connected=params.get("driveConnected");
+    if(driveError){history.replaceState({view:"files"},"","/?view=files");notify("Google Drive selection was cancelled or failed.")}
+    else if(picked&&drive&&drive.connected){history.replaceState({view:"files"},"","/?view=files");const files=await api("/api/google-drive/files?ids="+encodeURIComponent(picked));if(files.length)await openDriveImport(files[0])}
+    else if(connected){history.replaceState({view:"files"},"","/?view=files");notify("Google Drive connected. Select a file to attach it to Homely.")}
   }catch(e){fail(e)}
 }
 
