@@ -7,6 +7,9 @@ export type ActionType =
   | "RESOLVE_ISSUE"
   | "COMPLETE_MAINTENANCE"
   | "ATTACH_DOCUMENT"
+  | "RECORD_REPAIR"
+  | "CREATE_CHARGE"
+  | "SAVE_PURCHASE"
   | "CREATE_PROJECT"
   | "UPDATE_PROJECT_STATUS";
 
@@ -168,6 +171,95 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
     };
   }
 
+  if (actionType === "RECORD_REPAIR") {
+    const assetId = requireText(raw.assetId, "Asset", 120);
+    getAsset(db, assetId);
+    const issueId = raw.issueId ? requireText(raw.issueId, "Issue", 120) : null;
+    if (issueId) {
+      const issue = getIssue(db, issueId);
+      if (String(issue.asset_id) !== assetId) {
+        throw new DomainError("Repair issue must belong to the selected asset.");
+      }
+    }
+
+    let costCents: number | null = null;
+    if (raw.costCents !== null && raw.costCents !== undefined && String(raw.costCents).trim() !== "") {
+      costCents = Number(raw.costCents);
+      if (!Number.isInteger(costCents) || costCents < 0 || costCents > 100_000_000_000) {
+        throw new DomainError("Repair cost must be a non-negative whole number of cents.");
+      }
+    }
+
+    return {
+      assetId,
+      issueId,
+      title: requireText(raw.title, "Repair title", 180),
+      description: optionalText(raw.description, 4000),
+      repairDate: raw.repairDate ? requireDate(raw.repairDate, "Repair date") : todayIso(),
+      costCents,
+      contractor: optionalText(raw.contractor, 240),
+      outcome: optionalText(raw.outcome, 2000)
+    };
+  }
+
+  if (actionType === "CREATE_CHARGE") {
+    const amountCents = Number(raw.amountCents);
+    if (!Number.isInteger(amountCents) || amountCents < 0 || amountCents > 100_000_000_000) {
+      throw new DomainError("Charge amount must be a non-negative whole number of cents.");
+    }
+    const billingCycle = requireText(raw.billingCycle, "Billing cycle", 20).toUpperCase();
+    if (!["MONTHLY","QUARTERLY","ANNUAL","OTHER"].includes(billingCycle)) {
+      throw new DomainError("Unsupported billing cycle.");
+    }
+    let dueDay: number | null = null;
+    if (raw.dueDay !== null && raw.dueDay !== undefined && String(raw.dueDay).trim() !== "") {
+      dueDay = Number(raw.dueDay);
+      if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
+        throw new DomainError("Due day must be between 1 and 31.");
+      }
+    }
+    return {
+      name: requireText(raw.name, "Charge name", 180),
+      category: requireText(raw.category, "Charge category", 80).toUpperCase(),
+      amountCents,
+      billingCycle,
+      dueDay,
+      provider: optionalText(raw.provider, 240),
+      notes: optionalText(raw.notes, 2000)
+    };
+  }
+
+  if (actionType === "SAVE_PURCHASE") {
+    const assetId = raw.assetId ? requireText(raw.assetId, "Asset", 120) : null;
+    if (assetId) getAsset(db, assetId);
+
+    const money = (value: unknown, label: string): number | null => {
+      if (value === null || value === undefined || String(value).trim() === "") return null;
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 0 || parsed > 100_000_000_000) {
+        throw new DomainError(`${label} must be a non-negative whole number of cents.`);
+      }
+      return parsed;
+    };
+
+    const status = raw.status ? requireText(raw.status, "Purchase status", 20).toUpperCase() : "SAVED";
+    if (!["SAVED","SHORTLISTED"].includes(status)) {
+      throw new DomainError("New purchase candidates must be SAVED or SHORTLISTED.");
+    }
+
+    return {
+      assetId,
+      title: requireText(raw.title, "Purchase title", 220),
+      category: requireText(raw.category, "Purchase category", 80).toUpperCase(),
+      status,
+      budgetCents: money(raw.budgetCents, "Budget"),
+      expectedCostCents: money(raw.expectedCostCents, "Expected cost"),
+      sourceUrl: optionalText(raw.sourceUrl, 2000),
+      sourceName: optionalText(raw.sourceName, 240),
+      rationale: optionalText(raw.rationale, 3000)
+    };
+  }
+
   if (actionType === "CREATE_PROJECT") {
     const startDate = raw.startDate ? requireDate(raw.startDate, "Start date") : null;
     const targetDate = raw.targetDate ? requireDate(raw.targetDate, "Target date") : null;
@@ -268,6 +360,35 @@ function previewFor(db: HomelyDatabase, actionType: ActionType, payload: JsonRec
     };
   }
 
+  if (actionType === "RECORD_REPAIR") {
+    const asset = getAsset(db, String(payload.assetId));
+    return {
+      title: `Record repair: ${payload.title}`,
+      summary: `${asset.name} · ${payload.repairDate}`,
+      effects: [
+        "Create a permanent repair record",
+        "Link the repair to the asset and issue when supplied",
+        "Add a house timeline event"
+      ]
+    };
+  }
+
+  if (actionType === "CREATE_CHARGE") {
+    return {
+      title: `Add recurring charge: ${payload.name}`,
+      summary: `${payload.billingCycle} household charge`,
+      effects: ["Create a household charge record", "Expose it to Homely memory", "Add a house timeline event"]
+    };
+  }
+
+  if (actionType === "SAVE_PURCHASE") {
+    return {
+      title: `Save purchase candidate: ${payload.title}`,
+      summary: String(payload.category),
+      effects: ["Save the researched purchase", "Preserve source and budget context", "Add a house timeline event"]
+    };
+  }
+
   if (actionType === "CREATE_PROJECT") {
     return {
       title: `Create project: ${payload.title}`,
@@ -364,6 +485,9 @@ function createTimelineEvent(
     maintenanceRuleId?: string | null;
     documentId?: string | null;
     projectId?: string | null;
+    repairId?: string | null;
+    chargeId?: string | null;
+    purchaseCandidateId?: string | null;
   },
   createdAt: string
 ): JsonRecord {
@@ -374,8 +498,8 @@ function createTimelineEvent(
   db.prepare(`
     INSERT INTO timeline_events(
       id,home_id,event_type,title,summary,occurred_at,asset_id,issue_id,
-      maintenance_rule_id,document_id,project_id,metadata_json,created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      maintenance_rule_id,document_id,project_id,repair_id,charge_id,purchase_candidate_id,metadata_json,created_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     eventId,
     String(home.id),
@@ -388,6 +512,9 @@ function createTimelineEvent(
     input.maintenanceRuleId ?? null,
     input.documentId ?? null,
     input.projectId ?? null,
+    input.repairId ?? null,
+    input.chargeId ?? null,
+    input.purchaseCandidateId ?? null,
     JSON.stringify({ transactionId }),
     createdAt
   );
@@ -448,6 +575,109 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         occurredAt: String(payload.detectedAt) + "T12:00:00.000Z",
         assetId: String(payload.assetId),
         issueId
+      }, createdAt);
+    }
+
+    if (actionType === "RECORD_REPAIR") {
+      const home = db.prepare("SELECT id FROM homes ORDER BY created_at LIMIT 1").get();
+      if (!home) throw new DomainError("Home record is missing.", 500);
+      const repairId = newId("repair");
+      db.prepare(`
+        INSERT INTO repairs(
+          id,home_id,asset_id,issue_id,title,description,repair_date,cost_cents,contractor,outcome,created_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      `).run(
+        repairId,
+        String(home.id),
+        String(payload.assetId),
+        payload.issueId ? String(payload.issueId) : null,
+        String(payload.title),
+        payload.description === null || payload.description === undefined ? null : String(payload.description),
+        String(payload.repairDate),
+        payload.costCents === null || payload.costCents === undefined ? null : Number(payload.costCents),
+        payload.contractor === null || payload.contractor === undefined ? null : String(payload.contractor),
+        payload.outcome === null || payload.outcome === undefined ? null : String(payload.outcome),
+        createdAt
+      );
+      const repair = db.prepare("SELECT * FROM repairs WHERE id = ?").get(repairId) as JsonRecord;
+      recordChange(db, transactionId, "repair", repairId, "CREATE", null, repair, createdAt);
+      createTimelineEvent(db, transactionId, {
+        eventType: "REPAIR_RECORDED",
+        title: `Repair recorded: ${payload.title}`,
+        summary: payload.outcome ? String(payload.outcome) : (payload.description ? String(payload.description) : null),
+        occurredAt: String(payload.repairDate) + "T12:00:00.000Z",
+        assetId: String(payload.assetId),
+        issueId: payload.issueId ? String(payload.issueId) : null,
+        repairId
+      }, createdAt);
+    }
+
+    if (actionType === "CREATE_CHARGE") {
+      const home = db.prepare("SELECT id FROM homes ORDER BY created_at LIMIT 1").get();
+      if (!home) throw new DomainError("Home record is missing.", 500);
+      const chargeId = newId("charge");
+      db.prepare(`
+        INSERT INTO charges(
+          id,home_id,name,category,amount_cents,billing_cycle,due_day,provider,notes,active,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)
+      `).run(
+        chargeId,
+        String(home.id),
+        String(payload.name),
+        String(payload.category),
+        Number(payload.amountCents),
+        String(payload.billingCycle),
+        payload.dueDay === null || payload.dueDay === undefined ? null : Number(payload.dueDay),
+        payload.provider === null || payload.provider === undefined ? null : String(payload.provider),
+        payload.notes === null || payload.notes === undefined ? null : String(payload.notes),
+        createdAt,
+        createdAt
+      );
+      const charge = db.prepare("SELECT * FROM charges WHERE id = ?").get(chargeId) as JsonRecord;
+      recordChange(db, transactionId, "charge", chargeId, "CREATE", null, charge, createdAt);
+      createTimelineEvent(db, transactionId, {
+        eventType: "CHARGE_CREATED",
+        title: `Household charge added: ${payload.name}`,
+        summary: `${payload.billingCycle} · ${payload.category}`,
+        occurredAt: createdAt,
+        chargeId
+      }, createdAt);
+    }
+
+    if (actionType === "SAVE_PURCHASE") {
+      const home = db.prepare("SELECT id FROM homes ORDER BY created_at LIMIT 1").get();
+      if (!home) throw new DomainError("Home record is missing.", 500);
+      const purchaseId = newId("purchase");
+      db.prepare(`
+        INSERT INTO purchase_candidates(
+          id,home_id,asset_id,title,category,status,budget_cents,expected_cost_cents,
+          source_url,source_name,rationale,metadata_json,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).run(
+        purchaseId,
+        String(home.id),
+        payload.assetId ? String(payload.assetId) : null,
+        String(payload.title),
+        String(payload.category),
+        String(payload.status),
+        payload.budgetCents === null || payload.budgetCents === undefined ? null : Number(payload.budgetCents),
+        payload.expectedCostCents === null || payload.expectedCostCents === undefined ? null : Number(payload.expectedCostCents),
+        payload.sourceUrl === null || payload.sourceUrl === undefined ? null : String(payload.sourceUrl),
+        payload.sourceName === null || payload.sourceName === undefined ? null : String(payload.sourceName),
+        payload.rationale === null || payload.rationale === undefined ? null : String(payload.rationale),
+        JSON.stringify({ savedFrom: String(transaction.origin ?? "UNKNOWN") }),
+        createdAt,
+        createdAt
+      );
+      const purchase = db.prepare("SELECT * FROM purchase_candidates WHERE id = ?").get(purchaseId) as JsonRecord;
+      recordChange(db, transactionId, "purchase_candidate", purchaseId, "CREATE", null, purchase, createdAt);
+      createTimelineEvent(db, transactionId, {
+        eventType: "PURCHASE_SAVED",
+        title: `Purchase candidate saved: ${payload.title}`,
+        summary: payload.rationale ? String(payload.rationale) : String(payload.category),
+        occurredAt: createdAt,
+        assetId: payload.assetId ? String(payload.assetId) : null,
+        purchaseCandidateId: purchaseId
       }, createdAt);
     }
 
@@ -657,6 +887,16 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
       const current = db.prepare("SELECT * FROM projects WHERE id = ?").get(entityId);
       if (!sameRow(current, after)) throw new DomainError("Project changed after this transaction and cannot be safely undone.", 409);
       db.prepare("DELETE FROM projects WHERE id = ?").run(entityId);
+    } else if (entityType === "charge") {
+      const current = db.prepare("SELECT * FROM charges WHERE id = ?").get(entityId);
+      if (!sameRow(current, after)) throw new DomainError("Charge changed after this transaction and cannot be safely undone.", 409);
+      db.prepare("DELETE FROM charges WHERE id = ?").run(entityId);
+    } else if (entityType === "purchase_candidate") {
+      const current = db.prepare("SELECT * FROM purchase_candidates WHERE id = ?").get(entityId);
+      if (!sameRow(current, after)) throw new DomainError("Purchase candidate changed after this transaction and cannot be safely undone.", 409);
+      db.prepare("DELETE FROM purchase_candidates WHERE id = ?").run(entityId);
+    } else if (entityType === "repair") {
+      throw new DomainError("Repair records are permanent and cannot be deleted by undo.", 409);
     } else {
       throw new DomainError("This transaction contains an unsupported undo operation.", 409);
     }
@@ -725,6 +965,9 @@ export function undoTransaction(db: HomelyDatabase, transactionId: string) {
   if (!original) throw new DomainError("Transaction not found.", 404);
   if (String(original.status) !== "COMMITTED") throw new DomainError("Only committed transactions can be undone.", 409);
   if (String(original.action_type) === "UNDO") throw new DomainError("Undo transactions cannot be undone.", 409);
+  if (String(original.action_type) === "RECORD_REPAIR") {
+    throw new DomainError("Repair records are permanent. Add a correcting record instead of deleting history.", 409);
+  }
 
   const changes = db.prepare(
     "SELECT * FROM transaction_changes WHERE transaction_id = ? ORDER BY rowid DESC"
