@@ -195,6 +195,19 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
       throw new DomainError("Evidence status must be ACTIVE, REFERENCE or ARCHIVED.");
     }
 
+    const provider = raw.provider ? requireText(raw.provider, "Evidence provider", 30).toUpperCase() : "GOOGLE_DRIVE";
+    if (!["LOCAL","GOOGLE_DRIVE"].includes(provider)) {
+      throw new DomainError("Evidence provider must be LOCAL or GOOGLE_DRIVE.");
+    }
+    const sourceUrl = optionalText(raw.sourceUrl, 2000);
+    const webViewLink = optionalText(raw.webViewLink, 1000);
+    const providerFileId = provider === "GOOGLE_DRIVE"
+      ? requireText(raw.providerFileId, "Drive file ID", 300)
+      : null;
+    if (provider === "LOCAL" && !sourceUrl && !webViewLink) {
+      throw new DomainError("Link evidence requires a source URL.");
+    }
+
     return {
       assetId,
       issueId,
@@ -203,11 +216,14 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
       purchaseCandidateId,
       title: requireText(raw.title, "Document title", 240),
       documentType,
-      providerFileId: requireText(raw.providerFileId, "Drive file ID", 300),
+      provider,
+      providerFileId,
       mimeType: optionalText(raw.mimeType, 200),
-      webViewLink: optionalText(raw.webViewLink, 1000),
-      sourceUrl: optionalText(raw.sourceUrl, 2000),
-      provenance: optionalText(raw.provenance, 1000) ?? "Selected by homeowner from Google Drive.",
+      webViewLink,
+      sourceUrl,
+      provenance: optionalText(raw.provenance, 1000) ?? (provider === "GOOGLE_DRIVE"
+        ? "Selected by homeowner from Google Drive."
+        : "Saved directly by homeowner in Homely."),
       occurredAt: raw.occurredAt ? requireDate(raw.occurredAt, "Evidence date") : todayIso(),
       evidenceReason: optionalText(raw.evidenceReason, 2000),
       evidenceStatus
@@ -797,8 +813,8 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         documentId,
         String(payload.title),
         String(payload.documentType),
-        "GOOGLE_DRIVE",
-        String(payload.providerFileId),
+        String(payload.provider),
+        payload.providerFileId ? String(payload.providerFileId) : null,
         null,
         payload.mimeType === null || payload.mimeType === undefined ? null : String(payload.mimeType),
         payload.webViewLink === null || payload.webViewLink === undefined ? null : String(payload.webViewLink),
@@ -822,7 +838,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         title: `Evidence attached: ${payload.title}`,
         summary: payload.evidenceReason
           ? String(payload.evidenceReason)
-          : `${payload.documentType} linked from Google Drive.`,
+          : `${payload.documentType} evidence recorded in Homely.`,
         occurredAt: String(payload.occurredAt) + "T12:00:00.000Z",
         assetId: payload.assetId ? String(payload.assetId) : null,
         issueId: payload.issueId ? String(payload.issueId) : null,
