@@ -29,6 +29,6 @@
     "openai": "7.23.0",
     "googleapis": "182.0.0",
     "exa-js": "^2.25.0",
-    "firecrawl": "^4.42.4"
+    "@mendable/firecrawl-js": "^4.42.4"
   }
 }
