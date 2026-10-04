@@ -8,12 +8,14 @@ const INSTRUCTIONS = `You are Homely, the operating memory for one physical home
 Rules:
 - Homely's structured state and tool results are the source of truth. Never invent facts about this home.
 - For questions about this property, retrieve the relevant state/history before answering.
-- Prefer recorded history and document metadata over generic home-maintenance advice.
+- Prefer recorded history, repair records, purchase context and document metadata over generic home-maintenance advice.
 - Deterministic health states come from Homely. Do not override them.
 - You may read state and create inert proposals with preview_action.
 - You cannot commit, resolve, complete, undo, or otherwise change persistent state yourself.
 - If the user asks for or clearly implies a meaningful state change, create at most one smallest useful proposal in this turn unless they explicitly request multiple actions.
-- For a recurring fault, inspect the asset and its history before proposing the next action.
+- For a recurring fault, inspect the asset, repairs and history before proposing the next action.
+- Repair records are permanent history. Corrections should be recorded as new history rather than deleting the original.
+- Charges and potential purchases are part of household memory. Use their tools when cost or buying context is relevant.
 - A proposal is not a completed action. Say clearly that it requires approval.
 - Never claim a proposed action happened until Homely reports a committed transaction in a later interaction.
 - Keep responses concise, specific, calm, and grounded in this house.
@@ -48,7 +50,8 @@ export class OpenAIAgentProvider implements AgentProvider {
   constructor(
     private readonly db: HomelyDatabase,
     private readonly client: OpenAIClientLike,
-    private readonly model: string
+    private readonly model: string,
+    private readonly origin = "OPENAI"
   ) {}
 
   async respond(request: AgentRequest): Promise<AgentResponse> {
@@ -83,7 +86,7 @@ export class OpenAIAgentProvider implements AgentProvider {
         }
 
         try {
-          const result = executeHomelyTool(this.db, name, args, "OPENAI");
+          const result = executeHomelyTool(this.db, name, args, this.origin);
           if (name === "preview_action") {
             const proposal = proposalFromResult(result);
             if (proposal) proposals.push(proposal);

@@ -4,20 +4,25 @@ import { config } from "../config.js";
 import { OpenAIAgentProvider } from "./openaiProvider.js";
 import type { AgentProvider } from "./types.js";
 
+type ProviderName = "groq" | "openai";
+
 export interface AgentRuntime {
   provider: AgentProvider | null;
   status: {
     enabled: boolean;
     configured: boolean;
     available: boolean;
-    provider: "openai";
+    provider: ProviderName;
     model: string;
   };
 }
 
 export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
-  const configured = Boolean(config.openAiApiKey);
   const enabled = config.aiEnabled;
+  const useGroq = Boolean(config.groqApiKey);
+  const configured = useGroq || Boolean(config.openAiApiKey);
+  const providerName: ProviderName = useGroq ? "groq" : "openai";
+  const model = useGroq ? config.groqModel : config.openAiModel;
 
   if (!enabled || !configured) {
     return {
@@ -26,21 +31,27 @@ export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
         enabled,
         configured,
         available: false,
-        provider: "openai",
-        model: config.openAiModel
+        provider: providerName,
+        model
       }
     };
   }
 
-  const client = new OpenAI({ apiKey: config.openAiApiKey });
+  const client = useGroq
+    ? new OpenAI({
+        apiKey: config.groqApiKey,
+        baseURL: "https://api.groq.com/openai/v1"
+      })
+    : new OpenAI({ apiKey: config.openAiApiKey });
+
   return {
-    provider: new OpenAIAgentProvider(db, client, config.openAiModel),
+    provider: new OpenAIAgentProvider(db, client, model, providerName.toUpperCase()),
     status: {
       enabled,
       configured,
       available: true,
-      provider: "openai",
-      model: config.openAiModel
+      provider: providerName,
+      model
     }
   };
 }

@@ -22,8 +22,14 @@ export const config = {
   secureCookies: onRender || process.env.NODE_ENV === "production",
 
   aiEnabled: process.env.AI_ENABLED === "true",
+  groqApiKey: process.env.GROQ_API_KEY?.trim() ?? "",
+  groqModel: process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b",
   openAiApiKey: process.env.OPENAI_API_KEY?.trim() ?? "",
   openAiModel: process.env.OPENAI_MODEL?.trim() || "gpt-5.5",
+  exaApiKey: process.env.EXA_API_KEY?.trim() ?? "",
+  firecrawlApiKey: process.env.FIRECRAWL_API_KEY?.trim() ?? "",
+  tursoDatabaseUrl: process.env.TURSO_DATABASE_URL?.trim() ?? "",
+  tursoAuthToken: process.env.TURSO_AUTH_TOKEN?.trim() ?? "",
   voiceEnabled: process.env.VOICE_ENABLED === "true",
 
   googleDriveEnabled: process.env.GOOGLE_DRIVE_ENABLED === "true",
