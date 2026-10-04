@@ -69,7 +69,7 @@ jobs:
 
           const integrations = await (await get("/api/integrations/status")).json();
           assert(integrations.ai.available === false, "AI should be optional and disabled in CI");
-          assert(integrations.ai.provider === "openai", "OpenAI provider status missing");
+          assert(integrations.ai.provider === "groq", "Groq provider status missing");
           assert(integrations.googleDrive.available === false, "Drive should be optional and disabled in CI");
           assert(integrations.googleDrive.connected === false, "Drive should not create credentials in CI");
 

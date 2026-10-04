@@ -1,11 +1,9 @@
 import OpenAI from "openai";
 import type { HomelyDatabase } from "../db.js";
 import { config } from "../config.js";
-import { OpenAIAgentProvider } from "./openaiProvider.js";
+import { GroqAgentProvider } from "./groqProvider.js";
 import { HomeResearch } from "../integrations/webResearch.js";
 import type { AgentProvider } from "./types.js";
-
-type ProviderName = "groq" | "openai";
 
 export interface AgentRuntime {
   provider: AgentProvider | null;
@@ -13,7 +11,7 @@ export interface AgentRuntime {
     enabled: boolean;
     configured: boolean;
     available: boolean;
-    provider: ProviderName;
+    provider: "groq";
     model: string;
   };
   researchStatus: {
@@ -26,10 +24,8 @@ export interface AgentRuntime {
 export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
   const enabled = config.aiEnabled;
   const research = new HomeResearch();
-  const useGroq = Boolean(config.groqApiKey);
-  const configured = useGroq || Boolean(config.openAiApiKey);
-  const providerName: ProviderName = useGroq ? "groq" : "openai";
-  const model = useGroq ? config.groqModel : config.openAiModel;
+  const configured = Boolean(config.groqApiKey);
+  const model = config.groqModel;
 
   if (!enabled || !configured) {
     return {
@@ -38,27 +34,25 @@ export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
         enabled,
         configured,
         available: false,
-        provider: providerName,
+        provider: "groq",
         model
       },
       researchStatus: research.status
     };
   }
 
-  const client = useGroq
-    ? new OpenAI({
-        apiKey: config.groqApiKey,
-        baseURL: "https://api.groq.com/openai/v1"
-      })
-    : new OpenAI({ apiKey: config.openAiApiKey });
+  const client = new OpenAI({
+    apiKey: config.groqApiKey,
+    baseURL: "https://api.groq.com/openai/v1"
+  });
 
   return {
-    provider: new OpenAIAgentProvider(db, client, model, research, providerName.toUpperCase()),
+    provider: new GroqAgentProvider(db, client, model, research),
     status: {
       enabled,
       configured,
       available: true,
-      provider: providerName,
+      provider: "groq",
       model
     },
     researchStatus: research.status

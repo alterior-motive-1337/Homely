@@ -34,7 +34,7 @@ npm run mcp:smoke
 ## Architecture
 
 ```text
-Browser UI        Groq / OpenAI agent        MCP hosts
+Browser UI             Groq agent             MCP hosts
     |                    |                       |
 HTTP API          Homely tool layer         Homely MCP
     |                    |                       |
@@ -85,29 +85,19 @@ Evidence metadata includes type, provenance, evidence date, reason and status. T
 
 ## Agent
 
-Set `AI_ENABLED=true` and configure at least one supported provider.
-
-Groq is preferred when `GROQ_API_KEY` is present:
+Set `AI_ENABLED=true` and configure Groq:
 
 ```bash
 AI_ENABLED=true
 GROQ_API_KEY=...
-GROQ_MODEL=openai/gpt-oss-20b
+GROQ_MODEL=openai/gpt-oss-120b
 ```
 
-OpenAI remains supported as a fallback:
+The Groq credential stays server-side. Homely sends Responses-compatible requests to Groq's API endpoint. The `openai` npm package is retained only as the compatible client transport; inference is provided by Groq.
 
-```bash
-AI_ENABLED=true
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-5.5
-```
+Homely carries bounded multi-turn conversation history inside the application and gives Groq the same provider-neutral Homely tools and proposal-only mutation boundary.
 
-Provider credentials stay server-side.
-
-Groq's stateless Responses-compatible flow is handled by Homely carrying bounded conversation history in the application. Both providers use the same provider-neutral Homely tools and proposal-only mutation boundary.
-
-If no AI provider is configured, the structured home application continues to work.
+If Groq is not configured, the structured home application continues to work without AI.
 
 ## Web research
 

@@ -28,7 +28,7 @@ Rules:
 - Keep responses concise, specific, calm, and grounded in this house.
 `;
 
-type OpenAIClientLike = Pick<OpenAI, "responses">;
+type GroqResponsesClient = Pick<OpenAI, "responses">;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") return {};
@@ -53,15 +53,14 @@ function proposalFromResult(result: unknown): AgentProposal | null {
   };
 }
 
-export class OpenAIAgentProvider implements AgentProvider {
-  private readonly groqHistories = new Map<string, unknown[]>();
+export class GroqAgentProvider implements AgentProvider {
+  private readonly conversationHistories = new Map<string, unknown[]>();
 
   constructor(
     private readonly db: HomelyDatabase,
-    private readonly client: OpenAIClientLike,
+    private readonly client: GroqResponsesClient,
     private readonly model: string,
-    private readonly research: HomeResearch = new HomeResearch(),
-    private readonly origin = "OPENAI"
+    private readonly research: HomeResearch = new HomeResearch()
   ) {}
 
   async respond(request: AgentRequest): Promise<AgentResponse> {
@@ -72,21 +71,15 @@ export class OpenAIAgentProvider implements AgentProvider {
       ...(agentToolDefinitions as OpenAI.Responses.Tool[]),
       ...researchToolDefinitions(this.research)
     ];
-    const isGroq = this.origin === "GROQ";
-    let groqInput: unknown[] | null = null;
-
-    if (isGroq) {
-      const prior = request.previousResponseId
-        ? this.groqHistories.get(request.previousResponseId) ?? []
-        : [];
-      groqInput = [...prior, { role: "user", content: message }];
-    }
+    const prior = request.previousResponseId
+      ? this.conversationHistories.get(request.previousResponseId) ?? []
+      : [];
+    let groqInput: unknown[] = [...prior, { role: "user", content: message }];
 
     let response = await this.client.responses.create({
       model: this.model,
       instructions: INSTRUCTIONS,
-      input: (isGroq ? groqInput : message) as OpenAI.Responses.ResponseCreateParams["input"],
-      ...(isGroq ? {} : { previous_response_id: request.previousResponseId ?? undefined }),
+      input: groqInput as OpenAI.Responses.ResponseCreateParams["input"],
       tools
     });
 
@@ -111,7 +104,7 @@ export class OpenAIAgentProvider implements AgentProvider {
         try {
           const result = name === "search_web" || name === "read_web_page"
             ? await executeResearchTool(this.research, name as ResearchToolName, args)
-            : executeHomelyTool(this.db, name as HomelyToolName, args, this.origin);
+            : executeHomelyTool(this.db, name as HomelyToolName, args, "GROQ");
           if (name === "preview_action") {
             const proposal = proposalFromResult(result);
             if (proposal) proposals.push(proposal);
@@ -132,19 +125,16 @@ export class OpenAIAgentProvider implements AgentProvider {
         }
       }));
 
-      if (isGroq) {
-        groqInput = [
-          ...(groqInput ?? []),
-          ...response.output,
-          ...outputs
-        ];
-      }
+      groqInput = [
+        ...groqInput,
+        ...response.output,
+        ...outputs
+      ];
 
       response = await this.client.responses.create({
         model: this.model,
         instructions: INSTRUCTIONS,
-        input: (isGroq ? groqInput : outputs) as OpenAI.Responses.ResponseCreateParams["input"],
-        ...(isGroq ? {} : { previous_response_id: response.id }),
+        input: groqInput as OpenAI.Responses.ResponseCreateParams["input"],
         tools
       });
     }
@@ -152,13 +142,13 @@ export class OpenAIAgentProvider implements AgentProvider {
     const text = response.output_text?.trim() ||
       (proposals.length ? "I found a grounded next action and prepared it for your approval." : "I could not produce a grounded response.");
 
-    if (isGroq && response.id) {
-      const history = [...(groqInput ?? []), ...response.output].slice(-80);
-      this.groqHistories.set(response.id, history);
-      while (this.groqHistories.size > 32) {
-        const oldest = this.groqHistories.keys().next().value;
+    if (response.id) {
+      const history = [...groqInput, ...response.output].slice(-80);
+      this.conversationHistories.set(response.id, history);
+      while (this.conversationHistories.size > 32) {
+        const oldest = this.conversationHistories.keys().next().value;
         if (!oldest) break;
-        this.groqHistories.delete(oldest);
+        this.conversationHistories.delete(oldest);
       }
     }
 
