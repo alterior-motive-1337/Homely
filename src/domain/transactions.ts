@@ -83,6 +83,24 @@ function getIssue(db: HomelyDatabase, issueId: string) {
   return issue;
 }
 
+function getRepair(db: HomelyDatabase, repairId: string) {
+  const repair = db.prepare("SELECT * FROM repairs WHERE id = ?").get(repairId);
+  if (!repair) throw new DomainError("Repair not found.", 404);
+  return repair;
+}
+
+function getCharge(db: HomelyDatabase, chargeId: string) {
+  const charge = db.prepare("SELECT * FROM charges WHERE id = ?").get(chargeId);
+  if (!charge) throw new DomainError("Charge not found.", 404);
+  return charge;
+}
+
+function getPurchaseCandidate(db: HomelyDatabase, purchaseCandidateId: string) {
+  const purchase = db.prepare("SELECT * FROM purchase_candidates WHERE id = ?").get(purchaseCandidateId);
+  if (!purchase) throw new DomainError("Purchase candidate not found.", 404);
+  return purchase;
+}
+
 function getMaintenance(db: HomelyDatabase, maintenanceId: string) {
   const rule = db.prepare("SELECT * FROM maintenance_rules WHERE id = ?").get(maintenanceId);
   if (!rule) throw new DomainError("Maintenance rule not found.", 404);
@@ -131,19 +149,68 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
   }
 
   if (actionType === "ATTACH_DOCUMENT") {
-    const assetId = requireText(raw.assetId, "Asset", 120);
-    getAsset(db, assetId);
+    let assetId = raw.assetId ? requireText(raw.assetId, "Asset", 120) : null;
+    if (assetId) getAsset(db, assetId);
+
+    const issueId = raw.issueId ? requireText(raw.issueId, "Issue", 120) : null;
+    if (issueId) {
+      const issue = getIssue(db, issueId);
+      const issueAssetId = String(issue.asset_id);
+      if (assetId && issueAssetId !== assetId) throw new DomainError("Selected issue does not belong to the selected asset.");
+      assetId = assetId ?? issueAssetId;
+    }
+
+    const repairId = raw.repairId ? requireText(raw.repairId, "Repair", 120) : null;
+    if (repairId) {
+      const repair = getRepair(db, repairId);
+      const repairAssetId = String(repair.asset_id);
+      if (assetId && repairAssetId !== assetId) throw new DomainError("Selected repair does not belong to the selected asset.");
+      assetId = assetId ?? repairAssetId;
+    }
+
+    const chargeId = raw.chargeId ? requireText(raw.chargeId, "Charge", 120) : null;
+    if (chargeId) getCharge(db, chargeId);
+
+    const purchaseCandidateId = raw.purchaseCandidateId
+      ? requireText(raw.purchaseCandidateId, "Purchase candidate", 120)
+      : null;
+    if (purchaseCandidateId) {
+      const purchase = getPurchaseCandidate(db, purchaseCandidateId);
+      const purchaseAssetId = purchase.asset_id ? String(purchase.asset_id) : null;
+      if (purchaseAssetId && assetId && purchaseAssetId !== assetId) {
+        throw new DomainError("Selected purchase does not belong to the selected asset.");
+      }
+      assetId = assetId ?? purchaseAssetId;
+    }
+
     const documentType = requireText(raw.documentType, "Document type", 40).toUpperCase();
-    if (!["WARRANTY","MANUAL","INVOICE","RECEIPT","INSPECTION","PHOTO","REPORT","OTHER"].includes(documentType)) {
+    if (!["WARRANTY","MANUAL","INVOICE","RECEIPT","INSPECTION","PHOTO","VIDEO","REPORT","OTHER"].includes(documentType)) {
       throw new DomainError("Unsupported document type.");
     }
+
+    const evidenceStatus = raw.evidenceStatus
+      ? requireText(raw.evidenceStatus, "Evidence status", 20).toUpperCase()
+      : "ACTIVE";
+    if (!["ACTIVE","REFERENCE","ARCHIVED"].includes(evidenceStatus)) {
+      throw new DomainError("Evidence status must be ACTIVE, REFERENCE or ARCHIVED.");
+    }
+
     return {
       assetId,
+      issueId,
+      repairId,
+      chargeId,
+      purchaseCandidateId,
       title: requireText(raw.title, "Document title", 240),
       documentType,
       providerFileId: requireText(raw.providerFileId, "Drive file ID", 300),
       mimeType: optionalText(raw.mimeType, 200),
-      webViewLink: optionalText(raw.webViewLink, 1000)
+      webViewLink: optionalText(raw.webViewLink, 1000),
+      sourceUrl: optionalText(raw.sourceUrl, 2000),
+      provenance: optionalText(raw.provenance, 1000) ?? "Selected by homeowner from Google Drive.",
+      occurredAt: raw.occurredAt ? requireDate(raw.occurredAt, "Evidence date") : todayIso(),
+      evidenceReason: optionalText(raw.evidenceReason, 2000),
+      evidenceStatus
     };
   }
 
@@ -343,11 +410,20 @@ function previewFor(db: HomelyDatabase, actionType: ActionType, payload: JsonRec
   }
 
   if (actionType === "ATTACH_DOCUMENT") {
-    const asset = getAsset(db, String(payload.assetId));
+    const links: string[] = [];
+    if (payload.assetId) links.push(String(getAsset(db, String(payload.assetId)).name));
+    if (payload.issueId) links.push(`issue: ${getIssue(db, String(payload.issueId)).title}`);
+    if (payload.repairId) links.push(`repair: ${getRepair(db, String(payload.repairId)).title}`);
+    if (payload.chargeId) links.push(`charge: ${getCharge(db, String(payload.chargeId)).name}`);
+    if (payload.purchaseCandidateId) links.push(`purchase: ${getPurchaseCandidate(db, String(payload.purchaseCandidateId)).title}`);
     return {
-      title: `Attach document: ${payload.title}`,
-      summary: `${payload.documentType} on ${asset.name} from Google Drive`,
-      effects: ["Create a Homely document record", "Link it to the selected asset", "Add a house timeline event"]
+      title: `Attach evidence: ${payload.title}`,
+      summary: `${payload.documentType} · ${links.length ? links.join(" · ") : "general home evidence"}`,
+      effects: [
+        "Create a Homely evidence record",
+        "Preserve provenance, date, status and selected associations",
+        "Add a house timeline event"
+      ]
     };
   }
 
@@ -713,8 +789,10 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
       const documentId = newId("doc");
       db.prepare(`
         INSERT INTO documents(
-          id,title,type,provider,provider_file_id,local_path,mime_type,web_view_link,asset_id,issue_id,created_at,updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+          id,title,type,provider,provider_file_id,local_path,mime_type,web_view_link,
+          asset_id,issue_id,repair_id,charge_id,purchase_candidate_id,source_url,provenance,
+          occurred_at,evidence_reason,evidence_status,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         documentId,
         String(payload.title),
@@ -724,8 +802,16 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         null,
         payload.mimeType === null || payload.mimeType === undefined ? null : String(payload.mimeType),
         payload.webViewLink === null || payload.webViewLink === undefined ? null : String(payload.webViewLink),
-        String(payload.assetId),
-        null,
+        payload.assetId ? String(payload.assetId) : null,
+        payload.issueId ? String(payload.issueId) : null,
+        payload.repairId ? String(payload.repairId) : null,
+        payload.chargeId ? String(payload.chargeId) : null,
+        payload.purchaseCandidateId ? String(payload.purchaseCandidateId) : null,
+        payload.sourceUrl === null || payload.sourceUrl === undefined ? null : String(payload.sourceUrl),
+        payload.provenance === null || payload.provenance === undefined ? null : String(payload.provenance),
+        String(payload.occurredAt) + "T12:00:00.000Z",
+        payload.evidenceReason === null || payload.evidenceReason === undefined ? null : String(payload.evidenceReason),
+        String(payload.evidenceStatus),
         createdAt,
         createdAt
       );
@@ -733,10 +819,16 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
       recordChange(db, transactionId, "document", documentId, "CREATE", null, document, createdAt);
       createTimelineEvent(db, transactionId, {
         eventType: "DOCUMENT_ATTACHED",
-        title: `Document attached: ${payload.title}`,
-        summary: `${payload.documentType} linked from Google Drive.`,
-        occurredAt: createdAt,
-        assetId: String(payload.assetId),
+        title: `Evidence attached: ${payload.title}`,
+        summary: payload.evidenceReason
+          ? String(payload.evidenceReason)
+          : `${payload.documentType} linked from Google Drive.`,
+        occurredAt: String(payload.occurredAt) + "T12:00:00.000Z",
+        assetId: payload.assetId ? String(payload.assetId) : null,
+        issueId: payload.issueId ? String(payload.issueId) : null,
+        repairId: payload.repairId ? String(payload.repairId) : null,
+        chargeId: payload.chargeId ? String(payload.chargeId) : null,
+        purchaseCandidateId: payload.purchaseCandidateId ? String(payload.purchaseCandidateId) : null,
         documentId
       }, createdAt);
     }
