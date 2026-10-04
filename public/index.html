@@ -1,47 +1,42 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0f1115">
-  <title>Homely</title>
-  <link rel="stylesheet" href="/styles.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d10">
+<title>Homely</title>
+<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="shell">
-    <aside class="sidebar" aria-label="Primary navigation">
-      <div class="brand"><span class="brand-mark">H</span><div><strong>Homely</strong><small>Property management</small></div></div>
-      <nav id="nav">
-        <button class="nav-item active" data-view="overview">Overview</button>
-        <button class="nav-item" data-view="assets">Assets</button>
-        <button class="nav-item" data-view="work">Work</button>
-        <button class="nav-item" data-view="history">History</button>
-        <button class="nav-item" data-view="agent">Agent</button>
-      </nav>
-      <div class="sidebar-foot">
-        <div class="runtime-status" id="runtime-status" data-tone="neutral">
-          <span class="status-dot"></span><span id="runtime-status-text">Checking cloud state…</span>
-        </div>
-        <button class="logout-button" id="logout-button" type="button">Log out</button>
-      </div>
-    </aside>
-    <main class="workspace">
-      <header class="topbar">
-        <div><p class="eyebrow">Home dashboard</p><h1 id="page-title">Overview</h1></div>
-        <div class="date" id="today"></div>
-      </header>
-      <section id="content" class="content" aria-live="polite"></section>
-    </main>
-  </div>
-  <dialog id="asset-dialog" class="asset-dialog">
-    <button class="dialog-close" id="dialog-close" aria-label="Close asset details">×</button>
-    <div id="asset-detail"></div>
-  </dialog>
-  <dialog id="action-dialog" class="action-dialog">
-    <button class="dialog-close" id="action-dialog-close" aria-label="Close action">×</button>
-    <div id="action-detail"></div>
-  </dialog>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js"></script>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="brand-mark">H</span><span><strong>Homely</strong><small>Home memory</small></span></a>
+    <nav id="nav" class="nav">
+      <button class="nav-item active" data-view="home">Home</button>
+      <button class="nav-item" data-view="issues">Issues</button>
+      <button class="nav-item" data-view="repairs">Repairs</button>
+      <button class="nav-item" data-view="appliances">Appliances</button>
+      <button class="nav-item" data-view="files">Files</button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="runtime-status" id="runtime-status"><span class="dot"></span><span id="runtime-text">Checking state…</span></div>
+      <button class="ghost-link" id="logout-button" type="button">Log out</button>
+    </div>
+  </aside>
+  <main class="workspace">
+    <header class="topbar"><div><p class="eyebrow">Persistent operating memory</p><h1 id="page-title">Home</h1></div><div id="today"></div></header>
+    <section id="content" class="content"></section>
+  </main>
+  <aside class="chat-rail" id="chat-rail">
+    <header class="chat-head"><div><strong>Homely</strong><small id="agent-state">Home-aware assistant</small></div><button class="icon-button mobile-only" id="chat-close">×</button></header>
+    <div class="chat-body" id="chat-body"><div class="chat-empty">Ask about this home, its history, files, repairs, costs or what to do next.</div></div>
+    <form class="chat-form" id="chat-form"><textarea id="chat-input" maxlength="4000" rows="3" placeholder="Ask Homely…" required></textarea><div class="chat-actions"><button class="button voice-button" id="voice-button" type="button">Voice</button><button class="primary-button" type="submit">Send</button></div></form>
+  </aside>
+</div>
+<button class="chat-fab mobile-only" id="chat-open">Ask Homely</button>
+<dialog class="modal" id="modal"><button class="modal-close" id="modal-close">×</button><div id="modal-body"></div></dialog>
+<dialog class="viewer" id="viewer"><header class="viewer-head"><div><p class="eyebrow">File viewer</p><strong id="viewer-title">File</strong></div><button class="icon-button" id="viewer-close">×</button></header><div class="viewer-body" id="viewer-body"></div></dialog>
+<div class="toast" id="toast"></div>
+<script type="module" src="/app.js"></script>
 </body>
 </html>

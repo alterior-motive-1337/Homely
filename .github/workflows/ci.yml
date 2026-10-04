@@ -113,11 +113,13 @@ jobs:
 
           await post("/api/transactions/" + encodeURIComponent(proposal.transaction.id) + "/commit");
           assert((await (await get("/api/issues")).json()).some((issue) => issue.title === "CI transaction issue"), "commit did not create issue");
-          await post("/api/transactions/" + encodeURIComponent(proposal.transaction.id) + "/undo");
-          assert(!(await (await get("/api/issues")).json()).some((issue) => issue.title === "CI transaction issue"), "undo did not remove created issue");
+
+          const undoResponse = await fetch("http://127.0.0.1:4173/api/transactions/" + encodeURIComponent(proposal.transaction.id) + "/undo", { method: "POST" });
+          assert(undoResponse.status === 409, "committed issue history must not be deletable");
+          assert((await (await get("/api/issues")).json()).some((issue) => issue.title === "CI transaction issue"), "permanent issue disappeared after rejected undo");
 
           const audited = await (await get("/api/transactions/" + encodeURIComponent(proposal.transaction.id))).json();
-          assert(audited.status === "REVERSED", "original transaction was not retained as reversed");
+          assert(audited.status === "COMMITTED", "permanent issue transaction should remain committed");
           NODE
 
           node --input-type=module <<'NODE'
@@ -128,6 +130,22 @@ jobs:
             ...(fs.existsSync("/usr/bin/google-chrome") ? { executablePath: "/usr/bin/google-chrome" } : {})
           });
           const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+          await page.addInitScript(() => {
+            class FakeSpeechRecognition {
+              start() {
+                this.onstart?.();
+                this.onresult?.({
+                  resultIndex: 0,
+                  results: [[{ transcript: "check the kitchen tap" }]]
+                });
+                this.onend?.();
+              }
+            }
+            Object.defineProperty(window, "SpeechRecognition", {
+              configurable: true,
+              value: FakeSpeechRecognition
+            });
+          });
           const errors = [];
           page.on("pageerror", (error) => errors.push(String(error)));
           page.on("console", (message) => {
@@ -136,66 +154,63 @@ jobs:
 
           await page.goto("http://127.0.0.1:4173", { waitUntil: "networkidle" });
           await page.getByText("14 Hawthorn Residence").waitFor();
-          await page.getByText("Cloud runtime active").waitFor();
-          const overviewFits = await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 2);
-          if (!overviewFits) throw new Error("overview exceeds one 1366x768 viewport");
-          await page.locator("#nav").getByRole("button", { name: "Assets", exact: true }).click();
-          if (!page.url().includes("view=assets")) throw new Error("navigation did not update URL");
-          await page.goBack({ waitUntil: "networkidle" });
-          await page.getByText("14 Hawthorn Residence").waitFor();
-          await page.locator("#nav").getByRole("button", { name: "Assets", exact: true }).click();
+          await page.getByText("Local memory active").waitFor();
+          await page.getByRole("button", { name: "Voice", exact: true }).click();
+          if ((await page.locator("#chat-input").inputValue()) !== "check the kitchen tap") {
+            throw new Error("voice input did not populate chat");
+          }
+
+          const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
+          if (horizontalOverflow) throw new Error("desktop shell has horizontal overflow");
+
+          await page.locator("#nav").getByRole("button", { name: "Appliances", exact: true }).click();
+          if (!page.url().includes("view=appliances")) throw new Error("navigation did not update URL");
           await page.getByText("8 kW inverter", { exact: true }).waitFor();
           await page.getByText("8 kW inverter", { exact: true }).click();
           await page.getByText("Sunsynk 8 kW inverter warranty").waitFor();
-          await page.getByRole("button", { name: "Close asset details" }).click();
+          await page.locator("#modal-close").click();
 
-          await page.locator("#nav").getByRole("button", { name: "Work", exact: true }).click();
+          await page.locator("#nav").getByRole("button", { name: "Issues", exact: true }).click();
           await page.getByText("Camera 4 intermittent disconnect").waitFor();
-
           await page.getByRole("button", { name: "Report issue" }).click();
           await page.locator("#issue-form select[name=assetId]").selectOption("asset-tap");
           await page.locator("#issue-form input[name=title]").fill("Browser transaction issue");
-          await page.locator("#issue-form textarea[name=description]").fill("Browser verifies preview, commit and undo.");
+          await page.locator("#issue-form textarea[name=description]").fill("Browser verifies preview and commit.");
           await page.getByRole("button", { name: "Preview" }).click();
-          await page.getByText("PROPOSED TRANSACTION").waitFor();
+          await page.getByText("Approval required").waitFor();
           await page.getByRole("button", { name: "Approve & commit" }).click();
-          await page.locator("#action-dialog").waitFor({ state: "hidden" });
-          await page.locator(".list-row .row-title").filter({ hasText: "Browser transaction issue" }).waitFor();
+          await page.getByText("Browser transaction issue").waitFor();
 
-          await page.locator("#nav").getByRole("button", { name: "History", exact: true }).click();
-          await page.locator(".view-tabs").getByRole("button", { name: "Transactions", exact: true }).click();
-          const transactionRow = page.locator(".transaction-row").filter({ hasText: 'Homeowner reported "Browser transaction issue"' });
-          await transactionRow.waitFor();
-          await transactionRow.getByRole("button", { name: "Undo" }).click();
-          await page.getByRole("button", { name: "Undo transaction" }).click();
-          await page.getByText("Transaction reversed. Audit history retained.").waitFor();
+          await page.locator("#nav").getByRole("button", { name: "Repairs", exact: true }).click();
+          await page.getByRole("button", { name: "Record repair" }).click();
+          await page.locator("#repair-form select[name=assetId]").selectOption("asset-tap");
+          await page.locator("#repair-form input[name=title]").fill("Browser repair record");
+          await page.locator("#repair-form input[name=cost]").fill("250");
+          await page.getByRole("button", { name: "Preview" }).click();
+          await page.getByText("Approval required").waitFor();
+          await page.getByRole("button", { name: "Approve & commit" }).click();
+          await page.getByText("Browser repair record").waitFor();
 
-          await page.locator("#nav").getByRole("button", { name: "Work", exact: true }).click();
-          if (await page.locator("#content .row-title").filter({ hasText: "Browser transaction issue" }).count()) {
-            throw new Error("browser undo did not reverse issue state");
-          }
+          await page.locator("#nav").getByRole("button", { name: "Files", exact: true }).click();
+          await page.getByText("Sunsynk 8 kW inverter warranty").waitFor();
+          await page.getByText("Sunsynk 8 kW inverter warranty").click();
+          await page.locator("#viewer").waitFor({ state: "visible" });
+          await page.locator("#viewer-close").click();
 
-          await page.locator(".view-tabs").getByRole("button", { name: "Maintenance", exact: true }).click();
-          await page.getByText("Inspect and clear north gutters").waitFor();
-
-          await page.locator(".view-tabs").getByRole("button", { name: "Projects", exact: true }).click();
-          await page.getByText("Battery storage expansion").waitFor();
-
-          await page.locator("#nav").getByRole("button", { name: "Assets", exact: true }).click();
-          await page.locator(".view-tabs").getByRole("button", { name: "Documents", exact: true }).click();
-          await page.locator("#content").getByText("Sunsynk 8 kW inverter warranty").waitFor();
-          await page.locator("#content").getByText("Optional integration is off. Existing Homely document metadata remains available.").waitFor();
-
-          await page.locator("#nav").getByRole("button", { name: "Agent", exact: true }).click();
-          await page.locator("#content").getByText("Structured Homely remains operational.").waitFor();
+          await page.getByText("Structured memory only").waitFor();
+          if (!(await page.locator('#chat-form button[type="submit"]').isDisabled())) throw new Error("chat should be disabled when AI is unavailable");
 
           await page.setViewportSize({ width: 390, height: 844 });
-          await page.locator("#nav").getByRole("button", { name: "History", exact: true }).click();
-          await page.locator("#timeline-search").fill("aerator");
-          await page.getByText("Kitchen tap aerator cleaned").waitFor();
+          await page.locator("#nav").getByRole("button", { name: "Home", exact: true }).click();
+          await page.getByText("14 Hawthorn Residence").waitFor();
+          await page.getByRole("button", { name: "Ask Homely", exact: true }).click();
+          await page.locator("#chat-rail").waitFor({ state: "visible" });
 
+          const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
+          if (mobileOverflow) throw new Error("mobile shell has horizontal overflow");
           if (errors.length) throw new Error("Browser errors: " + errors.join(" | "));
           await browser.close();
+
           NODE
 
           kill "$(cat /tmp/homely.pid)"

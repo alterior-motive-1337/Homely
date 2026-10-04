@@ -4,10 +4,13 @@ import {
   getOverview,
   getTimeline,
   listAssets,
+  listCharges,
   listDocuments,
   listIssues,
   listMaintenance,
-  listProjects
+  listProjects,
+  listPurchaseCandidates,
+  listRepairs
 } from "../domain/repository.js";
 import { DomainError, getTransaction, proposeTransaction, type ActionType } from "../domain/transactions.js";
 
@@ -16,6 +19,9 @@ export type HomelyToolName =
   | "list_assets"
   | "get_asset"
   | "list_issues"
+  | "list_repairs"
+  | "list_charges"
+  | "list_purchases"
   | "list_documents"
   | "get_asset_history"
   | "search_history"
@@ -86,6 +92,48 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
       type: "object",
       properties: {
         status: { type: "string", enum: ["ACTIVE","RESOLVED","ALL"] }
+      },
+      required: ["status"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "list_repairs",
+    description: "List permanent repair records with asset, system, linked issue, date, cost, contractor and outcome.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        assetId: { type: ["string", "null"] }
+      },
+      required: ["assetId"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "list_charges",
+    description: "List recurring household charges. Use ACTIVE for current monthly/recurring costs or ALL for history.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["ACTIVE","ALL"] }
+      },
+      required: ["status"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "list_purchases",
+    description: "List saved and shortlisted potential purchases with budget, expected cost, source and rationale.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["SAVED","SHORTLISTED","PURCHASED","DISMISSED","ACTIVE","ALL"] }
       },
       required: ["status"],
       additionalProperties: false
@@ -176,7 +224,7 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
       properties: {
         actionType: {
           type: "string",
-          enum: ["REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]
+          enum: ["REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","RECORD_REPAIR","CREATE_CHARGE","SAVE_PURCHASE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]
         },
         payload: {
           type: "object",
@@ -240,6 +288,25 @@ export function executeHomelyTool(
       if (status === "ACTIVE") return !resolved;
       if (status === "RESOLVED") return resolved;
       return true;
+    });
+  }
+
+  if (name === "list_repairs") {
+    const assetId = args.assetId === null || args.assetId === undefined ? null : String(args.assetId);
+    return listRepairs(db).filter((row) => !assetId || String(row.asset_id) === assetId);
+  }
+
+  if (name === "list_charges") {
+    const status = String(args.status ?? "ACTIVE");
+    return listCharges(db).filter((row) => status === "ALL" || Number(row.active) === 1);
+  }
+
+  if (name === "list_purchases") {
+    const status = String(args.status ?? "ACTIVE");
+    return listPurchaseCandidates(db).filter((row) => {
+      if (status === "ALL") return true;
+      if (status === "ACTIVE") return ["SAVED","SHORTLISTED"].includes(String(row.status));
+      return String(row.status) === status;
     });
   }
 

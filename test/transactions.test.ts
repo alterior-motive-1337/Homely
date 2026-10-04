@@ -11,7 +11,7 @@ function demoDb() {
   return db;
 }
 
-test("report issue is inert until commit and undo removes its state but keeps audit", () => {
+test("committed issue reports are permanent history", () => {
   const db = demoDb();
   const before = Number(db.prepare("SELECT COUNT(*) AS count FROM issues").get()?.count ?? 0);
 
@@ -33,10 +33,46 @@ test("report issue is inert until commit and undo removes its state but keeps au
   assert.equal(committed?.status, "COMMITTED");
   assert.equal(Number(db.prepare("SELECT COUNT(*) AS count FROM issues").get()?.count ?? 0), before + 1);
 
-  const result = undoTransaction(db, String(proposal.transaction?.id));
-  assert.equal(result.original?.status, "REVERSED");
-  assert.equal(Number(db.prepare("SELECT COUNT(*) AS count FROM issues").get()?.count ?? 0), before);
-  assert.equal(Number(db.prepare("SELECT COUNT(*) AS count FROM transactions").get()?.count ?? 0), 2);
+  assert.throws(
+    () => undoTransaction(db, String(proposal.transaction?.id)),
+    /Issue records are permanent/
+  );
+  assert.equal(Number(db.prepare("SELECT COUNT(*) AS count FROM issues").get()?.count ?? 0), before + 1);
+  assert.equal(
+    db.prepare("SELECT status FROM transactions WHERE id = ?").get(String(proposal.transaction?.id))?.status,
+    "COMMITTED"
+  );
+  db.close();
+});
+
+test("repair records are permanent history", () => {
+  const db = demoDb();
+  const proposal = proposeTransaction(db, {
+    actionType: "RECORD_REPAIR",
+    reason: "Record completed kitchen tap repair.",
+    payload: {
+      assetId: "asset-tap",
+      title: "Replace tap cartridge",
+      repairDate: "2026-10-04",
+      costCents: 45000,
+      contractor: "Demo Plumbing",
+      outcome: "Pressure restored."
+    }
+  });
+
+  commitTransaction(db, String(proposal.transaction?.id));
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM repairs WHERE title = 'Replace tap cartridge'").get()?.count ?? 0),
+    1
+  );
+  assert.throws(
+    () => undoTransaction(db, String(proposal.transaction?.id)),
+    /Repair records are permanent/
+  );
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM repairs WHERE title = 'Replace tap cartridge'").get()?.count ?? 0),
+    1
+  );
   db.close();
 });
 
@@ -102,6 +138,100 @@ test("Drive document association is proposed, committed and reversible", () => {
   db.close();
 });
 
+
+test("Drive evidence can link to issue and repair with provenance", () => {
+  const db = demoDb();
+
+  const repairProposal = proposeTransaction(db, {
+    actionType: "RECORD_REPAIR",
+    reason: "Record the repair that resolved the historical tap issue.",
+    payload: {
+      assetId: "asset-tap",
+      issueId: "issue-tap-2025",
+      title: "Tap aerator service",
+      repairDate: "2025-11-06",
+      costCents: 25000,
+      contractor: "Mokoena Plumbing",
+      outcome: "Sediment removed and pressure restored."
+    }
+  });
+  commitTransaction(db, String(repairProposal.transaction?.id));
+  const repair = db.prepare("SELECT * FROM repairs WHERE title = 'Tap aerator service'").get();
+  assert.ok(repair?.id);
+
+  const evidence = proposeTransaction(db, {
+    actionType: "ATTACH_DOCUMENT",
+    reason: "Attach the repair invoice as historical evidence.",
+    payload: {
+      issueId: "issue-tap-2025",
+      repairId: String(repair?.id),
+      title: "Tap repair invoice",
+      documentType: "INVOICE",
+      providerFileId: "drive-tap-invoice",
+      mimeType: "application/pdf",
+      webViewLink: "https://drive.google.com/file/d/drive-tap-invoice/view",
+      sourceUrl: "https://drive.google.com/file/d/drive-tap-invoice/view",
+      provenance: "Selected by homeowner from Google Drive.",
+      occurredAt: "2025-11-06",
+      evidenceReason: "Invoice proving the completed repair and cost.",
+      evidenceStatus: "REFERENCE"
+    }
+  });
+  const evidenceTxId = String(evidence.transaction?.id);
+  commitTransaction(db, evidenceTxId);
+
+  const document = db.prepare("SELECT * FROM documents WHERE provider_file_id = 'drive-tap-invoice'").get();
+  assert.equal(document?.asset_id, "asset-tap");
+  assert.equal(document?.issue_id, "issue-tap-2025");
+  assert.equal(document?.repair_id, repair?.id);
+  assert.equal(document?.provenance, "Selected by homeowner from Google Drive.");
+  assert.equal(document?.occurred_at, "2025-11-06T12:00:00.000Z");
+  assert.equal(document?.evidence_reason, "Invoice proving the completed repair and cost.");
+  assert.equal(document?.evidence_status, "REFERENCE");
+
+  undoTransaction(db, evidenceTxId);
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM documents WHERE provider_file_id = 'drive-tap-invoice'").get()?.count ?? 0),
+    0
+  );
+  db.close();
+});
+
+test("web links can be saved as contextual evidence without Drive", () => {
+  const db = demoDb();
+  const proposal = proposeTransaction(db, {
+    actionType: "ATTACH_DOCUMENT",
+    reason: "Save the inverter manual source page.",
+    payload: {
+      assetId: "asset-inverter",
+      title: "Sunsynk inverter manual source",
+      documentType: "MANUAL",
+      provider: "LOCAL",
+      sourceUrl: "https://example.com/inverter-manual",
+      webViewLink: "https://example.com/inverter-manual",
+      mimeType: "text/uri-list",
+      occurredAt: "2026-10-04",
+      provenance: "Saved directly by homeowner in Homely.",
+      evidenceReason: "Reference manual for future troubleshooting.",
+      evidenceStatus: "REFERENCE"
+    }
+  });
+
+  const txId = String(proposal.transaction?.id);
+  commitTransaction(db, txId);
+  const document = db.prepare("SELECT * FROM documents WHERE title = 'Sunsynk inverter manual source'").get();
+  assert.equal(document?.provider, "LOCAL");
+  assert.equal(document?.asset_id, "asset-inverter");
+  assert.equal(document?.source_url, "https://example.com/inverter-manual");
+  assert.equal(document?.evidence_status, "REFERENCE");
+
+  undoTransaction(db, txId);
+  assert.equal(
+    Number(db.prepare("SELECT COUNT(*) AS count FROM documents WHERE title = 'Sunsynk inverter manual source'").get()?.count ?? 0),
+    0
+  );
+  db.close();
+});
 
 test("project creation and status changes are transactional and reversible", () => {
   const db = demoDb();

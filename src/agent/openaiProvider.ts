@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import type { HomelyDatabase } from "../db.js";
 import { agentToolDefinitions, executeHomelyTool, type HomelyToolName } from "../tools/homelyTools.js";
+import { HomeResearch } from "../integrations/webResearch.js";
+import { executeResearchTool, researchToolDefinitions, type ResearchToolName } from "./researchTools.js";
 import type { AgentProposal, AgentProvider, AgentRequest, AgentResponse } from "./types.js";
 
 const INSTRUCTIONS = `You are Homely, the operating memory for one physical home.
@@ -8,12 +10,19 @@ const INSTRUCTIONS = `You are Homely, the operating memory for one physical home
 Rules:
 - Homely's structured state and tool results are the source of truth. Never invent facts about this home.
 - For questions about this property, retrieve the relevant state/history before answering.
-- Prefer recorded history and document metadata over generic home-maintenance advice.
+- Prefer recorded history, repair records, purchase context and document metadata over generic home-maintenance advice.
 - Deterministic health states come from Homely. Do not override them.
 - You may read state and create inert proposals with preview_action.
 - You cannot commit, resolve, complete, undo, or otherwise change persistent state yourself.
 - If the user asks for or clearly implies a meaningful state change, create at most one smallest useful proposal in this turn unless they explicitly request multiple actions.
-- For a recurring fault, inspect the asset and its history before proposing the next action.
+- For a recurring fault, inspect the asset, repairs and history before proposing the next action.
+- Repair records are permanent history. Corrections should be recorded as new history rather than deleting the original.
+- Charges and potential purchases are part of household memory. Use their tools when cost or buying context is relevant.
+- Web research is external evidence, not authoritative home state. Distinguish researched facts from recorded house facts.
+- Use search_web for current product, supplier, price, service-provider or general research when useful.
+- LOCAL_SERVICE searches require a location explicitly supplied by the user. Never infer or invent a precise home location.
+- Use read_web_page only for a page returned by Homely search.
+- Save a purchase candidate only when the user asks to remember, save or shortlist it, or otherwise clearly requests that state change.
 - A proposal is not a completed action. Say clearly that it requires approval.
 - Never claim a proposed action happened until Homely reports a committed transaction in a later interaction.
 - Keep responses concise, specific, calm, and grounded in this house.
@@ -45,22 +54,39 @@ function proposalFromResult(result: unknown): AgentProposal | null {
 }
 
 export class OpenAIAgentProvider implements AgentProvider {
+  private readonly groqHistories = new Map<string, unknown[]>();
+
   constructor(
     private readonly db: HomelyDatabase,
     private readonly client: OpenAIClientLike,
-    private readonly model: string
+    private readonly model: string,
+    private readonly research: HomeResearch = new HomeResearch(),
+    private readonly origin = "OPENAI"
   ) {}
 
   async respond(request: AgentRequest): Promise<AgentResponse> {
     const message = request.message.trim();
     if (!message) throw new Error("Message is required.");
 
-    const tools = agentToolDefinitions as OpenAI.Responses.Tool[];
+    const tools = [
+      ...(agentToolDefinitions as OpenAI.Responses.Tool[]),
+      ...researchToolDefinitions(this.research)
+    ];
+    const isGroq = this.origin === "GROQ";
+    let groqInput: unknown[] | null = null;
+
+    if (isGroq) {
+      const prior = request.previousResponseId
+        ? this.groqHistories.get(request.previousResponseId) ?? []
+        : [];
+      groqInput = [...prior, { role: "user", content: message }];
+    }
+
     let response = await this.client.responses.create({
       model: this.model,
       instructions: INSTRUCTIONS,
-      input: message,
-      previous_response_id: request.previousResponseId ?? undefined,
+      input: (isGroq ? groqInput : message) as OpenAI.Responses.ResponseCreateParams["input"],
+      ...(isGroq ? {} : { previous_response_id: request.previousResponseId ?? undefined }),
       tools
     });
 
@@ -71,8 +97,8 @@ export class OpenAIAgentProvider implements AgentProvider {
       const calls = response.output.filter((item) => item.type === "function_call");
       if (!calls.length) break;
 
-      const outputs = calls.map((call) => {
-        const name = call.name as HomelyToolName;
+      const outputs = await Promise.all(calls.map(async (call) => {
+        const name = call.name;
         toolsUsed.push(name);
 
         let args: Record<string, unknown>;
@@ -83,7 +109,9 @@ export class OpenAIAgentProvider implements AgentProvider {
         }
 
         try {
-          const result = executeHomelyTool(this.db, name, args, "OPENAI");
+          const result = name === "search_web" || name === "read_web_page"
+            ? await executeResearchTool(this.research, name as ResearchToolName, args)
+            : executeHomelyTool(this.db, name as HomelyToolName, args, this.origin);
           if (name === "preview_action") {
             const proposal = proposalFromResult(result);
             if (proposal) proposals.push(proposal);
@@ -102,19 +130,37 @@ export class OpenAIAgentProvider implements AgentProvider {
             })
           };
         }
-      });
+      }));
+
+      if (isGroq) {
+        groqInput = [
+          ...(groqInput ?? []),
+          ...response.output,
+          ...outputs
+        ];
+      }
 
       response = await this.client.responses.create({
         model: this.model,
         instructions: INSTRUCTIONS,
-        previous_response_id: response.id,
-        input: outputs,
+        input: (isGroq ? groqInput : outputs) as OpenAI.Responses.ResponseCreateParams["input"],
+        ...(isGroq ? {} : { previous_response_id: response.id }),
         tools
       });
     }
 
     const text = response.output_text?.trim() ||
       (proposals.length ? "I found a grounded next action and prepared it for your approval." : "I could not produce a grounded response.");
+
+    if (isGroq && response.id) {
+      const history = [...(groqInput ?? []), ...response.output].slice(-80);
+      this.groqHistories.set(response.id, history);
+      while (this.groqHistories.size > 32) {
+        const oldest = this.groqHistories.keys().next().value;
+        if (!oldest) break;
+        this.groqHistories.delete(oldest);
+      }
+    }
 
     return {
       text,
