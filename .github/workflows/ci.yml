@@ -113,11 +113,13 @@ jobs:
 
           await post("/api/transactions/" + encodeURIComponent(proposal.transaction.id) + "/commit");
           assert((await (await get("/api/issues")).json()).some((issue) => issue.title === "CI transaction issue"), "commit did not create issue");
-          await post("/api/transactions/" + encodeURIComponent(proposal.transaction.id) + "/undo");
-          assert(!(await (await get("/api/issues")).json()).some((issue) => issue.title === "CI transaction issue"), "undo did not remove created issue");
+
+          const undoResponse = await fetch("http://127.0.0.1:4173/api/transactions/" + encodeURIComponent(proposal.transaction.id) + "/undo", { method: "POST" });
+          assert(undoResponse.status === 409, "committed issue history must not be deletable");
+          assert((await (await get("/api/issues")).json()).some((issue) => issue.title === "CI transaction issue"), "permanent issue disappeared after rejected undo");
 
           const audited = await (await get("/api/transactions/" + encodeURIComponent(proposal.transaction.id))).json();
-          assert(audited.status === "REVERSED", "original transaction was not retained as reversed");
+          assert(audited.status === "COMMITTED", "permanent issue transaction should remain committed");
           NODE
 
           node --input-type=module <<'NODE'
