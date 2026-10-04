@@ -23,7 +23,7 @@ export const config = {
 
   aiEnabled: process.env.AI_ENABLED === "true",
   groqApiKey: process.env.GROQ_API_KEY?.trim() ?? "",
-  groqModel: process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b",
+  groqModel: process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b",
   voiceEnabled: process.env.VOICE_ENABLED === "true",
 
   googleDriveEnabled: process.env.GOOGLE_DRIVE_ENABLED === "true",
