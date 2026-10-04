@@ -61,6 +61,7 @@ export function getAsset(db: HomelyDatabase, assetId: string) {
     health: healthForAsset(db, assetId, asset.health_observed_at),
     issues: db.prepare("SELECT * FROM issues WHERE asset_id = ? ORDER BY detected_at DESC").all(assetId),
     maintenance: db.prepare("SELECT * FROM maintenance_rules WHERE asset_id = ? ORDER BY next_due_at").all(assetId),
+    repairs: db.prepare("SELECT * FROM repairs WHERE asset_id = ? ORDER BY repair_date DESC, created_at DESC").all(assetId),
     documents: db.prepare("SELECT * FROM documents WHERE asset_id = ? ORDER BY created_at DESC").all(assetId),
     history: db.prepare("SELECT * FROM timeline_events WHERE asset_id = ? ORDER BY occurred_at DESC LIMIT 30").all(assetId)
   };
@@ -88,14 +89,53 @@ export function listMaintenance(db: HomelyDatabase) {
   ).all(today, today);
 }
 
+export function listRepairs(db: HomelyDatabase) {
+  return db.prepare(`
+    SELECT r.*, a.name AS asset_name, s.name AS system_name, i.title AS issue_title
+    FROM repairs r
+    JOIN assets a ON a.id = r.asset_id
+    JOIN systems s ON s.id = a.system_id
+    LEFT JOIN issues i ON i.id = r.issue_id
+    ORDER BY r.repair_date DESC, r.created_at DESC
+  `).all();
+}
+
+export function listCharges(db: HomelyDatabase) {
+  return db.prepare(`
+    SELECT *
+    FROM charges
+    ORDER BY active DESC, category, name
+  `).all();
+}
+
+export function listPurchaseCandidates(db: HomelyDatabase) {
+  return db.prepare(`
+    SELECT p.*, a.name AS asset_name
+    FROM purchase_candidates p
+    LEFT JOIN assets a ON a.id = p.asset_id
+    ORDER BY
+      CASE p.status
+        WHEN 'SHORTLISTED' THEN 1
+        WHEN 'SAVED' THEN 2
+        WHEN 'PURCHASED' THEN 3
+        ELSE 4
+      END,
+      p.created_at DESC
+  `).all();
+}
+
 export function listDocuments(db: HomelyDatabase) {
   return db.prepare(`
-    SELECT d.*, a.name AS asset_name, s.name AS system_name, i.title AS issue_title
+    SELECT d.*, a.name AS asset_name, s.name AS system_name, i.title AS issue_title,
+      r.title AS repair_title, c.name AS charge_name, p.title AS purchase_title
     FROM documents d
     LEFT JOIN assets a ON a.id = d.asset_id
     LEFT JOIN systems s ON s.id = a.system_id
     LEFT JOIN issues i ON i.id = d.issue_id
-    ORDER BY d.created_at DESC, d.title
+    LEFT JOIN repairs r ON r.id = d.repair_id
+    LEFT JOIN charges c ON c.id = d.charge_id
+    LEFT JOIN purchase_candidates p ON p.id = d.purchase_candidate_id
+    ORDER BY COALESCE(d.occurred_at, d.created_at) DESC, d.title
   `).all();
 }
 
@@ -136,16 +176,25 @@ export function getOverview(db: HomelyDatabase) {
      ORDER BY m.next_due_at`
   ).all(today, today, today);
 
+  const repairs = listRepairs(db).slice(0, 4);
+  const charges = listCharges(db).filter((row) => Number(row.active) === 1);
+  const purchases = listPurchaseCandidates(db).filter((row) =>
+    ["SAVED","SHORTLISTED"].includes(String(row.status))
+  ).slice(0, 4);
+
   return {
     home,
     systems,
     summary: {
       systems_needing_attention: systems.filter((s) => ["FAILED","DEGRADED","ATTENTION"].includes(String(s.health))).length,
       open_issues: activeIssues.length,
-      overdue_maintenance: overdue.length
+      overdue_maintenance: overdue.length,
+      active_charges: charges.length,
+      saved_purchases: purchases.length
     },
     attention: { issues: activeIssues, maintenance: overdue },
     upcoming,
+    memory: { repairs, charges, purchases },
     recent: getTimeline(db, 6)
   };
 }
