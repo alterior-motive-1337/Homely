@@ -59,8 +59,11 @@ services:
       - key: AI_ENABLED
         value: "true"
 
-      - key: OPENAI_API_KEY
+      - key: GROQ_API_KEY
         sync: false
+
+      - key: GROQ_MODEL
+        value: "openai/gpt-oss-20b"
 
       - key: VOICE_ENABLED
         value: "false"
