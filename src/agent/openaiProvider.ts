@@ -54,6 +54,8 @@ function proposalFromResult(result: unknown): AgentProposal | null {
 }
 
 export class OpenAIAgentProvider implements AgentProvider {
+  private readonly groqHistories = new Map<string, unknown[]>();
+
   constructor(
     private readonly db: HomelyDatabase,
     private readonly client: OpenAIClientLike,
@@ -70,11 +72,21 @@ export class OpenAIAgentProvider implements AgentProvider {
       ...(agentToolDefinitions as OpenAI.Responses.Tool[]),
       ...researchToolDefinitions(this.research)
     ];
+    const isGroq = this.origin === "GROQ";
+    let groqInput: unknown[] | null = null;
+
+    if (isGroq) {
+      const prior = request.previousResponseId
+        ? this.groqHistories.get(request.previousResponseId) ?? []
+        : [];
+      groqInput = [...prior, { role: "user", content: message }];
+    }
+
     let response = await this.client.responses.create({
       model: this.model,
       instructions: INSTRUCTIONS,
-      input: message,
-      previous_response_id: request.previousResponseId ?? undefined,
+      input: (isGroq ? groqInput : message) as OpenAI.Responses.ResponseCreateParams["input"],
+      ...(isGroq ? {} : { previous_response_id: request.previousResponseId ?? undefined }),
       tools
     });
 
@@ -120,17 +132,35 @@ export class OpenAIAgentProvider implements AgentProvider {
         }
       }));
 
+      if (isGroq) {
+        groqInput = [
+          ...(groqInput ?? []),
+          ...response.output,
+          ...outputs
+        ];
+      }
+
       response = await this.client.responses.create({
         model: this.model,
         instructions: INSTRUCTIONS,
-        previous_response_id: response.id,
-        input: outputs,
+        input: (isGroq ? groqInput : outputs) as OpenAI.Responses.ResponseCreateParams["input"],
+        ...(isGroq ? {} : { previous_response_id: response.id }),
         tools
       });
     }
 
     const text = response.output_text?.trim() ||
       (proposals.length ? "I found a grounded next action and prepared it for your approval." : "I could not produce a grounded response.");
+
+    if (isGroq && response.id) {
+      const history = [...(groqInput ?? []), ...response.output].slice(-80);
+      this.groqHistories.set(response.id, history);
+      while (this.groqHistories.size > 32) {
+        const oldest = this.groqHistories.keys().next().value;
+        if (!oldest) break;
+        this.groqHistories.delete(oldest);
+      }
+    }
 
     return {
       text,
