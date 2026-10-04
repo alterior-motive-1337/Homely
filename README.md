@@ -32,7 +32,7 @@ npm run db:reset
 ## Current architecture
 
 ```text
-Browser UI             OpenAI Agent             MCP hosts
+Browser UI             Groq Agent             MCP hosts
    |                         |                       |
 HTTP API              Homely tool layer       Homely MCP server
    |                         |                       |
@@ -43,11 +43,11 @@ HTTP API              Homely tool layer       Homely MCP server
                                        SQLite
 ```
 
-SQLite owns truth. OpenAI is optional and sits behind an AgentProvider boundary. Mutations are committed only through Homely's transaction service; model-created proposals are inert until explicitly approved in Homely.
+SQLite owns truth. Groq is optional and sits behind an AgentProvider boundary. Mutations are committed only through Homely's transaction service; model-created proposals are inert until explicitly approved in Homely.
 
 Current domain surface: Home, Systems, Assets, Issues, Maintenance Rules, Projects, Timeline Events, Documents, and auditable Transactions. Mutating home state follows propose → preview → commit → audit → undo.
 
-Homely also exposes the same domain through a local stdio MCP server. The OpenAI agent uses the same provider-neutral Homely tool executor for grounded reads and proposals. Google Drive and optional voice remain integration layers; Projects are now part of the core structured domain.
+Homely also exposes the same domain through a local stdio MCP server. The Groq agent uses the same provider-neutral Homely tool executor for grounded reads and proposals. Google Drive and optional voice remain integration layers; Projects are now part of the core structured domain.
 
 The default local database is `./data/homely.db`; override it with `HOMELY_DB_PATH`. The supported cloud-primary deployment runs Homely on Render with an ephemeral SQLite working copy, single-owner authentication, and verified Google Drive database recovery. Optional integration variables are documented in `.env.example`.
 
@@ -79,18 +79,18 @@ Read tools query the same SQLite/domain state as the web application and adverti
 Homely intentionally does **not** expose commit, reject, or undo operations through MCP. An MCP host/model can investigate the property and propose a structured action; the human approves or rejects that proposal inside Homely, and only Homely's own transaction interface can commit or reverse state. This preserves the core rule: **AI proposes. Homely commits.**
 
 
-## Optional OpenAI agent
+## Optional Groq agent
 
 The web application runs normally with AI disabled. To enable the reasoning layer, provide server-side environment configuration:
 
 ```bash
 AI_ENABLED=true
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-5.5
+GROQ_API_KEY=...
+GROQ_MODEL=openai/gpt-oss-20b
 npm run dev
 ```
 
-The API key is never sent to the browser. The OpenAI provider uses the Responses API and can read Homely state or create an inert transaction proposal. It is not given commit or undo tools. Approval remains a Homely UI/API action, so a model response cannot silently mutate SQLite.
+The API key is never sent to the browser. Homely sends Responses API requests to Groq's OpenAI-compatible endpoint and can read Homely state or create an inert transaction proposal. The `openai` npm package is used only as the compatible HTTP client; inference is provided by Groq. It is not given commit or undo tools. Approval remains a Homely UI/API action, so a model response cannot silently mutate SQLite.
 
 If the provider is disabled, unconfigured, or temporarily unavailable, the structured property application remains operational.
 
