@@ -251,6 +251,7 @@ async function main(): Promise<void> {
         return sendJson(res, 200, {
           auth: { enabled: auth.enabled },
           ai: agentRuntime.status,
+          research: agentRuntime.researchStatus,
           voice: { enabled: config.voiceEnabled, available: false },
           googleDrive: googleDrive.status,
           backup: backups.status

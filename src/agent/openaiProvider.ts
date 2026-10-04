@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import type { HomelyDatabase } from "../db.js";
 import { agentToolDefinitions, executeHomelyTool, type HomelyToolName } from "../tools/homelyTools.js";
+import { HomeResearch } from "../integrations/webResearch.js";
+import { executeResearchTool, researchToolDefinitions, type ResearchToolName } from "./researchTools.js";
 import type { AgentProposal, AgentProvider, AgentRequest, AgentResponse } from "./types.js";
 
 const INSTRUCTIONS = `You are Homely, the operating memory for one physical home.
@@ -16,6 +18,11 @@ Rules:
 - For a recurring fault, inspect the asset, repairs and history before proposing the next action.
 - Repair records are permanent history. Corrections should be recorded as new history rather than deleting the original.
 - Charges and potential purchases are part of household memory. Use their tools when cost or buying context is relevant.
+- Web research is external evidence, not authoritative home state. Distinguish researched facts from recorded house facts.
+- Use search_web for current product, supplier, price, service-provider or general research when useful.
+- LOCAL_SERVICE searches require a location explicitly supplied by the user. Never infer or invent a precise home location.
+- Use read_web_page only for a page returned by Homely search.
+- Save a purchase candidate only when the user asks to remember, save or shortlist it, or otherwise clearly requests that state change.
 - A proposal is not a completed action. Say clearly that it requires approval.
 - Never claim a proposed action happened until Homely reports a committed transaction in a later interaction.
 - Keep responses concise, specific, calm, and grounded in this house.
@@ -51,6 +58,7 @@ export class OpenAIAgentProvider implements AgentProvider {
     private readonly db: HomelyDatabase,
     private readonly client: OpenAIClientLike,
     private readonly model: string,
+    private readonly research: HomeResearch,
     private readonly origin = "OPENAI"
   ) {}
 
@@ -58,7 +66,10 @@ export class OpenAIAgentProvider implements AgentProvider {
     const message = request.message.trim();
     if (!message) throw new Error("Message is required.");
 
-    const tools = agentToolDefinitions as OpenAI.Responses.Tool[];
+    const tools = [
+      ...(agentToolDefinitions as OpenAI.Responses.Tool[]),
+      ...researchToolDefinitions(this.research)
+    ];
     let response = await this.client.responses.create({
       model: this.model,
       instructions: INSTRUCTIONS,
@@ -74,8 +85,8 @@ export class OpenAIAgentProvider implements AgentProvider {
       const calls = response.output.filter((item) => item.type === "function_call");
       if (!calls.length) break;
 
-      const outputs = calls.map((call) => {
-        const name = call.name as HomelyToolName;
+      const outputs = await Promise.all(calls.map(async (call) => {
+        const name = call.name;
         toolsUsed.push(name);
 
         let args: Record<string, unknown>;
@@ -86,7 +97,9 @@ export class OpenAIAgentProvider implements AgentProvider {
         }
 
         try {
-          const result = executeHomelyTool(this.db, name, args, this.origin);
+          const result = name === "search_web" || name === "read_web_page"
+            ? await executeResearchTool(this.research, name as ResearchToolName, args)
+            : executeHomelyTool(this.db, name as HomelyToolName, args, this.origin);
           if (name === "preview_action") {
             const proposal = proposalFromResult(result);
             if (proposal) proposals.push(proposal);
@@ -105,7 +118,7 @@ export class OpenAIAgentProvider implements AgentProvider {
             })
           };
         }
-      });
+      }));
 
       response = await this.client.responses.create({
         model: this.model,

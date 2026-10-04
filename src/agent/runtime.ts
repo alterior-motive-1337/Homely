@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { HomelyDatabase } from "../db.js";
 import { config } from "../config.js";
 import { OpenAIAgentProvider } from "./openaiProvider.js";
+import { HomeResearch } from "../integrations/webResearch.js";
 import type { AgentProvider } from "./types.js";
 
 type ProviderName = "groq" | "openai";
@@ -15,10 +16,16 @@ export interface AgentRuntime {
     provider: ProviderName;
     model: string;
   };
+  researchStatus: {
+    exa: { configured: boolean };
+    firecrawl: { configured: boolean };
+    available: boolean;
+  };
 }
 
 export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
   const enabled = config.aiEnabled;
+  const research = new HomeResearch();
   const useGroq = Boolean(config.groqApiKey);
   const configured = useGroq || Boolean(config.openAiApiKey);
   const providerName: ProviderName = useGroq ? "groq" : "openai";
@@ -33,7 +40,8 @@ export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
         available: false,
         provider: providerName,
         model
-      }
+      },
+      researchStatus: research.status
     };
   }
 
@@ -45,13 +53,14 @@ export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
     : new OpenAI({ apiKey: config.openAiApiKey });
 
   return {
-    provider: new OpenAIAgentProvider(db, client, model, providerName.toUpperCase()),
+    provider: new OpenAIAgentProvider(db, client, model, research, providerName.toUpperCase()),
     status: {
       enabled,
       configured,
       available: true,
       provider: providerName,
       model
-    }
+    },
+    researchStatus: research.status
   };
 }
