@@ -90,7 +90,7 @@ GROQ_MODEL=openai/gpt-oss-20b
 npm run dev
 ```
 
-The API key is never sent to the browser. Homely sends Responses API requests to Groq's OpenAI-compatible endpoint and can read Homely state or create an inert transaction proposal. The `openai` npm package is used only as the compatible HTTP client; inference is provided by Groq. It is not given commit or undo tools. Approval remains a Homely UI/API action, so a model response cannot silently mutate SQLite.
+The API key is never sent to the browser. Homely sends Responses API requests to Groq's OpenAI-compatible endpoint and can read Homely state or create an inert transaction proposal. The `openai` npm package is used only as the compatible HTTP client; inference is provided by Groq. The default model is `openai/gpt-oss-20b`, and `GROQ_MODEL` can override it. It is not given commit or undo tools. Approval remains a Homely UI/API action, so a model response cannot silently mutate SQLite.
 
 If the provider is disabled, unconfigured, or temporarily unavailable, the structured property application remains operational.
 
