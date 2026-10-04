@@ -34,7 +34,7 @@ function fail(error: unknown) {
 export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
   const server = new McpServer({
     name: "Homely",
-    version: "0.3.0"
+    version: "0.4.0"
   });
 
   server.registerTool(
@@ -95,6 +95,50 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     async ({ status }) => {
       try {
         return ok(executeHomelyTool(db, "list_issues", { status }, "MCP"));
+      } catch (error) { return fail(error); }
+    }
+  );
+
+  server.registerTool(
+    "list_repairs",
+    {
+      description: "List permanent repair history, optionally restricted to one asset.",
+      inputSchema: z.object({ assetId: z.string().min(1).optional() }),
+      annotations: readOnlyAnnotations
+    },
+    async ({ assetId }) => {
+      try {
+        return ok(executeHomelyTool(db, "list_repairs", { assetId: assetId ?? null }, "MCP"));
+      } catch (error) { return fail(error); }
+    }
+  );
+
+  server.registerTool(
+    "list_charges",
+    {
+      description: "List current or all recurring household charges.",
+      inputSchema: z.object({ status: z.enum(["ACTIVE","ALL"]).default("ACTIVE") }),
+      annotations: readOnlyAnnotations
+    },
+    async ({ status }) => {
+      try {
+        return ok(executeHomelyTool(db, "list_charges", { status }, "MCP"));
+      } catch (error) { return fail(error); }
+    }
+  );
+
+  server.registerTool(
+    "list_purchases",
+    {
+      description: "List saved, shortlisted, purchased or dismissed purchase candidates.",
+      inputSchema: z.object({
+        status: z.enum(["SAVED","SHORTLISTED","PURCHASED","DISMISSED","ACTIVE","ALL"]).default("ACTIVE")
+      }),
+      annotations: readOnlyAnnotations
+    },
+    async ({ status }) => {
+      try {
+        return ok(executeHomelyTool(db, "list_purchases", { status }, "MCP"));
       } catch (error) { return fail(error); }
     }
   );
@@ -188,7 +232,7 @@ export function buildHomelyMcpServer(db: HomelyDatabase): McpServer {
     {
       description: "Validate and create an inert Homely transaction proposal. This does not change home state. Homely itself must separately approve, commit, reject, or undo transactions; those operations are intentionally not exposed through MCP.",
       inputSchema: z.object({
-        actionType: z.enum(["REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]),
+        actionType: z.enum(["REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","RECORD_REPAIR","CREATE_CHARGE","SAVE_PURCHASE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]),
         payload: z.record(z.string(), z.unknown()),
         reason: z.string().trim().min(1).max(500),
         requestText: z.string().max(2000).optional()
