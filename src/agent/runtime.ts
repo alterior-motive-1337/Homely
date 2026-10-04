@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { HomelyDatabase } from "../db.js";
 import { config } from "../config.js";
-import { OpenAIAgentProvider } from "./openaiProvider.js";
+import { GroqAgentProvider } from "./groqProvider.js";
 import type { AgentProvider } from "./types.js";
 
 export interface AgentRuntime {
@@ -10,13 +10,13 @@ export interface AgentRuntime {
     enabled: boolean;
     configured: boolean;
     available: boolean;
-    provider: "openai";
+    provider: "groq";
     model: string;
   };
 }
 
 export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
-  const configured = Boolean(config.openAiApiKey);
+  const configured = Boolean(config.groqApiKey);
   const enabled = config.aiEnabled;
 
   if (!enabled || !configured) {
@@ -26,21 +26,24 @@ export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
         enabled,
         configured,
         available: false,
-        provider: "openai",
-        model: config.openAiModel
+        provider: "groq",
+        model: config.groqModel
       }
     };
   }
 
-  const client = new OpenAI({ apiKey: config.openAiApiKey });
+  const client = new OpenAI({
+    apiKey: config.groqApiKey,
+    baseURL: "https://api.groq.com/openai/v1"
+  });
   return {
-    provider: new OpenAIAgentProvider(db, client, config.openAiModel),
+    provider: new GroqAgentProvider(db, client, config.groqModel),
     status: {
       enabled,
       configured,
       available: true,
-      provider: "openai",
-      model: config.openAiModel
+      provider: "groq",
+      model: config.groqModel
     }
   };
 }
