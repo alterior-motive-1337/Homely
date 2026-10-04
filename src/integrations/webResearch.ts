@@ -1,4 +1,4 @@
-import Exa from "exa-js";
+import { Exa } from "exa-js";
 import Firecrawl from "@mendable/firecrawl-js";
 import { config } from "../config.js";
 
