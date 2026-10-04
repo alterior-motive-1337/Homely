@@ -1,5 +1,5 @@
 import Exa from "exa-js";
-import { Firecrawl } from "firecrawl";
+import Firecrawl from "@mendable/firecrawl-js";
 import { config } from "../config.js";
 
 export type ResearchPurpose = "LOCAL_SERVICE" | "PRODUCT" | "GENERAL";
@@ -47,7 +47,7 @@ export class HomeResearch {
       contents: { highlights: true }
     });
 
-    const results = response.results.slice(0, maxResults).map((raw) => {
+    const results = response.results.slice(0, maxResults).map((raw: unknown) => {
       const row = raw as unknown as JsonRecord;
       const url = clip(row.url, 1500);
       if (url) this.readableUrls.add(url);
