@@ -439,6 +439,72 @@ nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.
 window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
 $("#chat-open").onclick=function(){chatRail.classList.add("open")};$("#chat-close").onclick=function(){if(state.stopVoice)state.stopVoice();chatRail.classList.remove("open")};
 $("#refresh-view").onclick=function(){viewPanels.clear();state.needsReload=true;void selectView(state.view)};
+async function openHouseholdSettings(){
+  try{
+    const state=await api("/api/homes"),members=await api("/api/homes/members");
+    const home=state.homes.find(h=>h.id===state.currentHomeId);
+    const owner=home&&home.role==="OWNER";
+    const pending=owner?await api("/api/homes/invitations"):[];
+    let markup='<p class="eyebrow">Account</p><h2>Household settings</h2><p class="row-meta">'+esc($("#account-email").textContent)+'</p>';
+    markup+='<div class="detail-section"><h3>Your homes</h3><div class="rows">'+state.homes.map(h=>
+      row(h.name,h.role,h.id===state.currentHomeId?'<span class="badge">Current</span>':'<button type="button" class="button" data-switch="'+esc(h.id)+'">Open home</button>')
+    ).join("")+'</div></div>';
+    if(owner){
+      markup+='<div class="detail-section"><h3>Home name</h3><form class="form" id="rename-home-form"><div class="field"><label>Household</label><input name="homeName" maxlength="100" value="'+esc(home.name)+'" required></div><div class="form-actions"><button class="button" type="submit">Save name</button></div></form></div>';
+      markup+='<div class="detail-section"><h3>Invite a member</h3><form class="form" id="invite-home-form"><div class="field"><label>Google email address</label><input name="email" type="email" required placeholder="person@example.com"></div><div class="field"><label>Access</label><select name="role"><option value="MEMBER">Member — edit records</option><option value="VIEWER">Viewer — read only</option></select></div><div class="form-actions"><button class="button" type="submit">Create invite link</button></div></form><div id="invite-result"></div></div>';
+      markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+(pending.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")||'<div class="empty">No pending invitations.</div>')+'</div></div>';
+    }
+    markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
+    openModal(markup);
+    $("[data-switch]",modalBody).forEach(button=>button.onclick=async()=>{
+      try{await api("/api/homes/active",{method:"POST",body:{homeId:button.dataset.switch}});window.location.assign("/")}
+      catch(e){notify(e.message)}
+    });
+    const rename=$("#rename-home-form");
+    if(rename)rename.onsubmit=async e=>{
+      e.preventDefault();
+      try{await api("/api/homes/current",{method:"PATCH",body:{name:new FormData(rename).get("homeName")}});closeModal();window.location.assign("/")}
+      catch(error){notify(error.message)}
+    };
+    const invite=$("#invite-home-form");
+    if(invite)invite.onsubmit=async e=>{
+      e.preventDefault();
+      try{
+        const data=new FormData(invite);
+        const result=await api("/api/homes/invitations",{method:"POST",body:{email:data.get("email"),role:data.get("role")}});
+        const link=new URL(result.link,location.origin).href;
+        $("#invite-result").innerHTML='<div class="field"><label>Invitation link — share with '+esc(result.email)+'</label><input id="invite-link" readonly value="'+esc(link)+'"></div><div class="form-actions"><button type="button" class="button" id="copy-invite">Copy link</button></div>';
+        $("#copy-invite").onclick=async()=>{try{await navigator.clipboard.writeText(link);notify("Invitation copied.")}catch(_){$("#invite-link").select();notify("Select and copy the invitation link.")}};
+      }catch(error){notify(error.message)}
+    };
+    $("[data-revoke]",modalBody).forEach(button=>button.onclick=async()=>{
+      try{await api("/api/homes/invitations/"+encodeURIComponent(button.dataset.revoke),{method:"DELETE"});closeModal();await openHouseholdSettings()}
+      catch(error){notify(error.message)}
+    });
+    $("[data-remove]",modalBody).forEach(button=>button.onclick=async()=>{
+      if(!confirm("Remove this member's access to the household?"))return;
+      try{await api("/api/homes/members/"+encodeURIComponent(button.dataset.remove),{method:"DELETE"});closeModal();await openHouseholdSettings()}
+      catch(error){notify(error.message)}
+    });
+  }catch(error){notify(error.message)}
+}
+function offerPendingInvitation(){
+  const q=new URLSearchParams(location.search);
+  const candidate=q.get("invite")||sessionStorage.getItem("homely_pending_invite");
+  if(!candidate || !/^[a-zA-Z0-9_-]{43}$/.test(candidate))return;
+  sessionStorage.setItem("homely_pending_invite",candidate);
+  const cleanUrl=new URL(location.href);cleanUrl.searchParams.delete("invite");
+  history.replaceState({}, "",cleanUrl.pathname+cleanUrl.search);
+  openModal('<p class="eyebrow">Household invitation</p><h2>Join a home</h2><p>Accept this invitation to open the shared household with the role chosen by its owner.</p><div class="form-actions"><button class="button" id="dismiss-invite">Later</button><button class="primary-button" id="accept-invite">Accept invitation</button></div>');
+  $("#dismiss-invite").onclick=closeModal;
+  $("#accept-invite").onclick=async()=>{
+    try{
+      await api("/api/homes/invitations/accept",{method:"POST",body:{token:candidate}});
+      sessionStorage.removeItem("homely_pending_invite");closeModal();window.location.assign("/");
+    }catch(error){notify(error.message)}
+  };
+}
+
 async function bootstrap(){
   try{
     const response=await fetch("/api/auth/status",{cache:"no-store"});
@@ -446,6 +512,8 @@ async function bootstrap(){
     const auth=await response.json();
     if(!auth.authenticated){
       $("#app-shell").hidden=true;$("#auth-screen").hidden=false;
+      const invite=new URLSearchParams(location.search).get("invite");
+      if(invite&&/^[a-zA-Z0-9_-]{43}$/.test(invite))sessionStorage.setItem("homely_pending_invite",invite);
       $("#google-signin").setAttribute("aria-disabled",auth.enabled?"false":"true");
       const message=location.search.includes("auth_error=")
         ? "Google sign-in was unsuccessful. Check your account and try again."
@@ -456,6 +524,8 @@ async function bootstrap(){
     }
     $("#auth-screen").hidden=true;$("#app-shell").hidden=false;
     $("#account-email").textContent=auth.user&&auth.user.email?auth.user.email:"Signed in";
+    $("#household-settings").onclick=openHouseholdSettings;
+    offerPendingInvitation();
     $("#sign-out").onclick=async function(){
       try{
         const res=await fetch("/auth/logout",{method:"POST",credentials:"same-origin"});

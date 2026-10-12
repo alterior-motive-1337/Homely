@@ -116,3 +116,5 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 .auth-google[aria-disabled="true"]{opacity:.5;pointer-events:none}
 .account-menu{display:flex;flex-direction:column;gap:9px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:14px}
 .account-email{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+#invite-result{padding:10px 0}#invite-link{width:100%;min-width:0}.account-menu .button{text-align:left}
