@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type http from "node:http";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { migrate } from "../src/db.js";
 import { seedDemo } from "../src/seed.js";
 import { createTestDatabase } from "./helpers.js";
-import { GoogleAuthentication } from "../src/security/googleAuth.js";
+import { GoogleAuthentication, verifyGoogleIdentity } from "../src/security/googleAuth.js";
 
 function request(cookie=""): http.IncomingMessage {
   return {headers:{cookie}} as http.IncomingMessage;
@@ -121,4 +122,36 @@ test("partially configured OAuth never exposes an existing home",()=>{
   assert.throws(()=>auth.requireUser(request()),/sign in/i);
   assert.throws(()=>auth.beginLogin(response() as unknown as http.ServerResponse),/not configured/i);
   db.close();
+});
+
+test("Google ID tokens are signature-verified against JWKS with exact audience and nonce",async()=>{
+  const {publicKey,privateKey}=generateKeyPairSync("rsa",{modulusLength:2048});
+  const jwk=publicKey.export({format:"jwk"});
+  const original=globalThis.fetch;
+  globalThis.fetch=async(input)=>{
+    assert.equal(String(input),"https://www.googleapis.com/oauth2/v3/certs");
+    return new Response(JSON.stringify({keys:[{...jwk,kid:"test-key",alg:"RS256",use:"sig"}]}),{
+      status:200,headers:{"content-type":"application/json","cache-control":"public, max-age=300"}
+    });
+  };
+  function encode(payload:Record<string,unknown>){
+    const header=Buffer.from(JSON.stringify({alg:"RS256",kid:"test-key",typ:"JWT"})).toString("base64url");
+    const body=Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const signature=sign("RSA-SHA256",Buffer.from(header+"."+body),privateKey).toString("base64url");
+    return header+"."+body+"."+signature;
+  }
+  const basic={iss:"https://accounts.google.com",aud:settings.clientId,sub:"verified-sub",
+    email:"owner@example.test",email_verified:true,nonce:"correct-nonce",
+    exp:Math.floor(Date.now()/1000)+120,iat:Math.floor(Date.now()/1000)-30};
+  try{
+    const valid=await verifyGoogleIdentity(encode(basic),settings.clientId,"correct-nonce");
+    assert.equal(valid.sub,"verified-sub");
+    await assert.rejects(verifyGoogleIdentity(encode(basic),settings.clientId,"different-nonce"),/verification failed/);
+    await assert.rejects(verifyGoogleIdentity(encode({...basic,aud:"attacker-client"}),settings.clientId,"correct-nonce"),/verification failed/);
+    await assert.rejects(verifyGoogleIdentity(encode({...basic,exp:1}),settings.clientId,"correct-nonce"),/verification failed/);
+    const changed=encode({...basic,email:"attacker@example.test"});
+    const pieces=changed.split(".");
+    pieces[1]=Buffer.from(JSON.stringify(basic)).toString("base64url");
+    await assert.rejects(verifyGoogleIdentity(pieces.join("."),settings.clientId,"correct-nonce"),/signature/);
+  }finally{globalThis.fetch=original}
 });
