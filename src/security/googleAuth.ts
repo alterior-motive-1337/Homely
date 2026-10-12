@@ -27,6 +27,7 @@ export interface AuthGateway {
   finishLogin(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void>;
   logout(req: http.IncomingMessage, res: http.ServerResponse): void;
   switchHome?(req: http.IncomingMessage, homeId: string): AuthUser;
+  recentlyAuthenticated?(req: http.IncomingMessage, maxAgeMs: number): boolean;
 }
 export interface GoogleAuthSettings {
   clientId: string;
@@ -162,6 +163,15 @@ export class GoogleAuthentication implements AuthGateway {
     const user=this.user(req);
     if(!user)throw new DomainError("Sign in with Google to access your home.",401);
     return user;
+  }
+  recentlyAuthenticated(req: http.IncomingMessage, maxAgeMs: number): boolean {
+    const user=this.user(req);
+    const token=cookies(req).get(SESSION_COOKIE);
+    if(!user || !token)return false;
+    const session=this.db.prepare("SELECT created_at FROM auth_sessions WHERE token_hash=? AND user_id=? AND expires_at>?")
+      .get(hash(token),user.id,new Date().toISOString());
+    const at=session?Date.parse(String(session.created_at)):NaN;
+    return Number.isFinite(at) && at<=Date.now() && Date.now()-at<=maxAgeMs;
   }
   switchHome(req: http.IncomingMessage, homeId: string): AuthUser {
     const current=this.requireUser(req);
