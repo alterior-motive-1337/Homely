@@ -132,7 +132,7 @@ export async function startServer(db: HomelyDatabase = openDatabase()): Promise<
 
       // Binary evidence remains in Turso, never in Render's disposable filesystem.
       if (req.method === "POST" && url.pathname === "/api/uploads/stage") {
-        const mimeType = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+        const mimeType = (String(req.headers["content-type"] ?? "").split(";")[0] ?? "").trim().toLowerCase();
         const safeMimes = /^(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/(mpeg|mp4|wav|ogg|webm)|application\/(pdf|octet-stream|zip|msword|vnd\.openxmlformats-officedocument\.[a-z-]+)|text\/plain)$/;
         if (!safeMimes.test(mimeType)) throw new DomainError("This file type is not supported.", 415);
         let filename: string;
