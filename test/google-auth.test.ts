@@ -6,6 +6,7 @@ import { migrate } from "../src/db.js";
 import { seedDemo } from "../src/seed.js";
 import { createTestDatabase } from "./helpers.js";
 import { GoogleAuthentication, verifyGoogleIdentity } from "../src/security/googleAuth.js";
+import { startServer } from "../src/server.js";
 
 function request(cookie=""): http.IncomingMessage {
   return {headers:{cookie}} as http.IncomingMessage;
@@ -154,4 +155,30 @@ test("Google ID tokens are signature-verified against JWKS with exact audience a
     pieces[1]=Buffer.from(JSON.stringify(basic)).toString("base64url");
     await assert.rejects(verifyGoogleIdentity(pieces.join("."),settings.clientId,"correct-nonce"),/signature/);
   }finally{globalThis.fetch=original}
+});
+
+test("HTTP routes never expose household records, files, or upload endpoints without login",async()=>{
+  const db=createTestDatabase();
+  const auth=new GoogleAuthentication(db,{...settings,clientSecret:""});
+  const server=await startServer(db,auth);
+  try{
+    const origin="http://127.0.0.1:4173";
+    const publicHealth=await fetch(origin+"/api/health");
+    assert.equal(publicHealth.status,200);
+    const status=await fetch(origin+"/api/auth/status");
+    assert.equal(status.status,200);
+    assert.equal((await status.json()).authenticated,false);
+    assert.equal((await fetch(origin+"/")).status,200);
+    for(const route of ["/api/overview","/api/systems","/api/assets","/api/issues",
+      "/api/repairs","/api/documents","/api/transactions","/api/integrations/status",
+      "/api/files/doc-1","/demo-documents/inverter-warranty.txt"]){
+      const response=await fetch(origin+route);
+      assert.equal(response.status,401,route+" must require Google sign-in");
+    }
+    const upload=await fetch(origin+"/api/uploads/start",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({name:"clip.mp4",mimeType:"video/mp4",size:100})
+    });
+    assert.equal(upload.status,401);
+  }finally{await new Promise<void>((done)=>server.close(()=>done()));db.close()}
 });
