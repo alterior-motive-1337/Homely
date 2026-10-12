@@ -403,7 +403,7 @@ async function selectView(view){
   }else{content.replaceChildren()}
   state.needsReload=false;state.view=next;
   pageTitle.textContent=views[next][0];document.title=views[next][0]+" · Homely";
-  $(".nav-item").forEach(function(b){b.classList.toggle("active",b.dataset.view===next);if(b.dataset.view===next)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
+  $$(".nav-item").forEach(function(b){b.classList.toggle("active",b.dataset.view===next);if(b.dataset.view===next)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
   const saved=viewPanels.get(next);
   if(saved && Date.now()-saved.time<VIEW_CACHE_MS){
     viewPanels.delete(next);content.appendChild(saved.fragment);return;
