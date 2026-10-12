@@ -166,7 +166,7 @@ jobs:
           await page.goto("http://127.0.0.1:4173", { waitUntil: "networkidle" });
           await page.getByText("14 Hawthorn Residence").waitFor();
           await page.getByText("Home memory active").waitFor();
-          await page.getByRole("button", { name: "Household settings" }).click();
+          await page.locator("#household-settings").click();
           await page.locator("#modal").getByRole("heading", { name: "Household settings" }).waitFor();
           await page.getByRole("link", { name: "Export household" }).waitFor();
           await page.locator("#invite-home-form input[name=email]").fill("ci-invite@example.test");
