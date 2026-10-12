@@ -266,6 +266,25 @@ jobs:
           const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
           if (mobileOverflow) throw new Error("mobile shell has horizontal overflow");
           if (errors.length) throw new Error("Browser errors: " + errors.join(" | "));
+          // Product QA: fresh Google accounts should see one clear first action, not five empty dashboards.
+          const fresh = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+          await fresh.context().addCookies([{name:"homely_test_view",value:"fresh",url:"http://127.0.0.1:4173"}]);
+          await fresh.goto("http://127.0.0.1:4173", { waitUntil: "networkidle" });
+          await fresh.getByRole("heading", { name:"Start with what you own." }).waitFor();
+          if(await fresh.locator(".metrics").count())throw new Error("First-login page should not render empty metrics");
+          await fresh.getByRole("button", { name:"Register first asset" }).click();
+          await fresh.locator("#asset-form").waitFor();
+          await fresh.locator("#modal-close").click();
+          await fresh.locator("#nav").getByRole("button",{name:"Files"}).click();
+          await fresh.getByRole("heading", {name:"Keep every file in one place."}).waitFor();
+          await fresh.locator("#nav").getByRole("button",{name:"Appliances"}).click();
+          await fresh.getByRole("heading", {name:"Build your asset registry."}).waitFor();
+          if(await fresh.locator("#chat-rail").isVisible())throw new Error("Assistant should be closed by default");
+          await fresh.locator("#chat-trigger").click();
+          await fresh.locator("#chat-rail").waitFor({state:"visible"});
+          await fresh.locator("#chat-backdrop").click({position:{x:5,y:5}});
+          await fresh.locator("#chat-rail").waitFor({state:"hidden"});
+          await fresh.close();
           await browser.close();
 
           NODE

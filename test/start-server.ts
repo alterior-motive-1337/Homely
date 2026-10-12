@@ -13,9 +13,18 @@ db.prepare("INSERT INTO auth_users(id,google_subject,email,display_name,created_
 db.prepare("INSERT INTO home_memberships(home_id,user_id,role,joined_at) VALUES(?,?,?,?)")
   .run("home-hawthorn","ci-user","OWNER",now);
 
+// A second completely empty home proves the new-account experience doesn't depend on demo data.
+db.prepare("INSERT INTO homes(id,name,address_label,created_at,updated_at) VALUES(?,?,NULL,?,?)")
+  .run("home-ci-empty","My Home",now,now);
+db.prepare("INSERT INTO systems(id,home_id,name,category,description,position,created_at,updated_at) VALUES(?,?,?,?,NULL,?,?,?)")
+  .run("sys-ci-appliances","home-ci-empty","Appliances","APPLIANCES",1,now,now);
+const demoUser={id:"ci-user",email:"test@example.invalid",name:"CI",homeId:"home-hawthorn",role:"OWNER" as const};
+const freshUser={id:"ci-fresh",email:"fresh@example.invalid",name:"Fresh",homeId:"home-ci-empty",role:"OWNER" as const};
+function userFor(req:{headers:{cookie?:string}}){return String(req.headers.cookie??"").includes("homely_test_view=fresh")?freshUser:demoUser}
+
 await startServer(db,{
-  status(){return {enabled:false,authenticated:true,provider:"google" as const,setupRequired:false,user:{id:"ci-user",email:"test@example.invalid",name:"CI",homeId:"home-hawthorn",role:"OWNER" as const}}},
-  requireUser(){return {id:"ci-user",email:"test@example.invalid",name:"CI",homeId:"home-hawthorn",role:"OWNER" as const}},
+  status(req){return {enabled:false,authenticated:true,provider:"google" as const,setupRequired:false,user:userFor(req)}},
+  requireUser(req){return userFor(req)},
   switchHome(_req,homeId){return {id:"ci-user",email:"test@example.invalid",name:"CI",homeId,role:"OWNER" as const}},
   recentlyAuthenticated(){return true},
   beginLogin(){throw new Error("Google login is disabled in CI")},
