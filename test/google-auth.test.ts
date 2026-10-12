@@ -192,3 +192,33 @@ test("HTTP routes never expose household records, files, or upload endpoints wit
     assert.equal(upload.status,401);
   }finally{await new Promise<void>((done)=>server.close(()=>done()));db.close()}
 });
+
+test("active household switching requires membership and revocation falls back to personal home",async()=>{
+  const db=createTestDatabase();migrate(db);seedDemo(db);
+  const auth=new GoogleAuthentication(db,{...settings,allowedEmail:""},{
+    async exchange(){return "token"},
+    async verify(_token,_clientId,nonce){
+      return {sub:"google-multihome-owner",email:"multihome@example.test",email_verified:true,nonce}
+    }
+  });
+  try{
+    const begin=response();auth.beginLogin(begin as unknown as http.ServerResponse);
+    const state=new URL(String(begin.getHeader("location"))).searchParams.get("state");
+    const callback=response();
+    await auth.finishLogin(request(cookieValue(begin,"homely_oauth")),callback as unknown as http.ServerResponse,
+      new URL("http://localhost:4173/auth/google/callback?state="+state+"&code=abc"));
+    const session=cookieValue(callback,"homely_session");
+    const first=auth.requireUser(request(session));
+    assert.equal(first.role,"OWNER");
+    assert.notEqual(first.homeId,"home-hawthorn");
+    assert.throws(()=>auth.switchHome(request(session),"home-hawthorn"),/not a member/);
+    db.prepare("INSERT INTO home_memberships(home_id,user_id,role,joined_at) VALUES(?,?,?,?)")
+      .run("home-hawthorn",first.id,"MEMBER",new Date().toISOString());
+    const second=auth.switchHome(request(session),"home-hawthorn");
+    assert.equal(second.role,"MEMBER");
+    assert.equal(auth.requireUser(request(session)).homeId,"home-hawthorn");
+    db.prepare("DELETE FROM home_memberships WHERE home_id=? AND user_id=?").run("home-hawthorn",first.id);
+    assert.equal(auth.requireUser(request(session)).homeId,first.homeId);
+    assert.equal(auth.requireUser(request(session)).role,"OWNER");
+  }finally{db.close()}
+});
