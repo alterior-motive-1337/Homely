@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { HomelyDatabase } from "../db.js";
 
 export type ActionType =
+  | "CREATE_ASSET"
   | "REPORT_ISSUE"
   | "CREATE_MAINTENANCE"
   | "RESOLVE_ISSUE"
@@ -115,6 +116,31 @@ function getProject(db: HomelyDatabase, projectId: string) {
 }
 
 function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRecord): JsonRecord {
+  if (actionType === "CREATE_ASSET") {
+    const systemId = requireText(raw.systemId, "System", 120);
+    if (!db.prepare("SELECT id FROM systems WHERE id = ?").get(systemId)) throw new DomainError("System not found.", 404);
+    const condition = raw.condition ? requireText(raw.condition, "Condition", 20).toUpperCase() : "UNKNOWN";
+    if (!["UNKNOWN","NEW","GOOD","FAIR","POOR","FAILED"].includes(condition)) throw new DomainError("Invalid asset condition.");
+    let purchaseCostCents: number | null = null;
+    if (raw.purchaseCostCents !== null && raw.purchaseCostCents !== undefined && String(raw.purchaseCostCents).trim() !== "") {
+      purchaseCostCents = Number(raw.purchaseCostCents);
+      if (!Number.isSafeInteger(purchaseCostCents) || purchaseCostCents < 0 || purchaseCostCents > 100_000_000_000) throw new DomainError("Invalid purchase cost.");
+    }
+    return {
+      systemId,
+      name: requireText(raw.name, "Asset name", 180),
+      category: requireText(raw.category, "Category", 80),
+      condition,
+      location: optionalText(raw.location, 200),
+      manufacturer: optionalText(raw.manufacturer, 160),
+      model: optionalText(raw.model, 160),
+      serialNumber: optionalText(raw.serialNumber, 160),
+      purchaseDate: raw.purchaseDate ? requireDate(raw.purchaseDate, "Purchase date") : null,
+      purchaseCostCents,
+      warrantyEnd: raw.warrantyEnd ? requireDate(raw.warrantyEnd, "Warranty end") : null,
+      notes: optionalText(raw.notes, 3000)
+    };
+  }
   if (actionType === "REPORT_ISSUE") {
     const assetId = requireText(raw.assetId, "Asset", 120);
     getAsset(db, assetId);
@@ -404,6 +430,14 @@ function addDays(date: string, days: number): string {
 }
 
 function previewFor(db: HomelyDatabase, actionType: ActionType, payload: JsonRecord) {
+  if (actionType === "CREATE_ASSET") {
+    const system = db.prepare("SELECT name FROM systems WHERE id = ?").get(String(payload.systemId));
+    return {
+      title: `Register asset: ${payload.name}`,
+      summary: `${payload.category} · ${system?.name ?? "Home"}`,
+      effects: ["Create a new appliance/furniture record", "Preserve acquisition and condition details", "Add a home timeline event"]
+    };
+  }
   if (actionType === "REPORT_ISSUE") {
     const asset = getAsset(db, String(payload.assetId));
     return {
@@ -641,6 +675,34 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
 
   db.exec("BEGIN IMMEDIATE;");
   try {
+    if (actionType === "CREATE_ASSET") {
+      const assetId = newId("asset");
+      db.prepare(`
+        INSERT INTO assets(
+          id,system_id,name,category,location,manufacturer,model,serial_number,
+          purchase_date,purchase_cost_cents,warranty_end,notes,condition,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).run(
+        assetId, String(payload.systemId), String(payload.name), String(payload.category),
+        payload.location ? String(payload.location) : null,
+        payload.manufacturer ? String(payload.manufacturer) : null,
+        payload.model ? String(payload.model) : null,
+        payload.serialNumber ? String(payload.serialNumber) : null,
+        payload.purchaseDate ? String(payload.purchaseDate) : null,
+        payload.purchaseCostCents === null ? null : Number(payload.purchaseCostCents),
+        payload.warrantyEnd ? String(payload.warrantyEnd) : null,
+        payload.notes ? String(payload.notes) : null,
+        String(payload.condition), createdAt, createdAt
+      );
+      const asset = db.prepare("SELECT * FROM assets WHERE id = ?").get(assetId) as JsonRecord;
+      recordChange(db, transactionId, "asset", assetId, "CREATE", null, asset, createdAt);
+      createTimelineEvent(db, transactionId, {
+        eventType: "ASSET_REGISTERED", title: `Registered: ${payload.name}`,
+        summary: `${payload.category} added to the home register.`,
+        occurredAt: createdAt, assetId
+      }, createdAt);
+    }
+
     if (actionType === "REPORT_ISSUE") {
       const issueId = newId("issue");
       db.prepare(`
@@ -984,6 +1046,16 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
       const current = db.prepare("SELECT * FROM timeline_events WHERE id = ?").get(entityId);
       if (current && !sameRow(current, after)) throw new DomainError("Timeline state changed after this transaction.", 409);
       db.prepare("DELETE FROM timeline_events WHERE id = ?").run(entityId);
+    } else if (entityType === "asset") {
+      const current = db.prepare("SELECT * FROM assets WHERE id = ?").get(entityId);
+      if (!sameRow(current, after)) throw new DomainError("Asset changed after this transaction.", 409);
+      const associations = ["issues", "repairs", "maintenance_rules", "documents", "purchase_candidates"];
+      for (const table of associations) {
+        if (db.prepare(`SELECT 1 FROM ${table} WHERE asset_id = ? LIMIT 1`).get(entityId)) {
+          throw new DomainError("Asset has linked history and cannot be deleted.", 409);
+        }
+      }
+      db.prepare("DELETE FROM assets WHERE id = ?").run(entityId);
     } else if (entityType === "issue") {
       const current = db.prepare("SELECT * FROM issues WHERE id = ?").get(entityId);
       if (!sameRow(current, after)) throw new DomainError("Issue changed after this transaction and cannot be safely undone.", 409);
