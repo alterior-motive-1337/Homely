@@ -437,6 +437,7 @@ function navigate(view,replace){view=normalizeView(view);const url=view==="home"
 nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.dataset.view,false)};
 window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
 $("#chat-open").onclick=function(){chatRail.classList.add("open")};$("#chat-close").onclick=function(){if(state.stopVoice)state.stopVoice();chatRail.classList.remove("open")};
+$("#refresh-view").onclick=function(){viewPanels.clear();state.needsReload=true;void selectView(state.view)};
 const initial=normalizeView(new URLSearchParams(location.search).get("view")||"home");
 void refreshStatus();void selectView(initial);renderChat();setupVoiceInput();
 window.addEventListener("keydown",function(e){if(e.key==="Escape"&&!modal.open&&!viewer.open){if(state.stopVoice)state.stopVoice();chatRail.classList.remove("open")}});

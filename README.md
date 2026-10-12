@@ -42,6 +42,16 @@ Voice input uses the browser and needs no service key. Stop listening ends captu
 
 There are no Google Drive, external MCP, Firecrawl, password/session or backup integrations to configure. Evidence metadata and associations stay in Turso; existing source links remain viewable. Supported media open in the viewer and ordinary web pages retain an Open source link.
 
+## Evidence and file limits
+
+- Uploads are stored **in Turso**, including MP4/WebM video. The app accepts **50 MB per file** (50,000,000 bytes).
+- The browser sends ordered 1 MB chunks; the server persists them in the database, checks declared length, and only permits linking after completion and explicit transaction approval. Neither Render's local filesystem nor another storage provider is required.
+- Browser media playback uses HTTP byte ranges, allowing audio/video seeking without downloading the entire file. Turso's actual per-account quotas and remote sync performance still apply; large-video behavior requires a live Turso test.
+- Previously visited tabs retain their DOM and data for two minutes, preserving filters and avoiding repeated loads. Changes through Homely invalidate the cache; use the header refresh action to pull external changes.
+- Optional **Analyze** on stored evidence uses Groq Qwen 3.8 27B for supported images up to 12 MB and Whisper Turbo for speech in MP3/WAV/WebM/MP4 up to 25 MB. Video visual frames and PDF/DOCX parsing are not implemented yet. The 50 MB storage limit is separate from AI processing limits.
+- Analysis is on demand, cached in Turso, and never changes the authoritative record. Text files can be read without using Groq.
+- **Security:** The POC currently has no login or access controls. Upload only non-sensitive test materials to public deployments. Production use needs authentication, per-home authorization and storage/compute quotas.
+
 ## Checks
 
 ```bash
