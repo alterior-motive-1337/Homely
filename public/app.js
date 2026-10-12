@@ -32,6 +32,12 @@ function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&
 function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(v||"UNKNOWN")+"</span>"}
 function row(title,meta,right,note){return '<div class="row"><div><div class="row-title">'+esc(title)+'</div><div class="row-meta">'+esc(meta||"")+'</div>'+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
+function emptyState(title,description,buttons,compact=false){
+  return '<section class="empty-state'+(compact?' compact':'')+'"><h2>'+esc(title)+'</h2>'
+    +(description?'<p>'+esc(description)+'</p>':'')
+    +(buttons?'<div class="hero-actions">'+buttons+'</div>':'')+'</section>';
+}
+
 function setRuntime(x){
   state.integrations=x;runtime.className="runtime-status";
   const ai=x&&x.ai;
@@ -106,19 +112,48 @@ async function openPurchaseForm(){
 async function showHome(){
   loading();const revision=state.viewRevision;
   try{
-    const d=await api("/api/overview");if(revision!==state.viewRevision)return;
+    const [d,assets]=await Promise.all([api("/api/overview"),api("/api/assets")]);
+    if(revision!==state.viewRevision)return;
+    state.assets=assets;
     const memory=d.memory||{},repairs=memory.repairs||[],charges=memory.charges||[],purchases=memory.purchases||[];
-    const attention=d.attention.issues.map(function(i){return row(i.title,i.asset_name,badge(i.severity))}).concat(d.attention.maintenance.map(function(m){return row(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"))}));
-    let html='<div class="home-overview"><div class="hero"><div><p class="eyebrow">Your home</p><h2>'+esc(d.home&&d.home.name||"Home")+'</h2></div><div class="hero-actions"><button class="button" id="home-issue">+ Issue</button><button class="primary-button" id="home-repair">+ Repair</button></div></div>';
-    html+='<section class="metrics"><div class="metric"><span>Open issues</span><strong>'+d.summary.open_issues+'</strong></div><div class="metric"><span>Needs attention</span><strong>'+d.summary.systems_needing_attention+'</strong></div><div class="metric"><span>Overdue</span><strong>'+d.summary.overdue_maintenance+'</strong></div></section>';
-    html+='<div class="home-priority"><section class="card"><div class="card-head"><h2>Needs attention</h2><button class="ghost-link" data-go="issues">All issues</button></div><div class="card-body rows">'+(attention.slice(0,3).join("")||'<div class="empty">Everything is in order.</div>')+'</div></section>';
-    html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+(d.upcoming.slice(0,3).map(function(m){return row(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>')}).join("")||'<div class="empty">Nothing due.</div>')+'</div></section></div>';
-    html+='<div class="home-memory"><section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">All</button></div><div class="card-body rows">'+(repairs.slice(0,2).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>')}).join("")||'<div class="empty">No repairs yet.</div>')+'</div></section>';
-    html+='<section class="card"><div class="card-head"><h2>Charges</h2><button class="ghost-link" id="view-charges">View all</button></div><div class="card-body rows">'+(charges.slice(0,2).map(function(c){return row(c.name,c.billing_cycle,'<span class="money">'+money(c.amount_cents)+'</span>')}).join("")||'<div class="empty">No charges yet.</div>')+'</div></section>';
-    html+='<section class="card"><div class="card-head"><h2>Saved purchases</h2><button class="ghost-link" id="view-purchases">View all</button></div><div class="card-body rows">'+(purchases.slice(0,2).map(function(p){return row(p.title,p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>')}).join("")||'<div class="empty">No saved purchases.</div>')+'</div></section></div>';
-    html+='<section class="memory-strip"><div><span class="eyebrow">Latest activity</span><div class="row-title">'+esc(d.recent[0]&&d.recent[0].title||"No activity yet")+'</div></div><button class="button" id="view-history">History</button></section></div>';
-    content.innerHTML=html;$("#home-issue").onclick=openIssueForm;$("#home-repair").onclick=function(){openRepairForm()};$("#view-charges").onclick=showCharges;$("#view-purchases").onclick=showPurchases;$("#view-history").onclick=showHistory;
-    $$("[data-go]",content).forEach(function(b){b.onclick=function(){navigate(b.dataset.go)}})
+    const attention=d.attention.issues.map(function(i){return row(i.title,i.asset_name,badge(i.severity))})
+      .concat(d.attention.maintenance.map(function(m){return row(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"))}));
+    const homeName=d.home&&d.home.name||"My Home";
+    pageTitle.textContent=homeName;
+    document.title=homeName+" · Homely";
+    if(!assets.length&&!repairs.length&&!charges.length&&!purchases.length&&!d.recent.length){
+      content.innerHTML=emptyState("Start with what you own.",
+        "Add an appliance, fixture, or piece of furniture. Homely will keep its issues, repairs, documents, and history connected.",
+        '<button class="primary-button" id="home-first-asset">Register first asset</button><button class="button" id="home-first-file">Upload a file</button>');
+      $("#home-first-asset").onclick=()=>openAssetForm();
+      $("#home-first-file").onclick=()=>openUploadEvidenceForm();
+      return;
+    }
+    let html='<div class="home-overview"><div class="hero"><div class="hero-actions"><button class="button" id="home-issue">Report issue</button><button class="primary-button" id="home-repair">Record repair</button></div></div>';
+    html+='<section class="metrics" aria-label="Household overview"><div class="metric"><span>Open issues</span><strong>'+d.summary.open_issues+'</strong></div><div class="metric"><span>Needs attention</span><strong>'+d.summary.systems_needing_attention+'</strong></div><div class="metric"><span>Overdue</span><strong>'+d.summary.overdue_maintenance+'</strong></div></section>';
+    if(attention.length||d.upcoming.length){
+      html+='<div class="home-priority">';
+      if(attention.length)html+='<section class="card"><div class="card-head"><h2>Needs attention</h2><button class="ghost-link" data-go="issues">All issues</button></div><div class="card-body rows">'+attention.slice(0,4).join("")+'</div></section>';
+      if(d.upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+d.upcoming.slice(0,4).map(m=>row(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>')).join("")+'</div></section>';
+      html+='</div>';
+    }else html+='<p class="quiet-status">No outstanding issues or upcoming maintenance.</p>';
+    if(repairs.length||charges.length||purchases.length){
+      html+='<div class="home-memory">';
+      if(repairs.length)html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">All</button></div><div class="card-body rows">'+repairs.slice(0,3).map(r=>row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>')).join("")+'</div></section>';
+      if(charges.length)html+='<section class="card"><div class="card-head"><h2>Charges</h2><button class="ghost-link" id="view-charges">View all</button></div><div class="card-body rows">'+charges.slice(0,3).map(c=>row(c.name,c.billing_cycle,'<span class="money">'+money(c.amount_cents)+'</span>')).join("")+'</div></section>';
+      if(purchases.length)html+='<section class="card"><div class="card-head"><h2>Saved purchases</h2><button class="ghost-link" id="view-purchases">View all</button></div><div class="card-body rows">'+purchases.slice(0,3).map(p=>row(p.title,p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>')).join("")+'</div></section>';
+      html+='</div>';
+    }
+    html+='<div class="home-utilities"><div class="utility-links"><button class="ghost-link" id="view-charges-shortcut">Charges</button><button class="ghost-link" id="view-purchases-shortcut">Purchases</button><button class="ghost-link" id="view-history">History</button></div></div></div>';
+    content.innerHTML=html;
+    $("#home-issue").onclick=openIssueForm;
+    $("#home-repair").onclick=()=>openRepairForm();
+    const chargesBtn=$("#view-charges");if(chargesBtn)chargesBtn.onclick=showCharges;
+    const purchasesBtn=$("#view-purchases");if(purchasesBtn)purchasesBtn.onclick=showPurchases;
+    $("#view-charges-shortcut").onclick=showCharges;
+    $("#view-purchases-shortcut").onclick=showPurchases;
+    $("#view-history").onclick=showHistory;
+    $$("[data-go]",content).forEach(b=>b.onclick=()=>navigate(b.dataset.go));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -140,23 +175,44 @@ async function showHistory(){
 async function showIssues(){
   loading();const revision=state.viewRevision;
   try{
-    const items=await api("/api/issues");if(revision!==state.viewRevision)return;
-    let body=items.map(function(i){const active=!["RESOLVED","CLOSED"].includes(i.status);return '<div class="row"><button class="row-open" data-issue-open="'+esc(i.id)+'"><div class="row-title">'+esc(i.title)+'</div><div class="row-meta">'+esc(i.asset_name)+" · detected "+fmtDate(i.detected_at)+'</div><div class="row-note">'+esc(i.description||"")+'</div></button><div class="row-actions">'+badge(i.severity)+badge(i.status)+(active?'<button class="button" data-repair="'+esc(i.id)+'">Repair</button><button class="button" data-resolve="'+esc(i.id)+'">Resolve</button>':"")+"</div></div>"}).join("");
-    content.innerHTML='<div class="hero"><div><p class="eyebrow">Problem register</p><h2>Issues</h2><p>Resolved history stays attached to the home.</p></div><div class="hero-actions"><button class="primary-button" id="new-issue">Report issue</button></div></div><section class="card"><div class="card-body rows">'+(body||'<div class="empty">No issues recorded.</div>')+"</div></section>";
+    const [items,assets]=await Promise.all([api("/api/issues"),api("/api/assets")]);
+    if(revision!==state.viewRevision)return;
+    state.assets=assets;
+    let body=items.map(function(i){const active=!["RESOLVED","CLOSED"].includes(i.status);return '<div class="row"><button class="row-open" data-issue-open="'+esc(i.id)+'"><div class="row-title">'+esc(i.title)+'</div><div class="row-meta">'+esc(i.asset_name)+" · "+fmtDate(i.detected_at)+'</div><div class="row-note">'+esc(i.description||"")+'</div></button><div class="row-actions">'+badge(i.severity)+badge(i.status)+(active?'<button class="button" data-repair="'+esc(i.id)+'">Repair</button><button class="button" data-resolve="'+esc(i.id)+'">Resolve</button>':"")+"</div></div>"}).join("");
+    if(!items.length) {
+      content.innerHTML=emptyState(assets.length?"No issues recorded.":"Start with an asset.",
+        assets.length?"Report an issue when something needs attention.":"Register an appliance or fixture before reporting a problem.",
+        assets.length?'<button class="primary-button" id="new-issue">Report issue</button>':'<button class="primary-button" id="new-asset">Register asset</button>');
+      const report=$("#new-issue");if(report)report.onclick=openIssueForm;
+      const asset=$("#new-asset");if(asset)asset.onclick=()=>openAssetForm();
+      return;
+    }
+    content.innerHTML='<div class="hero"><div class="hero-actions"><button class="primary-button" id="new-issue">Report issue</button></div></div><section class="card"><div class="card-body rows">'+body+'</div></section>';
     $("#new-issue").onclick=openIssueForm;
-    $$("[data-resolve]").forEach(function(b){b.onclick=function(){openResolveForm(items.find(function(i){return i.id===b.dataset.resolve}))}});
-    $$("[data-repair]").forEach(function(b){b.onclick=function(){openRepairForm(items.find(function(i){return i.id===b.dataset.repair}))}});
-    $$("[data-issue-open]",content).forEach(function(b){b.onclick=function(){openIssue(items.find(function(i){return i.id===b.dataset.issueOpen}))}})
+    $$("[data-resolve]",content).forEach(b=>b.onclick=()=>openResolveForm(items.find(i=>i.id===b.dataset.resolve)));
+    $$("[data-repair]",content).forEach(b=>b.onclick=()=>openRepairForm(items.find(i=>i.id===b.dataset.repair)));
+    $$("[data-issue-open]",content).forEach(b=>b.onclick=()=>openIssue(items.find(i=>i.id===b.dataset.issueOpen)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
 async function showRepairs(){
   loading();const revision=state.viewRevision;
   try{
-    const items=await api("/api/repairs");if(revision!==state.viewRevision)return;
-    const body=items.map(function(r){return '<div class="row"><button class="row-open" data-repair-open="'+esc(r.id)+'"><div class="row-title">'+esc(r.title)+'</div><div class="row-meta">'+esc(r.asset_name)+" · "+fmtDate(r.repair_date)+(r.contractor?" · "+esc(r.contractor):"")+'</div><div class="row-note">'+esc(r.outcome||r.description||"")+'</div></button><div class="row-actions"><span class="money">'+money(r.cost_cents)+"</span>"+(r.issue_title?'<span class="badge">ISSUE LINKED</span>':"")+"</div></div>"}).join("");
-    content.innerHTML='<div class="hero"><div><p class="eyebrow">Permanent history</p><h2>Repairs</h2><p>What was fixed, when, by whom and what it cost.</p></div><div class="hero-actions"><button class="primary-button" id="new-repair">Record repair</button></div></div><section class="card"><div class="card-body rows">'+(body||'<div class="empty">No repair records yet.</div>')+"</div></section>";
-    $("#new-repair").onclick=function(){openRepairForm()};$$("[data-repair-open]",content).forEach(function(b){b.onclick=function(){openRepair(items.find(function(r){return r.id===b.dataset.repairOpen}))}})
+    const [items,assets]=await Promise.all([api("/api/repairs"),api("/api/assets")]);
+    if(revision!==state.viewRevision)return;
+    state.assets=assets;
+    if(!items.length){
+      content.innerHTML=emptyState(assets.length?"No repairs yet.":"Start with an asset.",
+        assets.length?"When something gets fixed, record the work and cost here.":"Add an appliance or fixture before recording its repair.",
+        assets.length?'<button class="primary-button" id="new-repair">Record repair</button>':'<button class="primary-button" id="new-asset">Register asset</button>');
+      const repair=$("#new-repair");if(repair)repair.onclick=()=>openRepairForm();
+      const asset=$("#new-asset");if(asset)asset.onclick=()=>openAssetForm();
+      return;
+    }
+    const body=items.map(r=>'<div class="row"><button class="row-open" data-repair-open="'+esc(r.id)+'"><div class="row-title">'+esc(r.title)+'</div><div class="row-meta">'+esc(r.asset_name)+" · "+fmtDate(r.repair_date)+(r.contractor?" · "+esc(r.contractor):"")+'</div><div class="row-note">'+esc(r.outcome||r.description||"")+'</div></button><div class="row-actions"><span class="money">'+money(r.cost_cents)+"</span>"+(r.issue_title?'<span class="badge">ISSUE LINKED</span>':"")+"</div></div>").join("");
+    content.innerHTML='<div class="hero"><div class="hero-actions"><button class="primary-button" id="new-repair">Record repair</button></div></div><section class="card"><div class="card-body rows">'+body+'</div></section>';
+    $("#new-repair").onclick=()=>openRepairForm();
+    $$("[data-repair-open]",content).forEach(b=>b.onclick=()=>openRepair(items.find(r=>r.id===b.dataset.repairOpen)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -203,17 +259,31 @@ async function openAssetForm(existing){
 }
 
 function renderAssets(items){
+  if(!items.length){
+    const filtered=state.assets.length>0;
+    $("#asset-results").innerHTML=filtered?'<p class="quiet-status">No matching assets.</p>':
+      emptyState("Build your asset registry.","Track appliances, furniture and fixtures, with purchase details and maintenance history.",
+        '<button class="primary-button" id="asset-empty-create">Register asset</button>');
+    const add=$("#asset-empty-create");if(add)add.onclick=()=>openAssetForm();
+    return;
+  }
   $("#asset-results").innerHTML='<div class="table-wrap"><table><thead><tr><th>Asset</th><th>Condition</th><th>Health</th><th>System</th><th>Location</th><th>Purchase</th></tr></thead><tbody>'+items.map(function(a){return '<tr data-asset="'+esc(a.id)+'"><td><strong>'+esc(a.name)+'</strong><div class="row-meta">'+esc(a.manufacturer||"")+" "+esc(a.model||"")+'</div></td><td>'+badge(a.condition||"UNKNOWN")+"</td><td>"+badge(a.health)+"</td><td>"+esc(a.system_name)+"</td><td>"+esc(a.location||"—")+'</td><td>'+money(a.purchase_cost_cents)+"</td></tr>"}).join("")+"</tbody></table></div>";
-  $$("[data-asset]",$("#asset-results")).forEach(function(r){r.onclick=function(){openAsset(r.dataset.asset)}})
+  $$("[data-asset]",$("#asset-results")).forEach(r=>r.onclick=()=>openAsset(r.dataset.asset));
 }
+
 async function showAppliances(){
   loading();const revision=state.viewRevision;
   try{
-    state.assets=await api("/api/assets");if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="hero"><div><p class="eyebrow">Appliances & furniture</p><h2>Asset registry</h2><p>Condition, age, purchase information, faults, repairs and evidence.</p></div><div class="hero-actions"><button class="primary-button" id="new-asset">Register asset</button></div></div><div class="toolbar"><input class="search" id="asset-search" type="search" placeholder="Search assets, systems or rooms…"></div><div id="asset-results"></div>';
-    $("#new-asset").onclick=openAssetForm;renderAssets(state.assets);$("#asset-search").oninput=function(e){const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(function(a){return [a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(function(v){return String(v||"").toLowerCase().includes(q)})}))}
+    state.assets=await api("/api/assets");
+    if(revision!==state.viewRevision)return;
+    content.innerHTML=(state.assets.length?'<div class="hero"><div class="hero-actions"><button class="primary-button" id="new-asset">Register asset</button></div></div><div class="toolbar"><input class="search" id="asset-search" type="search" placeholder="Search assets…" aria-label="Search assets"></div>':'')+'<div id="asset-results"></div>';
+    const add=$("#new-asset");if(add)add.onclick=()=>openAssetForm();
+    renderAssets(state.assets);
+    const search=$("#asset-search");
+    if(search)search.oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))))};
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
+
 async function openAsset(id){
   try{
     const a=await api("/api/assets/"+encodeURIComponent(id));
@@ -224,7 +294,7 @@ async function openAsset(id){
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>')}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
     html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
-    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)openFile(doc)}})
+    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)openFile(doc)}})
   }catch(e){notify(e.message)}
 }
 
@@ -366,10 +436,17 @@ async function showFiles(){
   try{
     const docs=await api("/api/documents");
     if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links with preserved context.</p></div><div class="hero-actions"><button class="button" id="save-link">Save link</button><button class="primary-button" id="upload-file">Upload file</button></div></div><div class="toolbar"><input class="search" id="file-search" type="search" placeholder="Search files and associations…" aria-label="Search files"></div><div class="file-grid">'+(docs.map(function(d){const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.evidence_status||"ACTIVE")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"General home evidence")+" · "+fmtDate(d.occurred_at||d.created_at))+'</small>'+(d.evidence_reason?'<span class="file-reason">'+esc(d.evidence_reason)+'</span>':"")+'</button>'}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
-    $("#file-search").oninput=function(e){const q=e.target.value.toLowerCase().trim();$$("[data-file]",content).forEach(function(card){card.hidden=!card.textContent.toLowerCase().includes(q)})};
-    $("#save-link").onclick=function(){openLinkEvidenceForm()};$("#upload-file").onclick=function(){openUploadEvidenceForm()};
-    $$("[data-file]",content).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.file}))}});
+    if(!docs.length){
+      content.innerHTML=emptyState("Keep every file in one place.","Store receipts, manuals, images, videos and related household evidence.",
+        '<button class="primary-button" id="upload-file">Upload file</button><button class="button" id="save-link">Save link</button>');
+    }else{
+      content.innerHTML='<div class="hero"><div class="hero-actions"><button class="button" id="save-link">Save link</button><button class="primary-button" id="upload-file">Upload file</button></div></div><div class="toolbar"><input class="search" id="file-search" type="search" placeholder="Search files…" aria-label="Search files"></div><div class="file-grid">'+docs.map(function(d){const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"General evidence")+" · "+fmtDate(d.occurred_at||d.created_at))+'</small>'+(d.evidence_reason?'<span class="file-reason">'+esc(d.evidence_reason)+'</span>':"")+'</button>'}).join("")+'</div>';
+    }
+    const search=$("#file-search");
+    if(search)search.oninput=e=>{const q=e.target.value.toLowerCase().trim();$$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q)})};
+    $("#save-link").onclick=()=>openLinkEvidenceForm();
+    $("#upload-file").onclick=()=>openUploadEvidenceForm();
+    $$("[data-file]",content).forEach(b=>b.onclick=()=>openFile(docs.find(d=>d.id===b.dataset.file)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -377,7 +454,7 @@ function messageMarkup(m){
   return '<article class="message '+m.role+'"><div class="message-role">'+(m.role==="user"?"You":"Homely")+'</div><p>'+esc(m.text)+'</p>'+(m.proposals||[]).map(function(p){return '<div class="proposal"><strong>'+esc(p.preview.title)+'</strong><div class="row-meta">'+esc(p.preview.summary)+'</div><div class="row-note">'+esc(p.reason)+'</div>'+(p.status==="PROPOSED"?'<div class="proposal-actions"><button class="button" data-reject="'+esc(p.transactionId)+'">Reject</button><button class="primary-button" data-approve="'+esc(p.transactionId)+'">Approve</button></div>':'<div class="row-meta">'+esc(p.status)+"</div>")+"</div>"}).join("")+"</article>"
 }
 function renderChat(){
-  chatBody.innerHTML=state.agentMessages.length?state.agentMessages.map(messageMarkup).join(""):'<div class="chat-empty">What needs attention?</div>';
+  chatBody.innerHTML=state.agentMessages.length?state.agentMessages.map(messageMarkup).join(""):'<div class="chat-empty">Ask about your home.</div>';
   $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
   $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
   chatBody.scrollTop=chatBody.scrollHeight
@@ -437,7 +514,26 @@ async function selectView(view){
 function navigate(view,replace){view=normalizeView(view);const url=view==="home"?"/":"/?view="+encodeURIComponent(view);if(replace)history.replaceState({view:view},"",url);else history.pushState({view:view},"",url);void selectView(view)}
 nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.dataset.view,false)};
 window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
-$("#chat-open").onclick=function(){chatRail.classList.add("open")};$("#chat-close").onclick=function(){if(state.stopVoice)state.stopVoice();chatRail.classList.remove("open")};
+function openChat(){
+  chatRail.classList.add("open");
+  chatRail.setAttribute("aria-hidden","false");
+  $("#chat-backdrop").hidden=false;
+  $("#chat-open").setAttribute("aria-expanded","true");
+  $("#chat-trigger").setAttribute("aria-expanded","true");
+  chatInput.focus();
+}
+function closeChat(){
+  if(state.stopVoice)state.stopVoice();
+  chatRail.classList.remove("open");
+  chatRail.setAttribute("aria-hidden","true");
+  $("#chat-backdrop").hidden=true;
+  $("#chat-open").setAttribute("aria-expanded","false");
+  $("#chat-trigger").setAttribute("aria-expanded","false");
+}
+$("#chat-open").onclick=openChat;
+$("#chat-trigger").onclick=openChat;
+$("#chat-close").onclick=closeChat;
+$("#chat-backdrop").onclick=closeChat;
 $("#refresh-view").onclick=function(){viewPanels.clear();state.needsReload=true;void selectView(state.view)};
 async function openHouseholdSettings(){
   try{
@@ -556,5 +652,5 @@ async function bootstrap(){
   }
 }
 void bootstrap();
-window.addEventListener("keydown",function(e){if(e.key==="Escape"&&!modal.open&&!viewer.open){if(state.stopVoice)state.stopVoice();chatRail.classList.remove("open")}});
+window.addEventListener("keydown",function(e){if(e.key==="Escape"&&!modal.open&&!viewer.open){closeChat()}});
 
