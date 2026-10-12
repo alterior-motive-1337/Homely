@@ -34,7 +34,7 @@ test("email-bound invitations permit only the invited Google identity and can be
     assert.equal(listMembers(db,owner).length,2);
     assert.throws(()=>inviteMember(db,owner,"member@test.example","MEMBER"),/already a member/);
     assert.equal(listHouseholds(db,member).length,1);
-    assert.throws(()=>removeMember(db,member,"owner"),(err:unknown)=>err instanceof DomainError&&err.status===403);
+    assert.throws(()=>removeMember(db,{...member,homeId:"home-hawthorn",role:"VIEWER"},"owner"),(err:unknown)=>err instanceof DomainError&&err.status===403);
     assert.deepEqual(renameHome(db,owner,"The new name"),{id:"home-hawthorn",name:"The new name"});
     assert.deepEqual(removeMember(db,owner,"member"),{removed:true});
     assert.equal(listMembers(db,owner).length,1);
