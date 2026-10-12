@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { openDatabase } from "../src/db.js";
+import fs from "node:fs";
+import path from "node:path";
+import { tmpdir } from "node:os";
+import { migrate, openDatabase } from "../src/db.js";
 import { createTestDatabase } from "./helpers.js";
 
 test("missing Turso credentials stop startup before creating any database", () => {
@@ -34,4 +37,21 @@ test("database results contain data columns without libSQL query metadata", () =
     assert.deepEqual(db.prepare("SELECT 42 AS answer").get(), { answer: 42 });
     assert.deepEqual(db.prepare("SELECT 42 AS answer").all(), [{ answer: 42 }]);
   } finally { db.close(); }
+});
+
+test("migration errors remain visible when the remote driver also rejects rollback", () => {
+  const db = createTestDatabase();
+  const dir = fs.mkdtempSync(path.join(tmpdir(), "homely-migration-"));
+  const migrationError = new Error("original remote SQL failure");
+  const rollbackError = new Error('InvalidParserState("Init")');
+  fs.writeFileSync(path.join(dir, "001_failure.sql"), "BROKEN_SQL;");
+  try {
+    assert.throws(() => migrate({ ...db, exec(sql) {
+      if (sql === "BROKEN_SQL;") throw migrationError;
+      if (sql === "ROLLBACK;") throw rollbackError;
+      return db.exec(sql);
+    } }, dir), error => error instanceof AggregateError &&
+      error.message.includes("001_failure.sql") && error.errors[0] === migrationError && error.errors[1] === rollbackError);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count, 0);
+  } finally { db.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

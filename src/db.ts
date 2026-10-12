@@ -95,8 +95,11 @@ export function migrate(db: HomelyDatabase, migrationsDir = config.migrationsDir
       mark.run(file, new Date().toISOString());
       db.exec("COMMIT;");
     } catch (error) {
-      db.exec("ROLLBACK;");
-      throw error;
+      try { db.exec("ROLLBACK;"); }
+      catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], `Migration ${file} failed; rollback also failed.`);
+      }
+      throw new Error(`Migration ${file} failed.`, { cause: error });
     }
   }
 }
