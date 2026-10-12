@@ -142,13 +142,16 @@ export class GoogleAuthentication implements AuthGateway {
     return {enabled:this.enabled,authenticated:!!user,provider:"google",setupRequired:!this.enabled,user};
   }
   private user(req: http.IncomingMessage): AuthUser | null {
+    // Removing or changing OAuth configuration immediately locks out stale sessions.
+    if(!this.enabled)return null;
     const token=cookies(req).get(SESSION_COOKIE);
     if(!token || !/^[\w-]{42,60}$/.test(token))return null;
     const row=this.db.prepare(`SELECT u.id,u.email,u.display_name FROM auth_sessions s
       JOIN auth_users u ON u.id=s.user_id
       JOIN home_owners o ON o.user_id=u.id
       WHERE s.token_hash=? AND s.expires_at>? LIMIT 1`).get(hash(token),new Date().toISOString());
-    return row?{id:String(row.id),email:String(row.email),name:String(row.display_name)}:null;
+    if(!row || String(row.email).trim().toLowerCase()!==this.settings.allowedEmail.trim().toLowerCase())return null;
+    return {id:String(row.id),email:String(row.email),name:String(row.display_name)};
   }
   requireUser(req: http.IncomingMessage): AuthUser {
     const user=this.user(req);
