@@ -224,7 +224,7 @@ async function openAsset(id){
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>')}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
     html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
-    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)openFile(doc)}})
+    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)openFile(doc)}})
   }catch(e){notify(e.message)}
 }
 
@@ -470,7 +470,7 @@ async function openHouseholdSettings(){
         catch(error){notify(error.message)}
       };
     };
-    $("[data-switch]",modalBody).forEach(button=>button.onclick=async()=>{
+    $$("[data-switch]",modalBody).forEach(button=>button.onclick=async()=>{
       try{await api("/api/homes/active",{method:"POST",body:{homeId:button.dataset.switch}});window.location.assign("/")}
       catch(e){notify(e.message)}
     });
@@ -491,11 +491,11 @@ async function openHouseholdSettings(){
         $("#copy-invite").onclick=async()=>{try{await navigator.clipboard.writeText(link);notify("Invitation copied.")}catch(_){$("#invite-link").select();notify("Select and copy the invitation link.")}};
       }catch(error){notify(error.message)}
     };
-    $("[data-revoke]",modalBody).forEach(button=>button.onclick=async()=>{
+    $$("[data-revoke]",modalBody).forEach(button=>button.onclick=async()=>{
       try{await api("/api/homes/invitations/"+encodeURIComponent(button.dataset.revoke),{method:"DELETE"});closeModal();await openHouseholdSettings()}
       catch(error){notify(error.message)}
     });
-    $("[data-remove]",modalBody).forEach(button=>button.onclick=async()=>{
+    $$("[data-remove]",modalBody).forEach(button=>button.onclick=async()=>{
       if(!confirm("Remove this member's access to the household?"))return;
       try{await api("/api/homes/members/"+encodeURIComponent(button.dataset.remove),{method:"DELETE"});closeModal();await openHouseholdSettings()}
       catch(error){notify(error.message)}
