@@ -1,20 +1,18 @@
 # Render deployment
 
-Use the existing Homely Node web service and the repository's `main` branch.
+Use the existing Homely Node web service and `main` branch. Build with `npm ci && npm run build`, start with `npm start`, and use `/api/health` for readiness. Node 24.x is pinned in `.node-version`; Render supplies the runtime port and the app selects its host automatically.
 
-- Build: `npm ci && npm run build`
-- Start: `npm start`
-- Health: `/api/health`
-- Host: `0.0.0.0`
-- Node: 24.x
+Only four application variables are configured:
 
-The POC has no password gate. The obsolete `AUTH_ENABLED`, owner-password/session and backup settings are ignored by the current application. Google Drive is disabled by default and is optional evidence selection only.
+- `TURSO_DATABASE_URL`
+- `TURSO_AUTH_TOKEN`
+- `GROQ_API_KEY`
+- `EXA_API_KEY`
 
-For chat, set `AI_ENABLED=true`, `GROQ_API_KEY`, and optionally `GROQ_MODEL` (default `openai/gpt-oss-120b`). Set `EXA_API_KEY` for web search and page reading. There is no Firecrawl setup and no external MCP service.
+Turso is mandatory. Missing credentials, an invalid local/file database URL or a failed initial synchronization stop startup. There is no disposable database fallback. Health reports `durability: "TURSO"` after the database is ready. The replica cache location is managed by the application.
 
-For durable records on the free service, set **both** `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. `/api/health` must report `durability: "TURSO"`. Homely syncs its embedded replica before migrations; remote failures stop startup. Existing local records need an explicit migration before changing database mode.
+Groq uses `openai/gpt-oss-120b` and activates when its key is present. Exa supplies search and content extraction. No feature/model/Drive/backup/authentication switches remain. Remove obsolete manually configured entries while preserving the four credentials and platform-managed variables.
 
-With neither Turso variable configured, the app runs a disposable local POC. Render's ephemeral filesystem does not preserve it across redeploys. Do not describe that mode as durable household storage.
+On an existing Blueprint, `sync: false` does not supply a missing secret; set the four credentials in Render before deploying. Do not replace the complete environment blindly, which could discard active credentials.
 
-After a deployment, verify the actual deployed commit, open all five pages, check the house favicon response, and confirm `/api/integrations/status` identifies Groq. A healthy old deployment can still show the wrong architecture: readiness alone does not prove that the requested commit is live.
-
+After deployment, verify the actual deployed commit, all five pages, the stick-house favicon and database readiness. A successful build alone does not establish a live Turso connection.

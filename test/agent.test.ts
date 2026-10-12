@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { migrate, openDatabase } from "../src/db.js";
+import { migrate } from "../src/db.js";
+import { createTestDatabase } from "./helpers.js";
 import { seedDemo } from "../src/seed.js";
 import { GroqAgentProvider } from "../src/agent/groqProvider.js";
 
@@ -9,7 +10,7 @@ function response(id: string, output: unknown[], outputText = "") {
 }
 
 test("Groq provider executes grounded reads and returns final text", async () => {
-  const db = openDatabase(":memory:");
+  const db = createTestDatabase();
   migrate(db);
   seedDemo(db);
 
@@ -41,7 +42,7 @@ test("Groq provider executes grounded reads and returns final text", async () =>
 });
 
 test("Groq provider can only create an inert proposal", async () => {
-  const db = openDatabase(":memory:");
+  const db = createTestDatabase();
   migrate(db);
   seedDemo(db);
   const before = Number(db.prepare("SELECT COUNT(*) AS count FROM maintenance_rules").get()?.count ?? 0);
@@ -86,7 +87,7 @@ test("Groq provider can only create an inert proposal", async () => {
 
 
 test("Groq provider carries conversation history without previous_response_id", async () => {
-  const db = openDatabase(":memory:");
+  const db = createTestDatabase();
   migrate(db);
   seedDemo(db);
 
@@ -114,3 +115,4 @@ test("Groq provider carries conversation history without previous_response_id", 
   ]);
   db.close();
 });
+

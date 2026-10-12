@@ -21,7 +21,7 @@ export interface AgentRuntime {
 }
 
 export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
-  const enabled = config.aiEnabled;
+  const enabled = true;
   const research = new HomeResearch();
   const configured = Boolean(config.groqApiKey);
   const model = config.groqModel;

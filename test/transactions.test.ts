@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { migrate, openDatabase } from "../src/db.js";
+import { migrate } from "../src/db.js";
+import { createTestDatabase } from "./helpers.js";
 import { seedDemo } from "../src/seed.js";
 import { commitTransaction, proposeTransaction, undoTransaction } from "../src/domain/transactions.js";
 
 function demoDb() {
-  const db = openDatabase(":memory:");
+  const db = createTestDatabase();
   migrate(db);
   seedDemo(db);
   return db;
@@ -100,6 +101,50 @@ test("completing recurring maintenance advances due date and undo restores it", 
   assert.equal(restored?.last_completed_at, before?.last_completed_at);
   assert.equal(restored?.next_due_at, before?.next_due_at);
   db.close();
+});
+
+test("undo accepts legacy libSQL metadata and unordered snapshot keys", () => {
+  const db = demoDb();
+  try {
+    const proposal = proposeTransaction(db, {
+      actionType: "COMPLETE_MAINTENANCE", reason: "Legacy snapshot compatibility",
+      payload: { maintenanceId: "maint-gate", completedAt: "2026-10-01" }
+    });
+    const txId = String(proposal.transaction?.id);
+    commitTransaction(db, txId);
+    for (const change of db.prepare("SELECT id, after_json FROM transaction_changes WHERE transaction_id = ?").all(txId)) {
+      const snapshot = JSON.parse(String(change.after_json));
+      const legacy = { _metadata: { duration: 0.123 }, ...Object.fromEntries(Object.entries(snapshot).reverse()) };
+      db.prepare("UPDATE transaction_changes SET after_json = ? WHERE id = ?").run(JSON.stringify(legacy), String(change.id));
+    }
+    assert.equal(undoTransaction(db, txId).original?.status, "REVERSED");
+  } finally { db.close(); }
+});
+
+test("undo rejects changed records and rolls back every partial reversal", () => {
+  for (const target of ["timeline", "maintenance"]) {
+    const db = demoDb();
+    try {
+      const proposal = proposeTransaction(db, {
+        actionType: "COMPLETE_MAINTENANCE", reason: "Protect changes made after commit",
+        payload: { maintenanceId: "maint-gate", completedAt: "2026-10-01" }
+      });
+      const txId = String(proposal.transaction?.id);
+      commitTransaction(db, txId);
+      const event = db.prepare("SELECT entity_id FROM transaction_changes WHERE transaction_id = ? AND entity_type = 'timeline_event'").get(txId);
+      if (target === "timeline") {
+        db.prepare("UPDATE timeline_events SET summary = ? WHERE id = ?").run("Later correction", String(event?.entity_id));
+      } else {
+        db.prepare("UPDATE maintenance_rules SET next_due_at = ? WHERE id = 'maint-gate'").run("2027-04-01");
+      }
+      assert.throws(() => undoTransaction(db, txId), /changed after this transaction/);
+      assert.equal(db.prepare("SELECT status FROM transactions WHERE id = ?").get(txId)?.status, "COMMITTED");
+      assert.ok(db.prepare("SELECT id FROM timeline_events WHERE id = ?").get(String(event?.entity_id)));
+      assert.equal(db.prepare("SELECT COUNT(*) AS count FROM transactions WHERE reversal_of = ?").get(txId)?.count, 0);
+      assert.equal(db.prepare("SELECT next_due_at FROM maintenance_rules WHERE id = 'maint-gate'").get()?.next_due_at,
+        target === "maintenance" ? "2027-04-01" : "2027-03-30");
+    } finally { db.close(); }
+  }
 });
 
 
@@ -285,3 +330,4 @@ test("project creation and status changes are transactional and reversible", () 
   );
   db.close();
 });
+

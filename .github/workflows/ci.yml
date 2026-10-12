@@ -26,11 +26,10 @@ jobs:
           if ! command -v google-chrome >/dev/null 2>&1; then
             npx playwright install --with-deps chromium
           fi
-      - run: npm run db:reset
       - name: Start Homely and verify real state
         shell: bash
         run: |
-          node dist/src/server.js > /tmp/homely.log 2>&1 &
+          node dist/test/start-server.js > /tmp/homely.log 2>&1 &
           echo $! > /tmp/homely.pid
           for i in {1..20}; do
             if curl --fail --silent http://127.0.0.1:4173/api/health >/dev/null; then
@@ -49,7 +48,7 @@ jobs:
           const health = await (await get("/api/health")).json();
           assert(health.ok === true, "health endpoint not ready");
           assert(health.database === "OK", "database readiness missing");
-          assert(["LOCAL","TURSO"].includes(health.durability), "durability readiness missing");
+          assert(health.durability === "TURSO", "durability readiness missing");
 
           const overview = await (await get("/api/overview")).json();
           assert(overview.home.name === "14 Hawthorn Residence", "seed home missing");
@@ -69,10 +68,9 @@ jobs:
           assert(tap.history.some((event) => event.title.includes("aerator cleaned")), "kitchen tap history missing");
 
           const integrations = await (await get("/api/integrations/status")).json();
-          assert(integrations.ai.available === false, "AI should be optional and disabled in CI");
+          assert(integrations.ai.available === false, "CI must not call paid providers");
           assert(integrations.ai.provider === "groq", "Groq provider status missing");
-          assert(integrations.googleDrive.available === false, "Drive should be optional and disabled in CI");
-          assert(integrations.googleDrive.connected === false, "Drive should not create credentials in CI");
+          assert(!("googleDrive" in integrations), "removed Drive integration must not appear in runtime status");
 
           const documents = await (await get("/api/documents")).json();
           assert(documents.length === 3, "expected three seeded documents");
@@ -103,7 +101,7 @@ jobs:
           const issuesBefore = (await (await get("/api/issues")).json()).length;
           const proposal = await post("/api/transactions/preview", {
             actionType: "REPORT_ISSUE",
-            reason: "CI verifies inert proposal and reversible commit.",
+            reason: "CI verifies inert proposal and permanent issue commit.",
             payload: {
               assetId: "asset-tap",
               title: "CI transaction issue",

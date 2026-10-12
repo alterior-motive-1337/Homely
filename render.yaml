@@ -8,22 +8,11 @@ services:
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
-      - key: NODE_VERSION
-        value: "24.21.0"
-      - key: HOST
-        value: "0.0.0.0"
-      - key: HOMELY_DB_PATH
-        value: "/tmp/homely/homely.db"
-      - key: AI_ENABLED
-        value: "true"
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: GROQ_MODEL
-        value: "openai/gpt-oss-120b"
       - key: EXA_API_KEY
         sync: false
-      - key: GOOGLE_DRIVE_ENABLED
-        value: "false"
-    # For durable state, add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in Render.
-    # With neither set, this free service is a disposable POC demo.
-

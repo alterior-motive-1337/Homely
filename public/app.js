@@ -249,58 +249,15 @@ async function openLinkEvidenceForm(){
   };
 }
 
-async function openDriveImport(file){
-  const results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
-  const options=results[0],issues=results[1],repairs=results[2],charges=results[3],purchases=results[4];
-  const optional=function(label,items,display){return '<option value="">'+esc(label)+'</option>'+items.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(display(x))+'</option>'}).join("")};
-  const issueOptions=optional("No linked issue",issues,function(x){return x.title+" · "+x.asset_name});
-  const repairOptions=optional("No linked repair",repairs,function(x){return x.title+" · "+x.asset_name});
-  const chargeOptions=optional("No linked charge",charges,function(x){return x.name+" · "+x.billing_cycle});
-  const purchaseOptions=optional("No linked purchase",purchases,function(x){return x.title+" · "+x.status});
-  const assetOptionsHtml='<option value="">No direct asset link</option>'+options;
-  openModal('<p class="eyebrow">Google Drive evidence</p><h2>Attach selected file</h2><div class="row-meta">'+esc(file.name)+' · '+esc(file.mimeType||"unknown type")+'</div><form class="form" id="drive-import-form"><div class="form-grid"><div class="field full"><label>Title</label><input name="title" maxlength="240" value="'+esc(file.name)+'" required></div><div class="field"><label>File type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>VIDEO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Evidence date</label><input type="date" name="occurredAt" value="'+today()+'" required></div><div class="field"><label>Status</label><select name="evidenceStatus"><option selected>ACTIVE</option><option>REFERENCE</option><option>ARCHIVED</option></select></div><div class="field full"><label>Asset</label><select name="assetId">'+assetOptionsHtml+'</select></div><div class="field full"><label>Issue</label><select name="issueId">'+issueOptions+'</select></div><div class="field full"><label>Repair</label><select name="repairId">'+repairOptions+'</select></div><div class="field full"><label>Recurring charge</label><select name="chargeId">'+chargeOptions+'</select></div><div class="field full"><label>Potential purchase</label><select name="purchaseCandidateId">'+purchaseOptions+'</select></div><div class="field full"><label>Provenance</label><input name="provenance" maxlength="1000" value="Selected by homeowner from Google Drive."></div><div class="field full"><label>Why keep this evidence?</label><textarea name="evidenceReason" maxlength="2000" placeholder="Warranty proof, repair invoice, before/after photo, product research…"></textarea></div><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" value="'+esc(file.webViewLink||"")+'"></div></div><div class="row-note">You can link the same evidence to an asset and the issue, repair, charge or purchase it explains.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview evidence</button></div></form>');
-  $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#drive-import-form").onsubmit=async function(e){
-    e.preventDefault();const d=new FormData(e.currentTarget);
-    await previewAction("ATTACH_DOCUMENT",{
-      assetId:d.get("assetId")||null,
-      issueId:d.get("issueId")||null,
-      repairId:d.get("repairId")||null,
-      chargeId:d.get("chargeId")||null,
-      purchaseCandidateId:d.get("purchaseCandidateId")||null,
-      title:d.get("title"),
-      documentType:d.get("documentType"),
-      provider:"GOOGLE_DRIVE",
-      providerFileId:file.id,
-      mimeType:file.mimeType,
-      webViewLink:file.webViewLink,
-      sourceUrl:d.get("sourceUrl")||null,
-      provenance:d.get("provenance"),
-      occurredAt:d.get("occurredAt"),
-      evidenceReason:d.get("evidenceReason"),
-      evidenceStatus:d.get("evidenceStatus")
-    },"Homeowner explicitly selected this file as household evidence.");
-  };
-}
-
 async function showFiles(){
   loading();const revision=state.viewRevision;
   try{
-    const both=await Promise.all([api("/api/documents"),api("/api/integrations/status")]),docs=both[0],integrations=both[1],drive=integrations.googleDrive;
+    const docs=await api("/api/documents");
     if(revision!==state.viewRevision)return;
-    const driveControls=drive&&drive.enabled&&drive.configured?(drive.connected?'<button class="button" id="drive-select">Select from Drive</button><button class="button" id="drive-disconnect">Disconnect</button>':'<button class="button" id="drive-connect">Connect Drive</button>'):"";
-    const driveActions='<button class="button" id="save-link">Save link</button>'+driveControls;
-    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links with preserved context.</p></div><div class="hero-actions">'+driveActions+'</div></div><div class="toolbar"><input class="search" id="file-search" type="search" placeholder="Search files and associations…" aria-label="Search files"></div><div class="file-grid">'+(docs.map(function(d){const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.evidence_status||"ACTIVE")+" · "+esc(d.provider||"")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"General home evidence")+" · "+fmtDate(d.occurred_at||d.created_at))+'</small>'+(d.evidence_reason?'<span class="file-reason">'+esc(d.evidence_reason)+'</span>':"")+'</button>'}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
+    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links with preserved context.</p></div><div class="hero-actions"><button class="button" id="save-link">Save link</button></div></div><div class="toolbar"><input class="search" id="file-search" type="search" placeholder="Search files and associations…" aria-label="Search files"></div><div class="file-grid">'+(docs.map(function(d){const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.evidence_status||"ACTIVE")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"General home evidence")+" · "+fmtDate(d.occurred_at||d.created_at))+'</small>'+(d.evidence_reason?'<span class="file-reason">'+esc(d.evidence_reason)+'</span>':"")+'</button>'}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
     $("#file-search").oninput=function(e){const q=e.target.value.toLowerCase().trim();$$("[data-file]",content).forEach(function(card){card.hidden=!card.textContent.toLowerCase().includes(q)})};
     $("#save-link").onclick=function(){openLinkEvidenceForm()};
-    if($("#drive-connect"))$("#drive-connect").onclick=function(){location.href="/api/google-drive/connect"};
-    if($("#drive-select"))$("#drive-select").onclick=function(){location.href="/api/google-drive/connect"};
-    if($("#drive-disconnect"))$("#drive-disconnect").onclick=async function(){await api("/api/google-drive/disconnect",{method:"POST"});notify("Google Drive disconnected. Existing file records were preserved.");await showFiles()};
     $$("[data-file]",content).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.file}))}});
-    const params=new URLSearchParams(location.search),driveError=params.get("driveError"),picked=params.get("drivePicked"),connected=params.get("driveConnected");
-    if(driveError){history.replaceState({view:"files"},"","/?view=files");notify("Google Drive selection was cancelled or failed.")}
-    else if(picked&&drive&&drive.connected){history.replaceState({view:"files"},"","/?view=files");const files=await api("/api/google-drive/files?ids="+encodeURIComponent(picked));if(files.length)await openDriveImport(files[0])}
-    else if(connected){history.replaceState({view:"files"},"","/?view=files");notify("Google Drive connected. Select a file to attach it to Homely.")}
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 

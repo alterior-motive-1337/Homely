@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from "node:sqlite";
+import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
+import type { SQLInputValue, SQLOutputValue } from "node:sqlite";
 import LibsqlDatabase from "libsql";
 import { config } from "./config.js";
 
@@ -15,26 +17,33 @@ export interface HomelyDatabase {
   };
 }
 
-export function openDatabase(dbPath?: string): HomelyDatabase {
-  const useTurso = dbPath === undefined && Boolean(config.tursoDatabaseUrl);
-  if (dbPath === undefined && Boolean(config.tursoDatabaseUrl) !== Boolean(config.tursoAuthToken)) {
-    throw new Error("Turso requires both TURSO_DATABASE_URL and TURSO_AUTH_TOKEN.");
+interface TursoConnection { url: string; authToken: string }
+type Replica = HomelyDatabase & { sync(): unknown };
+type ReplicaFactory = (filePath: string, options: { syncUrl: string; authToken: string }) => Replica;
+
+export function openDatabase(
+  connection: TursoConnection = { url: config.tursoDatabaseUrl, authToken: config.tursoAuthToken },
+  createReplica: ReplicaFactory = (filePath, options) => new LibsqlDatabase(filePath, options) as unknown as Replica
+): HomelyDatabase {
+  const url = connection.url.trim(), authToken = connection.authToken.trim();
+  if (!url || !authToken) throw new Error("Turso is required. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN.");
+  let parsed: URL;
+  try { parsed = new URL(url); }
+  catch { throw new Error("TURSO_DATABASE_URL must be a valid remote database URL."); }
+  if (!["libsql:", "https:"].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password) {
+    throw new Error("TURSO_DATABASE_URL must be a remote libsql:// or https:// URL.");
   }
-  // Keep the replica separate from any existing local SQLite database.
-  const filePath = dbPath ?? (useTurso ? config.dbPath + ".replica" : config.dbPath);
+  const databaseId = createHash("sha256").update(url).digest("hex").slice(0, 16);
+  const filePath = path.join(tmpdir(), "homely", databaseId + ".replica");
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  let db: HomelyDatabase;
-  if (useTurso) {
-    const options = { syncUrl: config.tursoDatabaseUrl, authToken: config.tursoAuthToken };
-    const replica = new LibsqlDatabase(filePath, options);
-    try { replica.sync(); }
-    catch (error) { replica.close(); throw error; }
-    // libSQL implements the same narrow statement API used by the domain.
-    db = replica as unknown as HomelyDatabase;
-  } else {
-    db = new DatabaseSync(filePath);
+  const replica = createReplica(filePath, { syncUrl: url, authToken });
+  try {
+    replica.sync();
+    return initializeDatabase(replica);
+  } catch (error) {
+    replica.close();
+    throw error;
   }
-  return initializeDatabase(db);
 }
 
 export function initializeDatabase(db: HomelyDatabase): HomelyDatabase {
@@ -46,7 +55,25 @@ export function initializeDatabase(db: HomelyDatabase): HomelyDatabase {
       applied_at TEXT NOT NULL
     );
   `);
-  return db;
+  // libSQL adds query timing to get() results. It is not household record data.
+  const cleanRow = (row: Row): Row => Object.fromEntries(
+    Object.entries(row).filter(([key]) => key !== "_metadata")
+  );
+  return {
+    exec: (sql) => db.exec(sql),
+    close: () => db.close(),
+    prepare(sql) {
+      const statement = db.prepare(sql);
+      return {
+        all: (...params) => statement.all(...params).map(cleanRow),
+        get: (...params) => {
+          const row = statement.get(...params);
+          return row ? cleanRow(row) : undefined;
+        },
+        run: (...params) => statement.run(...params)
+      };
+    }
+  };
 }
 
 export function migrate(db: HomelyDatabase, migrationsDir = config.migrationsDir): void {

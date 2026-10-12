@@ -7,9 +7,8 @@ import { listIssues, listRepairs } from "../src/domain/repository.js";
 import { proposeTransaction, commitTransaction, undoTransaction } from "../src/domain/transactions.js";
 
 test("libSQL supports Homely migrations and permanent issue/repair transactions", () => {
-  const db = new Database(":memory:") as unknown as HomelyDatabase;
+  const db = initializeDatabase(new Database(":memory:") as unknown as HomelyDatabase);
   try {
-    initializeDatabase(db);
     migrate(db); seedDemo(db);
     const before = listIssues(db).length;
     const issue = proposeTransaction(db, { actionType: "REPORT_ISSUE", reason: "Driver compatibility check", payload: {

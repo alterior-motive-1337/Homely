@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
-import { URL } from "node:url";
+import { URL, pathToFileURL } from "node:url";
 import { config } from "./config.js";
-import { migrate, openDatabase } from "./db.js";
+import { migrate, openDatabase, type HomelyDatabase } from "./db.js";
 import { getAsset, getOverview, getProject, getTimeline, listAssets, listCharges, listDocuments, listIssues, listMaintenance, listProjects, listPurchaseCandidates, listRepairs, listSystems } from "./domain/repository.js";
 import {
   commitTransaction,
@@ -17,7 +17,6 @@ import {
 } from "./domain/transactions.js";
 import { hasHome, seedDemo } from "./seed.js";
 import { createAgentRuntime } from "./agent/runtime.js";
-import { GoogleDriveIntegration } from "./integrations/googleDrive.js";
 import { assertSameOrigin } from "./security/request.js";
 
 function securityHeaders(res: http.ServerResponse): void {
@@ -103,9 +102,7 @@ function serveStatic(res: http.ServerResponse, pathname: string) {
   return res.end(fs.readFileSync(filePath));
 }
 
-async function main(): Promise<void> {
-  const googleDrive = new GoogleDriveIntegration();
-  const db = openDatabase();
+export async function startServer(db: HomelyDatabase = openDatabase()): Promise<http.Server> {
   migrate(db);
   const seeded = !hasHome(db);
   if (seeded) seedDemo(db);
@@ -119,7 +116,7 @@ async function main(): Promise<void> {
       assertSameOrigin(req);
       if (req.method === "GET" && url.pathname === "/api/health") {
         db.prepare("SELECT 1 AS ok").get();
-        return sendJson(res, 200, { ok: true, service: "Homely", database: "OK", mode: "POC", durability: config.tursoDatabaseUrl ? "TURSO" : "LOCAL" });
+        return sendJson(res, 200, { ok: true, service: "Homely", database: "OK", mode: "POC", durability: "TURSO" });
       }
 
       if (req.method === "GET" && url.pathname === "/api/auth/status") {
@@ -155,48 +152,11 @@ async function main(): Promise<void> {
       if (req.method === "GET" && url.pathname === "/api/integrations/status") {
         return sendJson(res, 200, {
           mode: "POC",
-          storage: { provider: config.tursoDatabaseUrl ? "TURSO" : "LOCAL" },
+          storage: { provider: "TURSO" },
           ai: agentRuntime.status,
           research: agentRuntime.researchStatus,
-          voice: { input: "BROWSER" },
-          googleDrive: googleDrive.status
+          voice: { input: "BROWSER" }
         });
-      }
-
-      if (req.method === "GET" && url.pathname === "/api/google-drive/connect") {
-        const location = googleDrive.getAuthorizationUrl();
-        res.writeHead(302, { location });
-        return res.end();
-      }
-
-      if (req.method === "GET" && url.pathname === "/api/google-drive/callback") {
-        const error = url.searchParams.get("error");
-        if (error) {
-          res.writeHead(302, { location: "/?view=documents&driveError=" + encodeURIComponent(error) });
-          return res.end();
-        }
-
-        const code = url.searchParams.get("code");
-        if (!code) throw new DomainError("Google Drive authorization code is missing.");
-        await googleDrive.exchangeCode(code);
-
-        const picked = url.searchParams.get("picked_file_ids") ?? "";
-        const location = picked
-          ? "/?view=documents&drivePicked=" + encodeURIComponent(picked)
-          : "/?view=documents&driveConnected=1";
-        res.writeHead(302, { location });
-        return res.end();
-      }
-
-      if (req.method === "GET" && url.pathname === "/api/google-drive/files") {
-        const ids = (url.searchParams.get("ids") ?? "").split(",").map((id) => id.trim()).filter(Boolean);
-        if (!ids.length) throw new DomainError("No Drive file IDs were selected.");
-        return sendJson(res, 200, await googleDrive.getSelectedFiles(ids));
-      }
-
-      if (req.method === "POST" && url.pathname === "/api/google-drive/disconnect") {
-        googleDrive.disconnect();
-        return sendJson(res, 200, { connected: false });
       }
 
       if (req.method === "POST" && url.pathname === "/api/agent/respond") {
@@ -291,13 +251,20 @@ async function main(): Promise<void> {
   process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
   process.once("SIGINT", () => { void shutdown("SIGINT"); });
 
-  server.listen(config.port, config.host, () => {
-    console.log(`Homely running at http://${config.host}:${config.port}`);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(config.port, config.host, () => {
+      console.log(`Homely running at http://${config.host}:${config.port}`);
+      resolve();
+    });
   });
+  return server;
 }
 
-main().catch((error) => {
-  console.error("Homely failed to start:", error);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  startServer().catch((error) => {
+    console.error("Homely failed to start:", error);
+    process.exit(1);
+  });
+}
 

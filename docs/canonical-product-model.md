@@ -28,5 +28,7 @@ The agent may not directly commit authoritative state. Mutations remain **propos
 
 Primary navigation: Home, Issues, Repairs, Appliances, Files. A compact Homely chat surface should remain available throughout normal tabs. The dedicated file viewer is intentionally simple and does not need AI controls.
 
+Turso is the required authoritative database; the local replica is a disposable cache. Only Turso URL/token, Groq key and Exa key require application configuration.
+
 The UI should be minimal, modern and readable, prioritizing current home state, active problems and evidence rather than visual noise. Home keeps compact summaries; Charges, Potential Purchases and full History open from Home. The POC opens without a shared-password gate. Branding is a stick-house outline, including the browser-tab favicon.
 

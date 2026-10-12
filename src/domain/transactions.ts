@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { HomelyDatabase } from "../db.js";
 
 export type ActionType =
@@ -963,8 +964,12 @@ function parseJson(value: unknown): JsonRecord | null {
 }
 
 function sameRow(current: unknown, expected: JsonRecord | null): boolean {
-  if (!current || !expected) return false;
-  return JSON.stringify(current) === JSON.stringify(expected);
+  if (!current || typeof current !== "object" || !expected) return false;
+  // Older snapshots may contain libSQL timing metadata; preserve every data field.
+  const recordData = (row: object) => Object.fromEntries(
+    Object.entries(row).filter(([key]) => key !== "_metadata")
+  );
+  return isDeepStrictEqual(recordData(current), recordData(expected));
 }
 
 function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, changedAt: string): void {
@@ -1153,3 +1158,4 @@ export function listTransactions(db: HomelyDatabase, limit = 50) {
     LIMIT ?
   `).all(limit);
 }
+
