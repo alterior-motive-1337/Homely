@@ -540,12 +540,19 @@ async function selectView(view){
 function navigate(view,replace){view=normalizeView(view);const url=view==="home"?"/":"/?view="+encodeURIComponent(view);if(replace)history.replaceState({view:view},"",url);else history.pushState({view:view},"",url);void selectView(view)}
 nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.dataset.view,false)};
 window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
+function syncAssistantAccessibility(){
+  const docked=window.matchMedia("(min-width: 960px)").matches;
+  chatRail.setAttribute("aria-hidden",String(!(docked||chatRail.classList.contains("open"))));
+  if(docked)$("#chat-backdrop").hidden=true;
+}
+window.addEventListener("resize",syncAssistantAccessibility);
 function openChat(){
   chatRail.classList.add("open");
   chatRail.setAttribute("aria-hidden","false");
   $("#chat-backdrop").hidden=false;
   $("#chat-open").setAttribute("aria-expanded","true");
   $("#chat-trigger").setAttribute("aria-expanded","true");
+  syncAssistantAccessibility();
   chatInput.focus();
 }
 function closeChat(){
@@ -555,6 +562,7 @@ function closeChat(){
   $("#chat-backdrop").hidden=true;
   $("#chat-open").setAttribute("aria-expanded","false");
   $("#chat-trigger").setAttribute("aria-expanded","false");
+  syncAssistantAccessibility();
 }
 $("#chat-open").onclick=openChat;
 $("#chat-trigger").onclick=openChat;
@@ -670,7 +678,7 @@ async function bootstrap(){
       }catch(error){notify(error.message)}
     };
     const initial=normalizeView(new URLSearchParams(location.search).get("view")||"home");
-    void refreshStatus();void selectView(initial);renderChat();setupVoiceInput();
+    syncAssistantAccessibility();void refreshStatus();void selectView(initial);renderChat();setupVoiceInput();
   }catch(error){
     $("#app-shell").hidden=true;$("#auth-screen").hidden=false;
     $("#auth-message").textContent=error.message;
