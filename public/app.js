@@ -15,7 +15,7 @@ $("#today").textContent=new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"sh
 
 async function api(path,options){
   const init=Object.assign({},options||{});
-  if(init.body&&typeof init.body!=="string"){init.headers=Object.assign({"content-type":"application/json"},init.headers||{});init.body=JSON.stringify(init.body)}
+  if(init.body&&typeof init.body!=="string"&&!(init.body instanceof Blob)){init.headers=Object.assign({"content-type":"application/json"},init.headers||{});init.body=JSON.stringify(init.body)}
   const res=await fetch(path,init);let data=null;try{data=await res.json()}catch(_){}
   if(!res.ok)throw new Error(data&&data.error?data.error:"Request failed: "+res.status);
   return data
@@ -159,14 +159,14 @@ function bindEvidence(docs){$$("[data-evidence]",modalBody).forEach(function(b){
 async function openIssue(issue){
   if(!issue)return;
   try{const results=await Promise.all([api("/api/documents"),api("/api/assets/"+encodeURIComponent(issue.asset_id))]),docs=results[0].filter(function(d){return d.issue_id===issue.id}),history=(results[1].history||[]).filter(function(e){return e.issue_id===issue.id});
-    openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issue.status)+badge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"No description recorded.")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
-    bindEvidence(docs);$("#issue-asset").onclick=function(){openAsset(issue.asset_id)};if($("#issue-repair"))$("#issue-repair").onclick=function(){openRepairForm(issue)};if($("#issue-resolve"))$("#issue-resolve").onclick=function(){openResolveForm(issue)};
+    openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issue.status)+badge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"No description recorded.")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-attach">Attach file</button><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
+    bindEvidence(docs);$("#issue-attach").onclick=function(){openUploadEvidenceForm({assetId:issue.asset_id,issueId:issue.id})};$("#issue-asset").onclick=function(){openAsset(issue.asset_id)};if($("#issue-repair"))$("#issue-repair").onclick=function(){openRepairForm(issue)};if($("#issue-resolve"))$("#issue-resolve").onclick=function(){openResolveForm(issue)};
   }catch(e){notify(e.message)}
 }
 async function openRepair(repair){
   if(!repair)return;
   try{const docs=(await api("/api/documents")).filter(function(d){return d.repair_id===repair.id});
-    openModal('<p class="eyebrow">Repair · '+esc(repair.asset_name)+'</p><h2>'+esc(repair.title)+'</h2><div class="detail-grid">'+[["Date",fmtDate(repair.repair_date)],["Cost",money(repair.cost_cents)],["Contractor",repair.contractor||"—"]].map(function(pair){return '<div class="detail"><span>'+esc(pair[0])+'</span><strong>'+esc(pair[1])+'</strong></div>'}).join("")+'</div><div class="detail-section"><h3>Work performed</h3><p>'+esc(repair.description||"No description recorded.")+'</p></div><div class="detail-section"><h3>Outcome</h3><p>'+esc(repair.outcome||"No outcome recorded.")+'</p></div>'+(repair.issue_title?'<div class="row-meta">Issue: '+esc(repair.issue_title)+'</div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="repair-asset">View asset</button></div>');bindEvidence(docs);$("#repair-asset").onclick=function(){openAsset(repair.asset_id)};
+    openModal('<p class="eyebrow">Repair · '+esc(repair.asset_name)+'</p><h2>'+esc(repair.title)+'</h2><div class="detail-grid">'+[["Date",fmtDate(repair.repair_date)],["Cost",money(repair.cost_cents)],["Contractor",repair.contractor||"—"]].map(function(pair){return '<div class="detail"><span>'+esc(pair[0])+'</span><strong>'+esc(pair[1])+'</strong></div>'}).join("")+'</div><div class="detail-section"><h3>Work performed</h3><p>'+esc(repair.description||"No description recorded.")+'</p></div><div class="detail-section"><h3>Outcome</h3><p>'+esc(repair.outcome||"No outcome recorded.")+'</p></div>'+(repair.issue_title?'<div class="row-meta">Issue: '+esc(repair.issue_title)+'</div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="repair-attach">Attach file</button><button class="button" id="repair-asset">View asset</button></div>');bindEvidence(docs);$("#repair-attach").onclick=function(){openUploadEvidenceForm({assetId:repair.asset_id,repairId:repair.id})};$("#repair-asset").onclick=function(){openAsset(repair.asset_id)};
   }catch(e){notify(e.message)}
 }
 
@@ -263,14 +263,61 @@ async function openLinkEvidenceForm(){
   };
 }
 
+
+async function openUploadEvidenceForm(defaults){
+  await openLinkEvidenceForm();
+  const form=$("#link-evidence-form");
+  if(!form)return;
+  const source=$('input[name="sourceUrl"]',form);
+  source.closest(".field").innerHTML='<label>File (maximum 2 MB)</label><input type="file" name="attachment" required accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.zip">';
+  $(".eyebrow",modalBody).textContent="Upload evidence";
+  $("h2",modalBody).textContent="Attach a file";
+  $(".primary-button",form).textContent="Preview attachment";
+  const d=defaults||{};
+  for(const key of ["assetId","issueId","repairId","chargeId","purchaseCandidateId"]){
+    const element=form.elements.namedItem(key);
+    if(element&&d[key])element.value=d[key];
+  }
+  const fileInput=form.elements.namedItem("attachment");
+  fileInput.onchange=function(){
+    const file=fileInput.files&&fileInput.files[0];if(!file)return;
+    if(!form.elements.namedItem("title").value.trim())form.elements.namedItem("title").value=file.name.slice(0,240);
+    const type=form.elements.namedItem("documentType");
+    if(file.type.startsWith("image/"))type.value="PHOTO";
+    else if(file.type.startsWith("video/"))type.value="VIDEO";
+    else if(file.type==="application/pdf")type.value="REPORT";
+  };
+  form.onsubmit=async function(e){
+    e.preventDefault();const data=new FormData(form),file=fileInput.files&&fileInput.files[0];
+    if(!file)return notify("Select a file.");
+    if(!file.size||file.size>2_000_000)return notify("Select a file under 2 MB, or save an external link.");
+    const submit=$('button[type="submit"]',form);
+    if(submit)submit.disabled=true;
+    try{
+      const staged=await api("/api/uploads/stage",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name)},body:file});
+      await previewAction("ATTACH_DOCUMENT",{
+        assetId:data.get("assetId")||null,issueId:data.get("issueId")||null,
+        repairId:data.get("repairId")||null,chargeId:data.get("chargeId")||null,
+        purchaseCandidateId:data.get("purchaseCandidateId")||null,
+        title:data.get("title"),documentType:data.get("documentType"),
+        provider:"LOCAL",uploadId:staged.id,providerFileId:null,
+        mimeType:staged.mimeType,webViewLink:null,sourceUrl:null,
+        provenance:data.get("provenance"),occurredAt:data.get("occurredAt"),
+        evidenceReason:data.get("evidenceReason"),evidenceStatus:data.get("evidenceStatus")
+      },"Homeowner attached a file as household evidence.");
+    }catch(err){notify(err.message)}
+    finally{if(submit)submit.disabled=false}
+  };
+}
+
 async function showFiles(){
   loading();const revision=state.viewRevision;
   try{
     const docs=await api("/api/documents");
     if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links with preserved context.</p></div><div class="hero-actions"><button class="button" id="save-link">Save link</button></div></div><div class="toolbar"><input class="search" id="file-search" type="search" placeholder="Search files and associations…" aria-label="Search files"></div><div class="file-grid">'+(docs.map(function(d){const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.evidence_status||"ACTIVE")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"General home evidence")+" · "+fmtDate(d.occurred_at||d.created_at))+'</small>'+(d.evidence_reason?'<span class="file-reason">'+esc(d.evidence_reason)+'</span>':"")+'</button>'}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
+    content.innerHTML='<div class="hero"><div><p class="eyebrow">Household evidence</p><h2>Files</h2><p>Receipts, manuals, photos, videos, invoices and source links with preserved context.</p></div><div class="hero-actions"><button class="button" id="save-link">Save link</button><button class="primary-button" id="upload-file">Upload file</button></div></div><div class="toolbar"><input class="search" id="file-search" type="search" placeholder="Search files and associations…" aria-label="Search files"></div><div class="file-grid">'+(docs.map(function(d){const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+" · "+esc(d.evidence_status||"ACTIVE")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"General home evidence")+" · "+fmtDate(d.occurred_at||d.created_at))+'</small>'+(d.evidence_reason?'<span class="file-reason">'+esc(d.evidence_reason)+'</span>':"")+'</button>'}).join("")||'<div class="empty">No files recorded.</div>')+"</div>";
     $("#file-search").oninput=function(e){const q=e.target.value.toLowerCase().trim();$$("[data-file]",content).forEach(function(card){card.hidden=!card.textContent.toLowerCase().includes(q)})};
-    $("#save-link").onclick=function(){openLinkEvidenceForm()};
+    $("#save-link").onclick=function(){openLinkEvidenceForm()};$("#upload-file").onclick=function(){openUploadEvidenceForm()};
     $$("[data-file]",content).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.file}))}});
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
