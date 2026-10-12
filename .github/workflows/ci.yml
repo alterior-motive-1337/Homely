@@ -72,6 +72,15 @@ jobs:
           assert(integrations.ai.provider === "groq", "Groq provider status missing");
           assert(!("googleDrive" in integrations), "removed Drive integration must not appear in runtime status");
 
+          const households = await (await get("/api/homes")).json();
+          assert(households.homes.length === 1 && households.homes[0].role === "OWNER", "CI owner membership missing");
+          const members = await (await get("/api/homes/members")).json();
+          assert(members.length === 1, "CI household should have one owner");
+          const backup = await get("/api/account/export");
+          assert(backup.headers.get("content-type") === "application/x-tar", "household archive export missing");
+          const archive = Buffer.from(await backup.arrayBuffer());
+          assert(archive.subarray(0,11).toString("ascii").startsWith("homely.json"), "backup manifest missing");
+
           const documents = await (await get("/api/documents")).json();
           assert(documents.length === 3, "expected three seeded documents");
           assert(documents.some((doc) => doc.title.includes("inverter warranty") && doc.asset_name === "8 kW inverter"), "document association missing");
@@ -157,6 +166,17 @@ jobs:
           await page.goto("http://127.0.0.1:4173", { waitUntil: "networkidle" });
           await page.getByText("14 Hawthorn Residence").waitFor();
           await page.getByText("Home memory active").waitFor();
+          await page.getByRole("button", { name: "Household settings" }).click();
+          await page.locator("#modal").getByRole("heading", { name: "Household settings" }).waitFor();
+          await page.getByRole("link", { name: "Export household" }).waitFor();
+          await page.locator("#invite-home-form input[name=email]").fill("ci-invite@example.test");
+          await page.locator("#invite-home-form select[name=role]").selectOption("VIEWER");
+          await page.getByRole("button", { name: "Create invite link" }).click();
+          await page.locator("#invite-link").waitFor();
+          await page.getByRole("button", { name: "Delete account…" }).click();
+          await page.locator("#delete-account-form").waitFor();
+          await page.getByRole("button", { name: "Cancel" }).click();
+
           await page.getByRole("button", { name: "Voice", exact: true }).click();
           if ((await page.locator("#chat-input").inputValue()) !== "check the kitchen tap") {
             throw new Error("voice input did not populate chat");
