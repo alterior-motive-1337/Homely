@@ -21,3 +21,20 @@ test("registering a new appliance requires approval and preserves asset details"
   assert.equal(listAssets(db).length,before);
   db.close();
 });
+
+test("approved asset updates are reversible and preserve the original fields", () => {
+  const db=createTestDatabase();migrate(db);seedDemo(db);
+  const asset=db.prepare("SELECT * FROM assets LIMIT 1").get();
+  assert.ok(asset);
+  const proposed=proposeTransaction(db,{actionType:"UPDATE_ASSET",reason:"Update inventory condition",payload:{
+    assetId:String(asset.id),systemId:String(asset.system_id),name:String(asset.name),category:String(asset.category),
+    condition:"FAIR",location:"Utility room",purchaseDate:"2026-09-10",purchaseCostCents:19900
+  }});
+  assert.equal(db.prepare("SELECT condition FROM assets WHERE id = ?").get(String(asset.id))?.condition,asset.condition);
+  const id=String(proposed.transaction?.id);
+  commitTransaction(db,id);
+  assert.equal(db.prepare("SELECT condition FROM assets WHERE id = ?").get(String(asset.id))?.condition,"FAIR");
+  undoTransaction(db,id);
+  assert.equal(db.prepare("SELECT condition FROM assets WHERE id = ?").get(String(asset.id))?.condition,asset.condition);
+  db.close();
+});
