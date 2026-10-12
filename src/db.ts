@@ -84,15 +84,16 @@ export function migrate(db: HomelyDatabase, migrationsDir = config.migrationsDir
     .filter((name) => name.endsWith(".sql"))
     .sort();
 
-  const mark = db.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)");
-
   for (const file of files) {
     if (applied.includes(file)) continue;
     const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
     db.exec("BEGIN IMMEDIATE;");
     try {
       db.exec(sql);
-      mark.run(file, new Date().toISOString());
+      // Remote prepared statements retain the transaction scope they were created in.
+      // Preparing before BEGIN would close that stream when the marker is written.
+      db.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+        .run(file, new Date().toISOString());
       db.exec("COMMIT;");
     } catch (error) {
       try { db.exec("ROLLBACK;"); }
