@@ -174,8 +174,20 @@ jobs:
           await page.getByText("Sunsynk 8 kW inverter warranty").waitFor();
           await page.locator("#modal-close").click();
 
+          let issueFetches=0;
+          page.on("request",request=>{
+            if(request.method()==="GET" && new URL(request.url()).pathname==="/api/issues")issueFetches++;
+          });
           await page.locator("#nav").getByRole("button", { name: "Issues", exact: true }).click();
           await page.getByText("Camera 4 intermittent disconnect").waitFor();
+          const firstIssueFetches=issueFetches;
+          await page.locator("#nav").getByRole("button", { name: "Appliances", exact: true }).click();
+          await page.locator("#nav").getByRole("button", { name: "Issues", exact: true }).click();
+          await page.getByText("Camera 4 intermittent disconnect").waitFor();
+          if(issueFetches!==firstIssueFetches)throw new Error("Cached tab refetched issue records");
+          await page.locator("#refresh-view").click();
+          await page.getByText("Camera 4 intermittent disconnect").waitFor();
+          if(issueFetches!==firstIssueFetches+1)throw new Error("Explicit refresh should reload issue records");
           await page.locator("[data-issue-open]").filter({ hasText: "Camera 4 intermittent disconnect" }).click();
           await page.locator("#modal").getByRole("heading", { name: "Files", exact: true }).waitFor();
           await page.locator("#modal-close").click();
