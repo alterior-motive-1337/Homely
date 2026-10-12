@@ -1,4 +1,5 @@
 import type { HomelyDatabase } from "../db.js";
+import { activeHomeId } from "../security/homeScope.js";
 import { deriveAssetHealth, deriveSystemHealth, type HealthState, type Severity } from "./health.js";
 
 function todayIso(): string {
@@ -24,15 +25,16 @@ function healthForAsset(db: HomelyDatabase, assetId: string, observedAt: unknown
 }
 
 export function getHome(db: HomelyDatabase) {
-  return db.prepare("SELECT * FROM homes ORDER BY created_at LIMIT 1").get() ?? null;
+  return db.prepare("SELECT * FROM homes WHERE id = COALESCE(?,id) ORDER BY created_at LIMIT 1").get(activeHomeId()) ?? null;
 }
 
 export function listAssets(db: HomelyDatabase) {
   const rows = db.prepare(
     `SELECT a.*, s.name AS system_name, s.category AS system_category
      FROM assets a JOIN systems s ON s.id = a.system_id
+     WHERE s.home_id = COALESCE(?,s.home_id)
      ORDER BY s.position, a.name`
-  ).all();
+  ).all(activeHomeId());
 
   return rows.map((row) => ({
     ...row,
@@ -41,7 +43,7 @@ export function listAssets(db: HomelyDatabase) {
 }
 
 export function listSystems(db: HomelyDatabase) {
-  return db.prepare("SELECT * FROM systems ORDER BY position, name").all().map((system) => {
+  return db.prepare("SELECT * FROM systems WHERE home_id = COALESCE(?,home_id) ORDER BY position, name").all(activeHomeId()).map((system) => {
     const assets = db.prepare("SELECT id, health_observed_at FROM assets WHERE system_id = ? ORDER BY name")
       .all(String(system.id));
     const states = assets.map((asset) => healthForAsset(db, String(asset.id), asset.health_observed_at));
@@ -52,8 +54,8 @@ export function listSystems(db: HomelyDatabase) {
 export function getAsset(db: HomelyDatabase, assetId: string) {
   const asset = db.prepare(
     `SELECT a.*, s.name AS system_name, s.category AS system_category
-     FROM assets a JOIN systems s ON s.id = a.system_id WHERE a.id = ?`
-  ).get(assetId);
+     FROM assets a JOIN systems s ON s.id = a.system_id WHERE a.id = ? AND s.home_id = COALESCE(?,s.home_id)`
+  ).get(assetId,activeHomeId());
   if (!asset) return null;
 
   return {
@@ -71,9 +73,10 @@ export function listIssues(db: HomelyDatabase) {
   return db.prepare(
     `SELECT i.*, a.name AS asset_name, s.name AS system_name
      FROM issues i JOIN assets a ON a.id = i.asset_id JOIN systems s ON s.id = a.system_id
+     WHERE s.home_id = COALESCE(?,s.home_id)
      ORDER BY CASE i.status WHEN 'OPEN' THEN 1 WHEN 'IN_PROGRESS' THEN 2 WHEN 'MONITORING' THEN 3 ELSE 4 END,
        i.detected_at DESC`
-  ).all();
+  ).all(activeHomeId());
 }
 
 export function listMaintenance(db: HomelyDatabase) {
@@ -85,8 +88,8 @@ export function listMaintenance(db: HomelyDatabase) {
            ELSE 'SCHEDULED' END AS due_state
      FROM maintenance_rules m
      JOIN assets a ON a.id = m.asset_id JOIN systems s ON s.id = a.system_id
-     WHERE m.active = 1 ORDER BY m.next_due_at`
-  ).all(today, today);
+     WHERE m.active = 1 AND s.home_id = COALESCE(?,s.home_id) ORDER BY m.next_due_at`
+  ).all(today, today,activeHomeId());
 }
 
 export function listRepairs(db: HomelyDatabase) {
@@ -96,16 +99,17 @@ export function listRepairs(db: HomelyDatabase) {
     JOIN assets a ON a.id = r.asset_id
     JOIN systems s ON s.id = a.system_id
     LEFT JOIN issues i ON i.id = r.issue_id
+    WHERE r.home_id = COALESCE(?,r.home_id)
     ORDER BY r.repair_date DESC, r.created_at DESC
-  `).all();
+  `).all(activeHomeId());
 }
 
 export function listCharges(db: HomelyDatabase) {
   return db.prepare(`
     SELECT *
-    FROM charges
+    FROM charges WHERE home_id = COALESCE(?,home_id)
     ORDER BY active DESC, category, name
-  `).all();
+  `).all(activeHomeId());
 }
 
 export function listPurchaseCandidates(db: HomelyDatabase) {
@@ -113,6 +117,7 @@ export function listPurchaseCandidates(db: HomelyDatabase) {
     SELECT p.*, a.name AS asset_name
     FROM purchase_candidates p
     LEFT JOIN assets a ON a.id = p.asset_id
+    WHERE p.home_id = COALESCE(?,p.home_id)
     ORDER BY
       CASE p.status
         WHEN 'SHORTLISTED' THEN 1
@@ -121,7 +126,7 @@ export function listPurchaseCandidates(db: HomelyDatabase) {
         ELSE 4
       END,
       p.created_at DESC
-  `).all();
+  `).all(activeHomeId());
 }
 
 export function listDocuments(db: HomelyDatabase) {
@@ -135,16 +140,18 @@ export function listDocuments(db: HomelyDatabase) {
     LEFT JOIN repairs r ON r.id = d.repair_id
     LEFT JOIN charges c ON c.id = d.charge_id
     LEFT JOIN purchase_candidates p ON p.id = d.purchase_candidate_id
+    WHERE d.home_id = COALESCE(?,d.home_id)
     ORDER BY COALESCE(d.occurred_at, d.created_at) DESC, d.title
-  `).all();
+  `).all(activeHomeId());
 }
 
 export function getTimeline(db: HomelyDatabase, limit = 80) {
   return db.prepare(
     `SELECT t.*, a.name AS asset_name
      FROM timeline_events t LEFT JOIN assets a ON a.id = t.asset_id
+     WHERE t.home_id = COALESCE(?,t.home_id)
      ORDER BY t.occurred_at DESC LIMIT ?`
-  ).all(limit);
+  ).all(activeHomeId(),limit);
 }
 
 export function getOverview(db: HomelyDatabase) {
@@ -157,24 +164,26 @@ export function getOverview(db: HomelyDatabase) {
        a.id AS asset_id, a.name AS asset_name, s.name AS system_name
      FROM issues i JOIN assets a ON a.id = i.asset_id JOIN systems s ON s.id = a.system_id
      WHERE i.status IN ('OPEN','MONITORING','PLANNED','IN_PROGRESS')
+       AND s.home_id = COALESCE(?,s.home_id)
      ORDER BY CASE i.severity WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END,
        i.detected_at DESC`
-  ).all();
+  ).all(activeHomeId());
 
   const overdue = db.prepare(
     `SELECT m.id, m.title, m.next_due_at, a.id AS asset_id, a.name AS asset_name, s.name AS system_name,
        CAST(julianday(?) - julianday(m.next_due_at) AS INTEGER) AS days_overdue
      FROM maintenance_rules m JOIN assets a ON a.id = m.asset_id JOIN systems s ON s.id = a.system_id
-     WHERE m.active = 1 AND m.next_due_at < ? ORDER BY m.next_due_at`
-  ).all(today, today);
+     WHERE m.active = 1 AND m.next_due_at < ? AND s.home_id = COALESCE(?,s.home_id) ORDER BY m.next_due_at`
+  ).all(today, today,activeHomeId());
 
   const upcoming = db.prepare(
     `SELECT m.id, m.title, m.next_due_at, a.id AS asset_id, a.name AS asset_name, s.name AS system_name,
        CAST(julianday(m.next_due_at) - julianday(?) AS INTEGER) AS days_until
      FROM maintenance_rules m JOIN assets a ON a.id = m.asset_id JOIN systems s ON s.id = a.system_id
      WHERE m.active = 1 AND m.next_due_at >= ? AND m.next_due_at <= date(?, '+30 day')
+       AND s.home_id = COALESCE(?,s.home_id)
      ORDER BY m.next_due_at`
-  ).all(today, today, today);
+  ).all(today, today, today,activeHomeId());
 
   const repairs = listRepairs(db).slice(0, 4);
   const charges = listCharges(db).filter((row) => Number(row.active) === 1);
@@ -204,6 +213,7 @@ export function listProjects(db: HomelyDatabase) {
   return db.prepare(`
     SELECT *
     FROM projects
+    WHERE home_id = COALESCE(?,home_id)
     ORDER BY
       CASE status
         WHEN 'ACTIVE' THEN 1
@@ -214,11 +224,11 @@ export function listProjects(db: HomelyDatabase) {
       END,
       COALESCE(target_date, '9999-12-31'),
       created_at DESC
-  `).all();
+  `).all(activeHomeId());
 }
 
 export function getProject(db: HomelyDatabase, projectId: string) {
-  const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
+  const project = db.prepare("SELECT * FROM projects WHERE id = ? AND home_id = COALESCE(?,home_id)").get(projectId,activeHomeId());
   if (!project) return null;
   return {
     ...project,
