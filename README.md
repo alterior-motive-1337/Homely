@@ -46,17 +46,17 @@ Voice input uses the browser and needs no service key. Stop listening ends captu
 
 There is **no Google Drive integration**. Google is used only for authentication (scopes: `openid email profile`). **Self-registration is enabled**: every new Google identity receives its own private home, initialized with empty household systems. Turso stores hashed server-side sessions and membership records; the backend restricts API reads, mutations, audit history, files, staged uploads and agent tools to the authenticated home. Existing demo/home data can be claimed only by its existing owner or the email explicitly configured with optional `GOOGLE_ALLOWED_EMAIL` if the home is unowned. No Google Drive scope or refresh tokens are used.
 
-There are no external MCP, Firecrawl or backup integrations to configure. Evidence metadata and associations stay in Turso; existing source links remain viewable. Supported media open in the viewer and ordinary web pages retain an Open source link.
+There are no external MCP, Firecrawl or Google Drive integrations to configure. A full owner-controlled TAR export is available; automated off-database backups are not yet configured. Evidence metadata and associations stay in Turso; existing source links remain viewable. Supported media open in the viewer and ordinary web pages retain an Open source link.
 
 ## Evidence and file limits
 
-- Uploads are stored **in Turso**, including MP4/WebM video. The app accepts **50 MB per file** (50,000,000 bytes).
+- Uploads are stored **in Turso**, including MP4/WebM video. The app accepts **50 MB per file** (50,000,000 bytes), with an atomic **500 MB reserved-storage quota per home** that includes unfinished uploads.
 - The browser sends ordered 1 MB chunks; the server persists them in the database, checks declared length, and only permits linking after completion and explicit transaction approval. Neither Render's local filesystem nor another storage provider is required.
 - Browser media playback uses HTTP byte ranges, allowing audio/video seeking without downloading the entire file. Turso's actual per-account quotas and remote sync performance still apply; large-video behavior requires a live Turso test.
 - Previously visited tabs retain their DOM and data for two minutes, preserving filters and avoiding repeated loads. Changes through Homely invalidate the cache; use the header refresh action to pull external changes.
 - Optional **Analyze** on stored evidence uses Groq Qwen 3.8 27B for supported images up to 12 MB and Whisper Turbo for speech in MP3/WAV/WebM/MP4 up to 25 MB. Video visual frames and PDF/DOCX parsing are not implemented yet. The 50 MB storage limit is separate from AI processing limits.
 - Analysis is on demand, cached in Turso, and never changes the authoritative record. Text files can be read without using Groq.
-- **Security:** Google authentication and per-home access checks are in place. A public production deployment still needs operational security work: upload and AI usage quotas, rate limiting, structured monitoring, privacy/deletion tooling, backups, and real-host penetration testing.
+- **Security:** Google authentication, server-enforced per-home authorization, rate limits and storage quotas are in place. Before a public launch, configure off-database backup/recovery, account-abuse controls across instances, privacy/legal requirements, live provider testing, and a security review.
 
 ## Checks
 
@@ -82,4 +82,18 @@ In Render set **`GOOGLE_CLIENT_ID`**, **`GOOGLE_CLIENT_SECRET`**, and **`GOOGLE_
 
 For local testing, also register `http://localhost:4173/auth/google/callback`. Google OAuth consent screens in Testing may require adding the owner email as a test user.
 
-**Current scope:** Open Google registration creates one private home for each account; household invites, account deletion/export, billing, automated backups, monitoring, quotas and operational abuse defenses still require additional implementation. A green CI build is not a production-security certification.
+## Household sharing and privacy
+
+- Every new Google account receives its own private home. Household settings let owners rename their home, manage members and create time-limited, single-use invitation links. Invitations are bound to the recipient's verified Google email. Copy and send the link directly: Homely does **not** send mail.
+- Invited **Members** can read and edit the shared home; **Viewers** can only read. Members can switch between their personal home and any home they joined. Memberships are checked server-side, including downloads and agent tools.
+- The owner can download a complete **TAR archive** from Household settings. It contains a `homely.json` manifest of records and audit history, plus original uploaded media in `files/`. This is a user-initiated export, not a scheduled offsite backup.
+- Account deletion is available with an explicit `DELETE MY ACCOUNT` confirmation and a Google sign-in within the last 15 minutes. Users who own a home must first remove other members to avoid erasing someone else's household. This irreversibly deletes the owner's home data and uploaded files.
+
+## Operational controls
+
+- Per-instance throttling limits expensive authenticated calls: agent (12/min), multimedia analysis (5/min), upload creation (20/hour), upload chunks (240/min), general mutations (90/min) and full exports (3/hour). OAuth initiation and callbacks are also rate-limited.
+- Upload quota reservations use an immediate database transaction; abandoned staged uploads are cleaned up automatically on subsequent new uploads after 24 hours. A separate scheduled cleanup job is not installed.
+- JSON request logs include generated request IDs, method, normalized route, status and duration. Query strings, OAuth codes and invitation tokens are never logged. Responses have CSP, no-sniff, frame protections, and HTTPS HSTS on Render.
+- `GET /api/health` checks database access; `GET /api/ready` additionally reports whether Google OAuth has been configured. Production health checks may use the readiness endpoint **after** OAuth settings are installed.
+- Throttling uses bounded **in-process memory**. A scaled deployment must use a shared limiter (e.g. Redis or Turso-backed counters) to enforce global limits and protect against sign-up abuse. The 500 MB quota is per home, **not** a global free-tier budget. Automated offsite backups, monitoring alerts, billing, data-retention policy and live load/security testing remain open before a public production launch. Passing CI isn't production certification.
+
