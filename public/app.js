@@ -223,33 +223,55 @@ async function openAsset(id){
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>')}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
     html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
-    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)openFile(doc)}})
+    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)openFile(doc)}})
   }catch(e){notify(e.message)}
 }
 
 function fileHref(d){const raw=String(d.web_view_link||d.local_path||d.source_url||"").trim();try{const url=new URL(raw,location.origin);return ["https:","http:"].includes(url.protocol)&&!url.username&&!url.password?url.href:""}catch(_){return""}}
 async function openFile(doc){
   if(state.stopVoice)state.stopVoice();
-  const href=fileHref(doc);viewerTitle.textContent=doc.title||"File";viewerBody.innerHTML="";
+  const href=fileHref(doc),mime=String(doc.mime_type||"");
+  const stored=String(doc.local_path||"").startsWith("/api/files/");
+  viewerTitle.textContent=doc.title||"File";viewerBody.innerHTML="";
+  const insight=$("#viewer-insight"),analyze=$("#analyze-file");
+  insight.textContent="";insight.hidden=true;
   if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}
-  if(!href){viewerBody.innerHTML='<div class="viewer-link"><div><strong>File metadata is recorded, but no viewable location is attached.</strong></div></div>';viewer.showModal();return}
-  if(new URL(href).origin===location.origin){
+  analyze.hidden=!stored || !/^(image\/(png|jpeg|webp)|audio\/|video\/(mp4|webm)|text\/(plain|csv)|application\/json)/.test(mime);
+  analyze.disabled=false;analyze.textContent="Analyze";
+  analyze.onclick=async function(){
+    analyze.disabled=true;analyze.textContent="Analyzing…";
+    insight.hidden=false;insight.textContent="Processing stored evidence…";
     try{
-      const res=await fetch(href);if(!res.ok)throw new Error("File unavailable");const blob=await res.blob();state.objectUrl=URL.createObjectURL(blob);const mt=doc.mime_type||blob.type||"";
-      if(mt.startsWith("image/"))viewerBody.innerHTML='<img src="'+esc(state.objectUrl)+'" alt="">';
-      else if(mt.startsWith("video/"))viewerBody.innerHTML='<video controls src="'+esc(state.objectUrl)+'"></video>';
-      else if(mt.startsWith("audio/"))viewerBody.innerHTML='<audio controls src="'+esc(state.objectUrl)+'"></audio>';
-      else viewerBody.innerHTML='<iframe sandbox title="'+esc(doc.title)+'" src="'+esc(state.objectUrl)+'"></iframe>'
-    }catch(e){viewerBody.innerHTML='<div class="viewer-link"><div><strong>'+esc(e.message)+"</strong></div></div>"}
-  }else if(doc.provider==="GOOGLE_DRIVE"&&doc.provider_file_id){viewerBody.innerHTML='<iframe title="'+esc(doc.title)+'" src="https://drive.google.com/file/d/'+encodeURIComponent(doc.provider_file_id)+'/preview" sandbox="allow-scripts allow-same-origin"></iframe>'}
-  else if(String(doc.mime_type||"").startsWith("image/")){viewerBody.innerHTML='<img src="'+esc(href)+'" alt="'+esc(doc.title)+'">'}
-  else if(String(doc.mime_type||"").startsWith("video/")){viewerBody.innerHTML='<video controls src="'+esc(href)+'"></video>'}
-  else if(String(doc.mime_type||"").startsWith("audio/")){viewerBody.innerHTML='<audio controls src="'+esc(href)+'"></audio>'}
-  else viewerBody.innerHTML='<div class="viewer-link"><div><strong>'+esc(doc.title)+'</strong><div class="row-meta">External file · '+esc(doc.provider||"source")+'</div><a class="primary-button" href="'+esc(href)+'" target="_blank" rel="noreferrer">Open source</a></div></div>';
-  viewer.showModal()
+      const result=await api("/api/documents/"+encodeURIComponent(doc.id)+"/analyze",{method:"POST"});
+      insight.textContent=result.text+"\n\n"+(result.cached?"Cached · ":"")+"Processed with "+result.model;
+    }catch(e){insight.textContent=e.message}
+    finally{analyze.disabled=false;analyze.textContent="Analyze"}
+  };
+  if(!href){
+    viewerBody.innerHTML='<div class="viewer-link"><strong>No viewable file is attached.</strong></div>';
+  }else if(new URL(href).origin===location.origin){
+    try{
+      if(stored && mime.startsWith("video/")) viewerBody.innerHTML='<video controls preload="metadata" src="'+esc(href)+'"></video>';
+      else if(stored && mime.startsWith("audio/")) viewerBody.innerHTML='<audio controls preload="metadata" src="'+esc(href)+'"></audio>';
+      else{
+        const res=await fetch(href);
+        if(!res.ok)throw new Error("File unavailable");
+        const blob=await res.blob();state.objectUrl=URL.createObjectURL(blob);
+        const type=mime||blob.type||"";
+        if(type.startsWith("image/"))viewerBody.innerHTML='<img src="'+esc(state.objectUrl)+'" alt="">';
+        else viewerBody.innerHTML='<iframe sandbox title="'+esc(doc.title)+'" src="'+esc(state.objectUrl)+'"></iframe>';
+      }
+    }catch(e){viewerBody.innerHTML='<div class="viewer-link"><strong>'+esc(e.message)+'</strong></div>'}
+  }else if(doc.provider==="GOOGLE_DRIVE"&&doc.provider_file_id){
+    viewerBody.innerHTML='<iframe title="'+esc(doc.title)+'" src="https://drive.google.com/file/d/'+encodeURIComponent(doc.provider_file_id)+'/preview" sandbox="allow-scripts allow-same-origin"></iframe>';
+  }else if(mime.startsWith("image/"))viewerBody.innerHTML='<img src="'+esc(href)+'" alt="'+esc(doc.title)+'">';
+  else if(mime.startsWith("video/"))viewerBody.innerHTML='<video controls src="'+esc(href)+'"></video>';
+  else if(mime.startsWith("audio/"))viewerBody.innerHTML='<audio controls src="'+esc(href)+'"></audio>';
+  else viewerBody.innerHTML='<div class="viewer-link"><a class="primary-button" href="'+esc(href)+'" target="_blank" rel="noreferrer">Open source</a></div>';
+  viewer.showModal();
 }
 $("#viewer-close").onclick=function(){viewer.close()};
-viewer.addEventListener("close",function(){if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
+viewer.addEventListener("close",function(){$("#viewer-insight").hidden=true;if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
 
 async function openLinkEvidenceForm(){
   const results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
