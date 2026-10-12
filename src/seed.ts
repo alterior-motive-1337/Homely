@@ -154,6 +154,7 @@ export function seedDemo(db: HomelyDatabase): void {
       NOW
     );
 
+    db.prepare("UPDATE documents SET home_id=? WHERE home_id IS NULL").run(HOME);
     db.exec("COMMIT;");
   } catch (error) {
     db.exec("ROLLBACK;");
