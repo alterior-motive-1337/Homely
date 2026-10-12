@@ -456,7 +456,20 @@ async function openHouseholdSettings(){
     }
     if(owner)markup+='<div class="detail-section"><h3>Download your data</h3><p class="row-meta">Includes household records, audit history, and original uploaded files.</p><div class="form-actions"><a class="button" href="/api/account/export" download="homely-backup.tar">Export household</a></div></div>';
         markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
+    markup+='<div class="detail-section"><h3>Delete account</h3><p class="row-meta">Irreversible. Export your home first. If you own a shared household, remove its members before deleting the account.</p><div class="form-actions"><button type="button" class="button" id="delete-account">Delete account…</button></div></div>';
     openModal(markup);
+    $("#delete-account").onclick=function(){
+      closeModal();
+      openModal('<p class="eyebrow">Permanent deletion</p><h2>Delete account and owned home</h2><p class="row-note">Your account, sessions, household records, original files and audit history will be deleted. This cannot be undone. Sign out and sign in again if your session is older than 15 minutes.</p><form id="delete-account-form" class="form"><div class="field"><label>Type DELETE MY ACCOUNT to confirm</label><input name="confirmation" autocomplete="off" required></div><div class="form-actions"><button type="button" class="button" id="cancel-delete">Cancel</button><button class="button" type="submit">Permanently delete</button></div></form>');
+      $("#cancel-delete").onclick=closeModal;
+      $("#delete-account-form").onsubmit=async event=>{
+        event.preventDefault();
+        const confirmation=String(new FormData(event.currentTarget).get("confirmation")||"");
+        if(confirmation!=="DELETE MY ACCOUNT"){notify("Confirmation does not match.");return}
+        try{await api("/api/account/delete",{method:"DELETE",body:{confirmation}});window.location.replace("/")}
+        catch(error){notify(error.message)}
+      };
+    };
     $("[data-switch]",modalBody).forEach(button=>button.onclick=async()=>{
       try{await api("/api/homes/active",{method:"POST",body:{homeId:button.dataset.switch}});window.location.assign("/")}
       catch(e){notify(e.message)}
