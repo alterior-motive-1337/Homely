@@ -4,7 +4,9 @@ const content=$("#content"), pageTitle=$("#page-title"), nav=$("#nav");
 const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewerBody=$("#viewer-body"), viewerTitle=$("#viewer-title");
 const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input"), voiceButton=$("#voice-button");
 const runtime=$("#runtime-status"), runtimeText=$("#runtime-text"), agentState=$("#agent-state");
-const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null};
+const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false};
+const viewPanels=new Map();
+const VIEW_CACHE_MS=120000;
 
 function esc(v){return String(v==null?"":v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
 function fmtDate(v){return v?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(v)):"—"}
@@ -17,6 +19,9 @@ async function api(path,options){
   const init=Object.assign({},options||{});
   if(init.body&&typeof init.body!=="string"&&!(init.body instanceof Blob)){init.headers=Object.assign({"content-type":"application/json"},init.headers||{});init.body=JSON.stringify(init.body)}
   const res=await fetch(path,init);let data=null;try{data=await res.json()}catch(_){}
+  if(res.ok && /\\\/(commit|undo)$/.test(path)){
+    viewPanels.clear();state.assets=[];state.needsReload=true;
+  }
   if(!res.ok)throw new Error(data&&data.error?data.error:"Request failed: "+res.status);
   return data
 }
@@ -282,7 +287,7 @@ async function openUploadEvidenceForm(defaults){
   const form=$("#link-evidence-form");
   if(!form)return;
   const source=$('input[name="sourceUrl"]',form);
-  source.closest(".field").innerHTML='<label>File (maximum 2 MB)</label><input type="file" name="attachment" required accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.zip">';
+  source.closest(".field").innerHTML='<label>File (maximum 50 MB)</label><input type="file" name="attachment" required accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.zip">';
   $(".eyebrow",modalBody).textContent="Upload evidence";
   $("h2",modalBody).textContent="Attach a file";
   $(".primary-button",form).textContent="Preview attachment";
@@ -303,11 +308,21 @@ async function openUploadEvidenceForm(defaults){
   form.onsubmit=async function(e){
     e.preventDefault();const data=new FormData(form),file=fileInput.files&&fileInput.files[0];
     if(!file)return notify("Select a file.");
-    if(!file.size||file.size>2_000_000)return notify("Select a file under 2 MB, or save an external link.");
+    if(!file.size||file.size>50_000_000)return notify("Select a file of 50 MB or less.");
+
     const submit=$('button[type="submit"]',form);
     if(submit)submit.disabled=true;
     try{
-      const staged=await api("/api/uploads/stage",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name)},body:file});
+      const staged=await api("/api/uploads/start",{method:"POST",body:{name:file.name,mimeType:file.type||"application/octet-stream",size:file.size}});
+      const total=Math.ceil(file.size/staged.chunkSize);
+      for(let index=0;index<total;index++){
+        const chunk=file.slice(index*staged.chunkSize,Math.min(file.size,(index+1)*staged.chunkSize));
+        await api("/api/uploads/"+encodeURIComponent(staged.id)+"/chunks/"+index,
+          {method:"PUT",headers:{"content-type":"application/octet-stream"},body:chunk});
+        if(submit)submit.textContent="Uploading "+Math.round((index+1)/total*100)+"%";
+      }
+      await api("/api/uploads/"+encodeURIComponent(staged.id)+"/finish",{method:"POST"});
+      if(submit)submit.textContent="Preview attachment";
       await previewAction("ATTACH_DOCUMENT",{
         assetId:data.get("assetId")||null,issueId:data.get("issueId")||null,
         repairId:data.get("repairId")||null,chargeId:data.get("chargeId")||null,
@@ -378,7 +393,24 @@ function setupVoiceInput(){
 
 const views={home:["Home",showHome],issues:["Issues",showIssues],repairs:["Repairs",showRepairs],appliances:["Appliances & furniture",showAppliances],files:["Files",showFiles]};
 function normalizeView(v){if(v==="overview"||v==="history"||v==="agent")return"home";if(v==="work")return"issues";if(v==="assets")return"appliances";if(v==="documents")return"files";return views[v]?v:"home"}
-async function selectView(view){state.viewRevision+=1;state.view=normalizeView(view);pageTitle.textContent=views[state.view][0];document.title=views[state.view][0]+" · Homely";$$(".nav-item").forEach(function(b){b.classList.toggle("active",b.dataset.view===state.view);if(b.dataset.view===state.view)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});await views[state.view][1]()}
+async function selectView(view){
+  state.viewRevision+=1;
+  const next=normalizeView(view),stale=state.needsReload;
+  if(state.view && content.hasChildNodes() && !stale && !content.querySelector(".loading,.error")){
+    const fragment=document.createDocumentFragment();
+    while(content.firstChild)fragment.appendChild(content.firstChild);
+    viewPanels.set(state.view,{fragment:fragment,time:Date.now()});
+  }else{content.replaceChildren()}
+  state.needsReload=false;state.view=next;
+  pageTitle.textContent=views[next][0];document.title=views[next][0]+" · Homely";
+  $(".nav-item").forEach(function(b){b.classList.toggle("active",b.dataset.view===next);if(b.dataset.view===next)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
+  const saved=viewPanels.get(next);
+  if(saved && Date.now()-saved.time<VIEW_CACHE_MS){
+    viewPanels.delete(next);content.appendChild(saved.fragment);return;
+  }
+  viewPanels.delete(next);
+  await views[next][1]();
+}
 function navigate(view,replace){view=normalizeView(view);const url=view==="home"?"/":"/?view="+encodeURIComponent(view);if(replace)history.replaceState({view:view},"",url);else history.pushState({view:view},"",url);void selectView(view)}
 nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.dataset.view,false)};
 window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
