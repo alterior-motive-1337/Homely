@@ -1,0 +1,124 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type http from "node:http";
+import { migrate } from "../src/db.js";
+import { seedDemo } from "../src/seed.js";
+import { createTestDatabase } from "./helpers.js";
+import { GoogleAuthentication } from "../src/security/googleAuth.js";
+
+function request(cookie=""): http.IncomingMessage {
+  return {headers:{cookie}} as http.IncomingMessage;
+}
+function response() {
+  let status=200;
+  const headers=new Map<string,string|string[]>();
+  let body="";
+  return {
+    setHeader(name:string,value:string|string[]){headers.set(name.toLowerCase(),value);return this},
+    getHeader(name:string){return headers.get(name.toLowerCase())},
+    writeHead(code:number,extra?:Record<string,string>){status=code;for(const [k,v] of Object.entries(extra??{}))this.setHeader(k,v);return this},
+    end(value?:string){body=value??"";return this},
+    get status(){return status},
+    get body(){return body},
+    get headers(){return headers}
+  };
+}
+function cookieValue(res: ReturnType<typeof response>,name:string){
+  const cookies=res.getHeader("set-cookie");
+  const list=Array.isArray(cookies)?cookies:typeof cookies==="string"?[cookies]:[];
+  const item=list.find(c=>c.startsWith(name+"="));
+  assert.ok(item,name+" cookie is missing");
+  return item.split(";")[0]!;
+}
+const settings={
+  clientId:"local-testing.apps.googleusercontent.com",
+  clientSecret:"unit-test-secret",
+  redirectUri:"http://localhost:4173/auth/google/callback",
+  allowedEmail:"owner@example.test"
+};
+
+test("Google sign-in issues PKCE challenge, checks nonce, and stores only hashed sessions",async()=>{
+  const db=createTestDatabase();migrate(db);seedDemo(db);
+  let verifier="",calls=0;
+  const auth=new GoogleAuthentication(db,settings,{
+    async exchange(code,proof){assert.equal(code,"google-auth-code");verifier=proof;return "signed-id-token"},
+    async verify(token,clientId,nonce){
+      calls++;assert.equal(token,"signed-id-token");assert.equal(clientId,settings.clientId);assert.ok(nonce.length>=40);
+      return {iss:"https://accounts.google.com",aud:clientId,sub:"google-subject-1",
+        email:"owner@example.test",email_verified:true,name:"House owner",nonce};
+    }
+  });
+  assert.equal(auth.status(request()).authenticated,false);
+  assert.throws(()=>auth.requireUser(request()),/sign in/i);
+  const redirect=response();auth.beginLogin(redirect as unknown as http.ServerResponse);
+  assert.equal(redirect.status,303);
+  const target=new URL(String(redirect.getHeader("location")));
+  assert.equal(target.hostname,"accounts.google.com");
+  assert.equal(target.searchParams.get("scope"),"openid email profile");
+  assert.equal(target.searchParams.get("code_challenge_method"),"S256");
+  assert.equal(target.searchParams.get("access_type"),null);
+  const state=target.searchParams.get("state")!;
+  const cookie=cookieValue(redirect,"homely_oauth");
+  assert.ok(cookie.endsWith(state));
+
+  const invalid=response();
+  await assert.rejects(()=>auth.finishLogin(request("homely_oauth=invalid"),
+    invalid as unknown as http.ServerResponse,
+    new URL("http://localhost:4173/auth/google/callback?state="+state+"&code=google-auth-code")),/state mismatch/);
+  assert.equal(calls,0);
+  const callback=response();
+  await auth.finishLogin(request(cookie),callback as unknown as http.ServerResponse,
+    new URL("http://localhost:4173/auth/google/callback?state="+state+"&code=google-auth-code"));
+  assert.equal(callback.status,303);
+  assert.ok(verifier.length>=40);
+  assert.equal(calls,1);
+  const session=cookieValue(callback,"homely_session");
+  assert.ok(auth.status(request(session)).authenticated);
+  assert.equal(auth.requireUser(request(session)).email,"owner@example.test");
+  const record=db.prepare("SELECT token_hash FROM auth_sessions").get();
+  assert.notEqual(record?.token_hash,session.slice(session.indexOf("=")+1));
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM home_owners").get()?.count,1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM auth_login_attempts").get()?.count,0);
+  await assert.rejects(()=>auth.finishLogin(request(cookie),response() as unknown as http.ServerResponse,
+    new URL("http://localhost:4173/auth/google/callback?state="+state+"&code=google-auth-code")),/expired/);
+  const signout=response();auth.logout(request(session),signout as unknown as http.ServerResponse);
+  assert.equal(auth.status(request(session)).authenticated,false);
+  db.close();
+});
+
+test("Google account allowlist, verified email and immutable owner subject prevent household takeover",async()=>{
+  const db=createTestDatabase();migrate(db);seedDemo(db);
+  let claims: {sub:string;email:string;email_verified:boolean}={
+    sub:"google-user",email:"outsider@example.test",email_verified:true
+  };
+  const auth=new GoogleAuthentication(db,settings,{
+    async exchange(){return "token"},
+    async verify(_token,_clientId,nonce){return {...claims,nonce}}
+  });
+  const login=async()=>{
+    const start=response();auth.beginLogin(start as unknown as http.ServerResponse);
+    const state=new URL(String(start.getHeader("location"))).searchParams.get("state");
+    return auth.finishLogin(request(cookieValue(start,"homely_oauth")),response() as unknown as http.ServerResponse,
+      new URL("http://localhost:4173/auth/google/callback?state="+state+"&code=abc"));
+  };
+  await assert.rejects(login(),/not authorized/);
+  claims={sub:"google-user",email:"owner@example.test",email_verified:false};
+  await assert.rejects(login(),/not authorized/);
+  claims={sub:"first-sub",email:"owner@example.test",email_verified:true};
+  await assert.doesNotReject(login());
+  claims={sub:"different-sub",email:"owner@example.test",email_verified:true};
+  await assert.rejects(login(),/another Google identity/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM home_owners").get()?.count,1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM auth_users").get()?.count,1);
+  db.close();
+});
+
+test("partially configured OAuth never exposes an existing home",()=>{
+  const db=createTestDatabase();migrate(db);seedDemo(db);
+  const auth=new GoogleAuthentication(db,{...settings,clientSecret:""});
+  assert.equal(auth.status(request()).enabled,false);
+  assert.equal(auth.status(request()).authenticated,false);
+  assert.throws(()=>auth.requireUser(request()),/sign in/i);
+  assert.throws(()=>auth.beginLogin(response() as unknown as http.ServerResponse),/not configured/i);
+  db.close();
+});
