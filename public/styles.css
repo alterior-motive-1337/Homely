@@ -255,3 +255,6 @@ tbody tr:hover{background:#15191a}
 .home-overview .home-memory{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 .chat-visible .chat-fab{display:none}
 @media(max-width:760px){.utility-links{gap:18px}.home-overview .home-priority,.home-overview .home-memory{grid-template-columns:1fr}}
+
+/* Authentication never exposes workspace controls before a session exists. */
+#app-shell[hidden] ~ #chat-open{display:none!important}
