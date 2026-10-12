@@ -23,6 +23,7 @@ export type HomelyToolName =
   | "list_charges"
   | "list_purchases"
   | "list_documents"
+  | "get_document"
   | "get_asset_history"
   | "search_history"
   | "list_maintenance_due"
@@ -150,6 +151,18 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
         provider: { type: "string", enum: ["LOCAL","GOOGLE_DRIVE","ALL"] }
       },
       required: ["provider"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "get_document",
+    description: "Read one Homely evidence record and, when a small plain-text attachment is stored in Turso, include its actual text. Other media return metadata only; never claim to have read an unparsed PDF, image or video.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: { documentId: { type: "string" } },
+      required: ["documentId"],
       additionalProperties: false
     }
   },
@@ -315,6 +328,22 @@ export function executeHomelyTool(
     return listDocuments(db).filter((document) =>
       provider === "ALL" || String(document.provider) === provider
     );
+  }
+
+  if (name === "get_document") {
+    const doc = db.prepare("SELECT * FROM documents WHERE id = ?").get(String(args.documentId ?? ""));
+    if (!doc) throw new DomainError("Document not found.", 404);
+    const file = db.prepare("SELECT mime_type,content FROM file_uploads WHERE document_id = ?").get(String(doc.id));
+    const mime = file ? String(file.mime_type) : String(doc.mime_type ?? "");
+    const text = file && mime === "text/plain"
+      ? Buffer.from(file.content as Uint8Array).toString("utf8").slice(0, 20_000)
+      : null;
+    return {
+      ...doc,
+      contentText: text,
+      contentReadable: text !== null,
+      note: text === null ? "Only metadata is available; the attachment contents have not been read." : "Plain-text attachment content retrieved."
+    };
   }
 
   if (name === "get_asset_history") {
