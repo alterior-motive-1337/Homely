@@ -24,7 +24,7 @@ export function startUpload(db: HomelyDatabase, input: Record<string,unknown>) {
   const id = "upload-" + randomUUID();
   db.prepare("DELETE FROM file_uploads WHERE document_id IS NULL AND created_at < datetime('now','-1 day')").run();
   db.prepare(`INSERT INTO file_uploads(id,file_name,mime_type,content,created_at,expected_bytes,received_bytes,completed,home_id)
-    VALUES (?,?,?,?,?,?,0,0,?)`).run(id,name,mimeType,Buffer.alloc(0),new Date().toISOString(),size,activeHomeId() ?? "");
+    VALUES (?,?,?,?,?,?,0,0,?)`).run(id,name,mimeType,Buffer.alloc(0),new Date().toISOString(),size,activeHomeId());
   return { id, name, mimeType, size, chunkSize: UPLOAD_CHUNK_BYTES };
 }
 
@@ -61,7 +61,7 @@ export function finishUpload(db: HomelyDatabase, id: string) {
 }
 
 export function getStoredFile(db: HomelyDatabase, documentId: string) {
-  const row = db.prepare("SELECT f.id,f.file_name,f.mime_type,f.content,f.received_bytes,f.expected_bytes,f.completed FROM file_uploads f JOIN documents d ON d.id=f.document_id WHERE f.document_id=? AND f.home_id IS COALESCE(NULLIF(?,''),f.home_id) AND d.home_id IS COALESCE(NULLIF(?,''),d.home_id)").get(documentId,activeHomeId(),activeHomeId() ?? "");
+  const row = db.prepare("SELECT f.id,f.file_name,f.mime_type,f.content,f.received_bytes,f.expected_bytes,f.completed FROM file_uploads f JOIN documents d ON d.id=f.document_id WHERE f.document_id=? AND f.home_id IS COALESCE(NULLIF(?,''),f.home_id) AND d.home_id IS COALESCE(NULLIF(?,''),d.home_id)").get(documentId,activeHomeId() ?? "",activeHomeId() ?? "");
   if (!row || Number(row.completed) !== 1) throw new DomainError("File not found.",404);
   const chunked = Number(row.expected_bytes) > 0;
   return {
