@@ -98,10 +98,10 @@ function serveStatic(res: http.ServerResponse, pathname: string) {
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     const indexPath = path.join(config.publicDir, "index.html");
     if (path.extname(pathname)) return sendJson(res, 404, { error: "File not found" });
-    return sendHtml(res, 200, fs.readFileSync(indexPath, "utf8"), { "cache-control": "no-cache" });
+    return sendHtml(res, 200, fs.readFileSync(indexPath, "utf8"), { "cache-control": "no-store" });
   }
   securityHeaders(res);
-  res.writeHead(200, { "content-type": mimeType(filePath), "cache-control": "no-cache" });
+  res.writeHead(200, { "content-type": mimeType(filePath), "cache-control": path.extname(filePath).toLowerCase() === ".html" ? "no-store" : "no-cache" });
   return res.end(fs.readFileSync(filePath));
 }
 

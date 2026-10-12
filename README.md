@@ -4,7 +4,7 @@ Homely is the persistent operating memory for one physical home. Issues, repairs
 
 ## Setup
 
-Node.js 24.x is pinned in `.node-version`. Copy `.env.example` to `.env` and set the four application credentials:
+Node.js 24.x is pinned in `.node-version`. Copy `.env.example` to `.env` and set the application credentials:
 
 ```text
 TURSO_DATABASE_URL=libsql://your-database.turso.io
@@ -67,3 +67,19 @@ node --check public/app.js
 ```
 
 Tests use an explicit in-memory libSQL dependency, never a production startup flag or fallback. CI checks record approval/history, evidence viewing, navigation, voice stop and layout without calling paid providers or the production database.
+
+## Google Sign-In configuration
+
+Create an OAuth Client ID of type **Web application** in Google Cloud Console, with the **Google Auth Platform** consent screen configured. Add your app's exact HTTPS redirect URI:
+
+```
+https://YOUR-HOMELY-HOST/auth/google/callback
+```
+
+In Render set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` and `GOOGLE_ALLOWED_EMAIL` (the exact Google email that is authorized to see this existing household). No Google Drive API, Google Drive permission, Google refresh token, email-sending service or password recovery configuration is used.
+
+`GOOGLE_REDIRECT_URI` must exactly match the URI in Google Cloud. The app fails closed if a required Google setting is absent, displaying a setup message instead of allowing anonymous household access. The sign-in flow uses authorization code + PKCE + nonce, verifies Google's ID-token signature/audience/issuer/expiry, and stores a hashed, seven-day revocable session in Turso. The Google subject is permanently bound to the owner of the existing household; a different account cannot take it over even by supplying the allowed email.
+
+For local testing, also register `http://localhost:4173/auth/google/callback`. Google OAuth consent screens in Testing may require adding the owner email as a test user.
+
+**Current constraint:** this build intentionally accepts a single preapproved Google account for the existing home. Do not turn on open signup or shared homes until the application is refactored to scope every SQL query, transaction, file and agent tool by household membership.
