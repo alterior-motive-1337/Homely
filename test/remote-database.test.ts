@@ -9,6 +9,7 @@ import Database from "libsql";
 import { migrate, type HomelyDatabase } from "../src/db.js";
 import { hasHome, seedDemo } from "../src/seed.js";
 import { commitTransaction, proposeTransaction, undoTransaction } from "../src/domain/transactions.js";
+import { startUpload, appendUploadChunk, finishUpload, readStoredFile } from "../src/evidence/storage.js";
 
 test("HTTP driver migrations, seeding and approval/undo retain atomic transactions", { timeout: 30_000 }, async () => {
   const child = fork(new URL("./hrana-server.ts", import.meta.url), [], { execArgv: ["--import", "tsx"], stdio: ["ignore", "ignore", "pipe", "ipc"] });
@@ -30,6 +31,18 @@ test("HTTP driver migrations, seeding and approval/undo retain atomic transactio
     assert.equal(db.prepare("SELECT next_due_at FROM maintenance_rules WHERE id = 'maint-gate'").get()?.next_due_at, "2027-03-30");
     undoTransaction(db, String(proposal.transaction?.id));
     assert.equal(db.prepare("SELECT next_due_at FROM maintenance_rules WHERE id = 'maint-gate'").get()?.next_due_at, "2026-10-22");
+
+    // Exercise BLOBs over the HTTP driver, not just local SQLite.
+    const sample=Buffer.alloc(256_000,73);
+    const upload=startUpload(db,{name:"test-clip.mp4",mimeType:"video/mp4",size:sample.length});
+    appendUploadChunk(db,upload.id,0,sample);
+    finishUpload(db,upload.id);
+    const evidence=proposeTransaction(db,{actionType:"ATTACH_DOCUMENT",reason:"Remote media check",payload:{
+      title:"Test clip",documentType:"VIDEO",provider:"LOCAL",uploadId:upload.id
+    }});
+    commitTransaction(db,String(evidence.transaction?.id));
+    const documentId=String(db.prepare("SELECT document_id FROM file_uploads WHERE id=?").get(upload.id)?.document_id);
+    assert.deepEqual(readStoredFile(db,documentId,300_000),sample);
 
     fs.writeFileSync(path.join(dir, "007_broken.sql"), "CREATE TABLE rolled_back(id TEXT); INSERT INTO missing_table VALUES (1);");
     assert.throws(() => migrate(db!, dir), /007_broken.sql/);
