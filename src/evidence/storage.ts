@@ -24,7 +24,7 @@ export function startUpload(db: HomelyDatabase, input: Record<string,unknown>) {
   const id = "upload-" + randomUUID();
   db.prepare("DELETE FROM file_uploads WHERE document_id IS NULL AND created_at < datetime('now','-1 day')").run();
   db.prepare(`INSERT INTO file_uploads(id,file_name,mime_type,content,created_at,expected_bytes,received_bytes,completed,home_id)
-    VALUES (?,?,?,?,?,?,0,0,?)`).run(id,name,mimeType,Buffer.alloc(0),new Date().toISOString(),size,activeHomeId());
+    VALUES (?,?,?,?,?,?,0,0,?)`).run(id,name,mimeType,Buffer.alloc(0),new Date().toISOString(),size,activeHomeId() ?? "");
   return { id, name, mimeType, size, chunkSize: UPLOAD_CHUNK_BYTES };
 }
 
@@ -33,7 +33,7 @@ export function appendUploadChunk(db: HomelyDatabase, id: string, index: number,
   if (bytes.length < 1 || bytes.length > UPLOAD_CHUNK_BYTES) throw new DomainError("Chunk must be between 1 byte and 1 MB.", 413);
   db.exec("BEGIN IMMEDIATE;");
   try {
-    const file = db.prepare("SELECT expected_bytes, received_bytes, completed, document_id FROM file_uploads WHERE id=? AND home_id IS COALESCE(?,home_id)").get(id,activeHomeId());
+    const file = db.prepare("SELECT expected_bytes, received_bytes, completed, document_id FROM file_uploads WHERE id=? AND home_id IS COALESCE(NULLIF(?,''),home_id)").get(id,activeHomeId() ?? "");
     if (!file || Number(file.completed) !== 0 || file.document_id) throw new DomainError("Upload is not active.", 409);
     const nextIndex = Number(db.prepare("SELECT COUNT(*) AS n FROM file_upload_chunks WHERE upload_id=?").get(id)?.n ?? 0);
     if (nextIndex !== index) throw new DomainError("Chunks must be uploaded in order.", 409);
@@ -53,7 +53,7 @@ export function appendUploadChunk(db: HomelyDatabase, id: string, index: number,
 }
 
 export function finishUpload(db: HomelyDatabase, id: string) {
-  const file = db.prepare("SELECT file_name,mime_type,expected_bytes,received_bytes,completed,document_id FROM file_uploads WHERE id=? AND home_id IS COALESCE(?,home_id)").get(id,activeHomeId());
+  const file = db.prepare("SELECT file_name,mime_type,expected_bytes,received_bytes,completed,document_id FROM file_uploads WHERE id=? AND home_id IS COALESCE(NULLIF(?,''),home_id)").get(id,activeHomeId() ?? "");
   if (!file || Number(file.completed) !== 0 || file.document_id) throw new DomainError("Upload is not active.",409);
   if (Number(file.expected_bytes) !== Number(file.received_bytes)) throw new DomainError("Upload is incomplete.",409);
   db.prepare("UPDATE file_uploads SET completed=1 WHERE id=?").run(id);
@@ -61,7 +61,7 @@ export function finishUpload(db: HomelyDatabase, id: string) {
 }
 
 export function getStoredFile(db: HomelyDatabase, documentId: string) {
-  const row = db.prepare("SELECT f.id,f.file_name,f.mime_type,f.content,f.received_bytes,f.expected_bytes,f.completed FROM file_uploads f JOIN documents d ON d.id=f.document_id WHERE f.document_id=? AND f.home_id IS COALESCE(?,f.home_id) AND d.home_id IS COALESCE(?,d.home_id)").get(documentId,activeHomeId(),activeHomeId());
+  const row = db.prepare("SELECT f.id,f.file_name,f.mime_type,f.content,f.received_bytes,f.expected_bytes,f.completed FROM file_uploads f JOIN documents d ON d.id=f.document_id WHERE f.document_id=? AND f.home_id IS COALESCE(NULLIF(?,''),f.home_id) AND d.home_id IS COALESCE(NULLIF(?,''),d.home_id)").get(documentId,activeHomeId(),activeHomeId() ?? "");
   if (!row || Number(row.completed) !== 1) throw new DomainError("File not found.",404);
   const chunked = Number(row.expected_bytes) > 0;
   return {

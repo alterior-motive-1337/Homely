@@ -8,7 +8,7 @@ import { getStoredFile, readStoredFile } from "./storage.js";
 type MediaClient = Pick<OpenAI,"chat"|"audio">;
 
 export function cachedAnalysis(db: HomelyDatabase, documentId: string) {
-  return db.prepare("SELECT f.content_text,f.model,f.analyzed_at FROM file_analysis f JOIN documents d ON d.id=f.document_id WHERE f.document_id=? AND d.home_id IS COALESCE(?,d.home_id)").get(documentId,activeHomeId());
+  return db.prepare("SELECT f.content_text,f.model,f.analyzed_at FROM file_analysis f JOIN documents d ON d.id=f.document_id WHERE f.document_id=? AND d.home_id IS COALESCE(NULLIF(?,''),d.home_id)").get(documentId,activeHomeId() ?? "");
 }
 
 /** On-demand processing only; original media stays exclusively in Turso. */
@@ -17,7 +17,7 @@ export async function analyzeDocument(
   documentId: string,
   client?: MediaClient
 ) {
-  const document=db.prepare("SELECT id,title FROM documents WHERE id=? AND home_id IS COALESCE(?,home_id)").get(documentId,activeHomeId());
+  const document=db.prepare("SELECT id,title FROM documents WHERE id=? AND home_id IS COALESCE(NULLIF(?,''),home_id)").get(documentId,activeHomeId() ?? "");
   if(!document)throw new DomainError("Evidence record not found.",404);
   const cached=cachedAnalysis(db,documentId);
   if(cached)return { text:String(cached.content_text),model:String(cached.model),cached:true };

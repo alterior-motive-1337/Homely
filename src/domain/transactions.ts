@@ -76,43 +76,43 @@ function requireDate(value: unknown, label: string): string {
 }
 
 function getAsset(db: HomelyDatabase, assetId: string) {
-  const asset = db.prepare("SELECT a.id,a.name FROM assets a JOIN systems s ON s.id=a.system_id WHERE a.id=? AND s.home_id=COALESCE(?,s.home_id)").get(assetId,activeHomeId());
+  const asset = db.prepare("SELECT a.id,a.name FROM assets a JOIN systems s ON s.id=a.system_id WHERE a.id=? AND s.home_id=COALESCE(NULLIF(?,''),s.home_id)").get(assetId,activeHomeId() ?? "");
   if (!asset) throw new DomainError("Asset not found.", 404);
   return asset;
 }
 
 function getIssue(db: HomelyDatabase, issueId: string) {
-  const issue = db.prepare("SELECT i.* FROM issues i JOIN assets a ON a.id=i.asset_id JOIN systems s ON s.id=a.system_id WHERE i.id=? AND s.home_id=COALESCE(?,s.home_id)").get(issueId,activeHomeId());
+  const issue = db.prepare("SELECT i.* FROM issues i JOIN assets a ON a.id=i.asset_id JOIN systems s ON s.id=a.system_id WHERE i.id=? AND s.home_id=COALESCE(NULLIF(?,''),s.home_id)").get(issueId,activeHomeId() ?? "");
   if (!issue) throw new DomainError("Issue not found.", 404);
   return issue;
 }
 
 function getRepair(db: HomelyDatabase, repairId: string) {
-  const repair = db.prepare("SELECT * FROM repairs WHERE id=? AND home_id=COALESCE(?,home_id)").get(repairId,activeHomeId());
+  const repair = db.prepare("SELECT * FROM repairs WHERE id=? AND home_id=COALESCE(NULLIF(?,''),home_id)").get(repairId,activeHomeId() ?? "");
   if (!repair) throw new DomainError("Repair not found.", 404);
   return repair;
 }
 
 function getCharge(db: HomelyDatabase, chargeId: string) {
-  const charge = db.prepare("SELECT * FROM charges WHERE id=? AND home_id=COALESCE(?,home_id)").get(chargeId,activeHomeId());
+  const charge = db.prepare("SELECT * FROM charges WHERE id=? AND home_id=COALESCE(NULLIF(?,''),home_id)").get(chargeId,activeHomeId() ?? "");
   if (!charge) throw new DomainError("Charge not found.", 404);
   return charge;
 }
 
 function getPurchaseCandidate(db: HomelyDatabase, purchaseCandidateId: string) {
-  const purchase = db.prepare("SELECT * FROM purchase_candidates WHERE id=? AND home_id=COALESCE(?,home_id)").get(purchaseCandidateId,activeHomeId());
+  const purchase = db.prepare("SELECT * FROM purchase_candidates WHERE id=? AND home_id=COALESCE(NULLIF(?,''),home_id)").get(purchaseCandidateId,activeHomeId() ?? "");
   if (!purchase) throw new DomainError("Purchase candidate not found.", 404);
   return purchase;
 }
 
 function getMaintenance(db: HomelyDatabase, maintenanceId: string) {
-  const rule = db.prepare("SELECT m.* FROM maintenance_rules m JOIN assets a ON a.id=m.asset_id JOIN systems s ON s.id=a.system_id WHERE m.id=? AND s.home_id=COALESCE(?,s.home_id)").get(maintenanceId,activeHomeId());
+  const rule = db.prepare("SELECT m.* FROM maintenance_rules m JOIN assets a ON a.id=m.asset_id JOIN systems s ON s.id=a.system_id WHERE m.id=? AND s.home_id=COALESCE(NULLIF(?,''),s.home_id)").get(maintenanceId,activeHomeId() ?? "");
   if (!rule) throw new DomainError("Maintenance rule not found.", 404);
   return rule;
 }
 
 function getProject(db: HomelyDatabase, projectId: string) {
-  const project = db.prepare("SELECT * FROM projects WHERE id=? AND home_id=COALESCE(?,home_id)").get(projectId,activeHomeId());
+  const project = db.prepare("SELECT * FROM projects WHERE id=? AND home_id=COALESCE(NULLIF(?,''),home_id)").get(projectId,activeHomeId() ?? "");
   if (!project) throw new DomainError("Project not found.", 404);
   return project;
 }
@@ -122,7 +122,7 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
     const assetId = actionType === "UPDATE_ASSET" ? requireText(raw.assetId, "Asset", 120) : null;
     if (assetId) getAsset(db, assetId);
     const systemId = requireText(raw.systemId, "System", 120);
-    if (!db.prepare("SELECT id FROM systems WHERE id=? AND home_id=COALESCE(?,home_id)").get(systemId,activeHomeId())) throw new DomainError("System not found.", 404);
+    if (!db.prepare("SELECT id FROM systems WHERE id=? AND home_id=COALESCE(NULLIF(?,''),home_id)").get(systemId,activeHomeId() ?? "")) throw new DomainError("System not found.", 404);
     const condition = raw.condition ? requireText(raw.condition, "Condition", 20).toUpperCase() : "UNKNOWN";
     if (!["UNKNOWN","NEW","GOOD","FAIR","POOR","FAILED"].includes(condition)) throw new DomainError("Invalid asset condition.");
     let purchaseCostCents: number | null = null;
@@ -238,7 +238,7 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
       : null;
     const uploadId = raw.uploadId ? requireText(raw.uploadId, "Upload", 120) : null;
     const upload = uploadId
-      ? db.prepare("SELECT document_id,mime_type,completed FROM file_uploads WHERE id=? AND home_id=COALESCE(?,home_id)").get(uploadId,activeHomeId())
+      ? db.prepare("SELECT document_id,mime_type,completed FROM file_uploads WHERE id=? AND home_id=COALESCE(NULLIF(?,''),home_id)").get(uploadId,activeHomeId() ?? "")
       : null;
     if (uploadId && (!upload || upload.document_id || Number(upload.completed) !== 1 || provider !== "LOCAL")) {
       throw new DomainError("Staged upload is missing, already linked or incompatible.", 409);
@@ -640,7 +640,7 @@ function createTimelineEvent(
   },
   createdAt: string
 ): JsonRecord {
-  const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(?,id) ORDER BY created_at LIMIT 1").get(activeHomeId());
+  const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(NULLIF(?,''),id) ORDER BY created_at LIMIT 1").get(activeHomeId() ?? "");
   if (!home) throw new DomainError("Home record is missing.", 500);
 
   const eventId = newId("event");
@@ -673,7 +673,7 @@ function createTimelineEvent(
 }
 
 export function rejectTransaction(db: HomelyDatabase, transactionId: string) {
-  const transaction = db.prepare("SELECT * FROM transactions WHERE id=? AND home_id IS COALESCE(?,home_id)").get(transactionId,activeHomeId());
+  const transaction = db.prepare("SELECT * FROM transactions WHERE id=? AND home_id IS COALESCE(NULLIF(?,''),home_id)").get(transactionId,activeHomeId() ?? "");
   if (!transaction) throw new DomainError("Transaction not found.", 404);
   if (String(transaction.status) !== "PROPOSED") {
     throw new DomainError("Only proposed transactions can be rejected.", 409);
@@ -685,7 +685,7 @@ export function rejectTransaction(db: HomelyDatabase, transactionId: string) {
 }
 
 export function commitTransaction(db: HomelyDatabase, transactionId: string) {
-  const transaction = db.prepare("SELECT * FROM transactions WHERE id=? AND home_id IS COALESCE(?,home_id)").get(transactionId,activeHomeId());
+  const transaction = db.prepare("SELECT * FROM transactions WHERE id=? AND home_id IS COALESCE(NULLIF(?,''),home_id)").get(transactionId,activeHomeId() ?? "");
   if (!transaction) throw new DomainError("Transaction not found.", 404);
   if (String(transaction.status) !== "PROPOSED") {
     throw new DomainError("Only proposed transactions can be committed.", 409);
@@ -784,7 +784,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
     }
 
     if (actionType === "RECORD_REPAIR") {
-      const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(?,id) ORDER BY created_at LIMIT 1").get(activeHomeId());
+      const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(NULLIF(?,''),id) ORDER BY created_at LIMIT 1").get(activeHomeId() ?? "");
       if (!home) throw new DomainError("Home record is missing.", 500);
       const repairId = newId("repair");
       db.prepare(`
@@ -818,7 +818,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
     }
 
     if (actionType === "CREATE_CHARGE") {
-      const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(?,id) ORDER BY created_at LIMIT 1").get(activeHomeId());
+      const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(NULLIF(?,''),id) ORDER BY created_at LIMIT 1").get(activeHomeId() ?? "");
       if (!home) throw new DomainError("Home record is missing.", 500);
       const chargeId = newId("charge");
       db.prepare(`
@@ -850,7 +850,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
     }
 
     if (actionType === "SAVE_PURCHASE") {
-      const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(?,id) ORDER BY created_at LIMIT 1").get(activeHomeId());
+      const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(NULLIF(?,''),id) ORDER BY created_at LIMIT 1").get(activeHomeId() ?? "");
       if (!home) throw new DomainError("Home record is missing.", 500);
       const purchaseId = newId("purchase");
       db.prepare(`
@@ -947,8 +947,8 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
       );
       if (payload.uploadId) {
         const linked = db.prepare(
-          "UPDATE file_uploads SET document_id = ? WHERE id = ? AND document_id IS NULL AND home_id IS COALESCE(?,home_id)"
-        ).run(documentId, String(payload.uploadId),activeHomeId());
+          "UPDATE file_uploads SET document_id = ? WHERE id = ? AND document_id IS NULL AND home_id IS COALESCE(NULLIF(?,''),home_id)"
+        ).run(documentId, String(payload.uploadId),activeHomeId() ?? "");
         if (Number(linked.changes) !== 1) throw new DomainError("Staged upload has expired or is already linked.", 409);
       }
       const document = db.prepare("SELECT * FROM documents WHERE id = ?").get(documentId) as JsonRecord;
@@ -990,7 +990,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
     }
 
     if (actionType === "CREATE_PROJECT") {
-      const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(?,id) ORDER BY created_at LIMIT 1").get(activeHomeId());
+      const home = db.prepare("SELECT id FROM homes WHERE id=COALESCE(NULLIF(?,''),id) ORDER BY created_at LIMIT 1").get(activeHomeId() ?? "");
       if (!home) throw new DomainError("Home record is missing.", 500);
       const projectId = newId("project");
       db.prepare(`
@@ -1222,7 +1222,7 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
 }
 
 export function undoTransaction(db: HomelyDatabase, transactionId: string) {
-  const original = db.prepare("SELECT * FROM transactions WHERE id=? AND home_id IS COALESCE(?,home_id)").get(transactionId,activeHomeId());
+  const original = db.prepare("SELECT * FROM transactions WHERE id=? AND home_id IS COALESCE(NULLIF(?,''),home_id)").get(transactionId,activeHomeId() ?? "");
   if (!original) throw new DomainError("Transaction not found.", 404);
   if (String(original.status) !== "COMMITTED") throw new DomainError("Only committed transactions can be undone.", 409);
   if (String(original.action_type) === "UNDO") throw new DomainError("Undo transactions cannot be undone.", 409);
@@ -1283,7 +1283,7 @@ export function undoTransaction(db: HomelyDatabase, transactionId: string) {
 }
 
 export function getTransaction(db: HomelyDatabase, transactionId: string): TransactionRecord | null {
-  const transaction = db.prepare("SELECT * FROM transactions WHERE id=? AND home_id IS COALESCE(?,home_id)").get(transactionId,activeHomeId()) as JsonRecord | undefined;
+  const transaction = db.prepare("SELECT * FROM transactions WHERE id=? AND home_id IS COALESCE(NULLIF(?,''),home_id)").get(transactionId,activeHomeId() ?? "") as JsonRecord | undefined;
   if (!transaction) return null;
   const changes = db.prepare(
     "SELECT * FROM transaction_changes WHERE transaction_id = ? ORDER BY rowid"
@@ -1303,7 +1303,7 @@ export function listTransactions(db: HomelyDatabase, limit = 50) {
     SELECT t.*,
       (SELECT COUNT(*) FROM transaction_changes c WHERE c.transaction_id = t.id) AS change_count
     FROM transactions t
-    WHERE t.home_id IS COALESCE(?,t.home_id)
+    WHERE t.home_id IS COALESCE(NULLIF(?,''),t.home_id)
     ORDER BY t.created_at DESC
     LIMIT ?
   `).all(activeHomeId(),limit);

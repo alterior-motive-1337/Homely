@@ -88,10 +88,10 @@ test("Google sign-in issues PKCE challenge, checks nonce, and stores only hashed
   db.close();
 });
 
-test("Google account allowlist, verified email and immutable owner subject prevent household takeover",async()=>{
+test("new Google accounts get independent private homes; legacy owner only claims explicit unowned home",async()=>{
   const db=createTestDatabase();migrate(db);seedDemo(db);
   let claims: {sub:string;email:string;email_verified:boolean}={
-    sub:"google-user",email:"outsider@example.test",email_verified:true
+    sub:"google-user-a",email:"outsider@example.test",email_verified:true
   };
   const auth=new GoogleAuthentication(db,settings,{
     async exchange(){return "token"},
@@ -100,18 +100,28 @@ test("Google account allowlist, verified email and immutable owner subject preve
   const login=async()=>{
     const start=response();auth.beginLogin(start as unknown as http.ServerResponse);
     const state=new URL(String(start.getHeader("location"))).searchParams.get("state");
-    return auth.finishLogin(request(cookieValue(start,"homely_oauth")),response() as unknown as http.ServerResponse,
+    const result=response();
+    await auth.finishLogin(request(cookieValue(start,"homely_oauth")),result as unknown as http.ServerResponse,
       new URL("http://localhost:4173/auth/google/callback?state="+state+"&code=abc"));
+    return result;
   };
-  await assert.rejects(login(),/not authorized/);
-  claims={sub:"google-user",email:"owner@example.test",email_verified:false};
-  await assert.rejects(login(),/not authorized/);
-  claims={sub:"first-sub",email:"owner@example.test",email_verified:true};
-  await assert.doesNotReject(login());
-  claims={sub:"different-sub",email:"owner@example.test",email_verified:true};
-  await assert.rejects(login(),/another Google identity/);
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM home_owners").get()?.count,1);
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM auth_users").get()?.count,1);
+  const first=await login();
+  const userA=auth.requireUser(request(cookieValue(first,"homely_session")));
+  assert.notEqual(userA.homeId,"home-hawthorn");
+  assert.equal(userA.role,"OWNER");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM assets JOIN systems s ON s.id=assets.system_id WHERE s.home_id=?").get(userA.homeId)?.n,0);
+  claims={sub:"google-user-a",email:"outsider@example.test",email_verified:false};
+  await assert.rejects(login(),/verified Google email/);
+  claims={sub:"google-user-b",email:"owner@example.test",email_verified:true};
+  const second=await login();
+  const userB=auth.requireUser(request(cookieValue(second,"homely_session")));
+  assert.equal(userB.homeId,"home-hawthorn");
+  assert.notEqual(userA.homeId,userB.homeId);
+  claims={sub:"google-user-c",email:"owner@example.test",email_verified:true};
+  const third=await login();
+  const userC=auth.requireUser(request(cookieValue(third,"homely_session")));
+  assert.notEqual(userC.homeId,userB.homeId);
+  assert.notEqual(userC.homeId,userA.homeId);
   db.close();
 });
 
