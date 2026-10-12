@@ -163,9 +163,11 @@ export async function startServer(db: HomelyDatabase = openDatabase()): Promise<
       if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
       if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
       if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
-      const analyzeMatch=/^\\/api\\/documents\\/([a-zA-Z0-9-]+)\\/analyze$/.exec(url.pathname);
-      if(req.method==="POST" && analyzeMatch){
-        try { return sendJson(res,200,await analyzeDocument(db,analyzeMatch[1]!)); }
+      const analysisPath=url.pathname.split("/");
+      if(req.method==="POST" && analysisPath.length===5 && analysisPath[1]==="api" &&
+        analysisPath[2]==="documents" && analysisPath[4]==="analyze" &&
+        /^[a-zA-Z0-9-]+$/.test(analysisPath[3]??"")){
+        try { return sendJson(res,200,await analyzeDocument(db,analysisPath[3]!)); }
         catch(error){
           if(error instanceof DomainError) throw error;
           console.error("Multimedia processing unavailable:",error);
