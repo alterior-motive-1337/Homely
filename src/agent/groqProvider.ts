@@ -4,12 +4,15 @@ import { agentToolDefinitions, executeHomelyTool, type HomelyToolName } from "..
 import { HomeResearch } from "../integrations/webResearch.js";
 import { executeResearchTool, researchToolDefinitions, type ResearchToolName } from "./researchTools.js";
 import type { AgentProposal, AgentProvider, AgentRequest, AgentResponse } from "./types.js";
+import { analyzeDocument } from "../evidence/analyze.js";
 
 const INSTRUCTIONS = `You are Homely, the operating memory for one physical home.
 
 Rules:
 - Homely's structured state and tool results are the source of truth. Never invent facts about this home.
 - For questions about this property, retrieve the relevant state/history before answering.
+- Use analyze_document only when the user asks to interpret a specific stored image/audio/video, not on casual listing.
+- Transcription is not full visual video understanding. Distinguish model observations from authoritative records.
 - Prefer recorded history, repair records, purchase context and document metadata over generic home-maintenance advice.
 - Deterministic health states come from Homely. Do not override them.
 - You may read state and create inert proposals with preview_action.
@@ -102,9 +105,11 @@ export class GroqAgentProvider implements AgentProvider {
         }
 
         try {
-          const result = name === "search_web" || name === "read_web_page"
-            ? await executeResearchTool(this.research, name as ResearchToolName, args)
-            : executeHomelyTool(this.db, name as HomelyToolName, args, "GROQ");
+          const result = name === "analyze_document"
+            ? await analyzeDocument(this.db,String(args.documentId??""))
+            : name === "search_web" || name === "read_web_page"
+              ? await executeResearchTool(this.research,name as ResearchToolName,args)
+              : executeHomelyTool(this.db,name as HomelyToolName,args,"GROQ");
           if (name === "preview_action") {
             const proposal = proposalFromResult(result);
             if (proposal) proposals.push(proposal);

@@ -24,6 +24,7 @@ export type HomelyToolName =
   | "list_purchases"
   | "list_documents"
   | "get_document"
+  | "analyze_document"
   | "get_asset_history"
   | "search_history"
   | "list_maintenance_due"
@@ -165,6 +166,13 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
       required: ["documentId"],
       additionalProperties: false
     }
+  },
+  {
+    type: "function",
+    name: "analyze_document",
+    description: "Only when the homeowner explicitly requests interpretation of a stored photo, audio recording or video speech: use optional Groq multimodal processing. Images up to 12 MB, audio and video transcription up to 25 MB. Returns saved extracted text; PDF and DOCX not yet parsed. Do not treat output as verified home facts.",
+    strict: true,
+    parameters: { type:"object",properties:{ documentId:{type:"string"} },required:["documentId"],additionalProperties:false }
   },
   {
     type: "function",
@@ -333,16 +341,24 @@ export function executeHomelyTool(
   if (name === "get_document") {
     const doc = db.prepare("SELECT * FROM documents WHERE id = ?").get(String(args.documentId ?? ""));
     if (!doc) throw new DomainError("Document not found.", 404);
-    const file = db.prepare("SELECT mime_type,content FROM file_uploads WHERE document_id = ?").get(String(doc.id));
+    const file = db.prepare("SELECT id,mime_type,content,expected_bytes FROM file_uploads WHERE document_id = ?").get(String(doc.id));
+    const analyzed=db.prepare("SELECT content_text,model FROM file_analysis WHERE document_id=?").get(String(doc.id));
     const mime = file ? String(file.mime_type) : String(doc.mime_type ?? "");
-    const text = file && mime === "text/plain"
-      ? Buffer.from(file.content as Uint8Array).toString("utf8").slice(0, 20_000)
+    const firstChunk=file && Number(file.expected_bytes)>0
+      ? db.prepare("SELECT content FROM file_upload_chunks WHERE upload_id=? AND chunk_index=0").get(String(file.id))
       : null;
+    const directText = file && ["text/plain","text/csv","application/json"].includes(mime)
+      ? Buffer.from((firstChunk?.content??file.content) as Uint8Array).toString("utf8").slice(0,20000)
+      : null;
+    const text=analyzed ? String(analyzed.content_text) : directText;
     return {
       ...doc,
       contentText: text,
       contentReadable: text !== null,
-      note: text === null ? "Only metadata is available; the attachment contents have not been read." : "Plain-text attachment content retrieved."
+      analysisModel: analyzed?.model ?? null,
+      note: analyzed ? "Cached multimedia analysis; confirm important details against the original evidence."
+        : directText !== null ? "First 20,000 characters of stored text; more may exist."
+        : "Only metadata available. To interpret attached media, use analyze_document on explicit request."
     };
   }
 

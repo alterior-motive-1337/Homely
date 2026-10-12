@@ -19,6 +19,7 @@ import { hasHome, seedDemo } from "./seed.js";
 import { createAgentRuntime } from "./agent/runtime.js";
 import { assertSameOrigin } from "./security/request.js";
 import { startUpload, appendUploadChunk, finishUpload, streamStoredFile, UPLOAD_CHUNK_BYTES } from "./evidence/storage.js";
+import { analyzeDocument } from "./evidence/analyze.js";
 
 function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-content-type-options", "nosniff");
@@ -162,6 +163,15 @@ export async function startServer(db: HomelyDatabase = openDatabase()): Promise<
       if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
       if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
       if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
+      const analyzeMatch=/^\\/api\\/documents\\/([a-zA-Z0-9-]+)\\/analyze$/.exec(url.pathname);
+      if(req.method==="POST" && analyzeMatch){
+        try { return sendJson(res,200,await analyzeDocument(db,analyzeMatch[1]!)); }
+        catch(error){
+          if(error instanceof DomainError) throw error;
+          console.error("Multimedia processing unavailable:",error);
+          return sendJson(res,503,{error:"Multimedia analysis failed or is unavailable."});
+        }
+      }
       if (req.method === "GET" && url.pathname === "/api/projects") return sendJson(res, 200, listProjects(db));
       if (req.method === "GET" && url.pathname.startsWith("/api/projects/")) {
         const project = getProject(db, decodeURIComponent(url.pathname.slice("/api/projects/".length)));
