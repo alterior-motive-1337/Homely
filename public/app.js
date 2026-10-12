@@ -449,7 +449,7 @@ async function bootstrap(){
       $("#google-signin").setAttribute("aria-disabled",auth.enabled?"false":"true");
       const message=location.search.includes("auth_error=")
         ? "Google sign-in was unsuccessful. Check your account and try again."
-        : auth.enabled ? "Sign in with your approved Google account to access your home."
+        : auth.enabled ? "Sign in with Google to access your private home."
         : "Google Sign-In is not configured yet. Add the OAuth credentials in Render.";
       $("#auth-message").textContent=message;
       return;

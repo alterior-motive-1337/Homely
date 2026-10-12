@@ -21,6 +21,7 @@ import { assertSameOrigin } from "./security/request.js";
 import { startUpload, appendUploadChunk, finishUpload, streamStoredFile, UPLOAD_CHUNK_BYTES } from "./evidence/storage.js";
 import { analyzeDocument } from "./evidence/analyze.js";
 import { GoogleAuthentication, type AuthGateway } from "./security/googleAuth.js";
+import { enterHome } from "./security/homeScope.js";
 
 function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-content-type-options", "nosniff");
@@ -110,8 +111,7 @@ export async function startServer(
   authentication?: AuthGateway
 ): Promise<http.Server> {
   migrate(db);
-  const seeded = !hasHome(db);
-  if (seeded) seedDemo(db);
+  if (!hasHome(db) && process.env.HOMELY_SEED_DEMO === "true") seedDemo(db);
 
   const agentRuntime = createAgentRuntime(db);
   const auth = authentication ?? new GoogleAuthentication(db);
@@ -155,7 +155,10 @@ export async function startServer(
       // Every home API, file download, upload and agent operation requires a valid owner session.
       // No Google account can access the existing household just by registering.
       if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/demo-documents/")) {
-        auth.requireUser(req);
+        const user=auth.requireUser(req);
+        enterHome(user.homeId);
+        if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET"))
+          throw new DomainError("Your household membership is read-only.",403);
       }
 
       // Upload each 50 MB file in small durable Turso transactions.
