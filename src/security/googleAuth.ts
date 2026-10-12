@@ -26,6 +26,7 @@ export interface AuthGateway {
   beginLogin(res: http.ServerResponse): void;
   finishLogin(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void>;
   logout(req: http.IncomingMessage, res: http.ServerResponse): void;
+  switchHome?(req: http.IncomingMessage, homeId: string): AuthUser;
 }
 export interface GoogleAuthSettings {
   clientId: string;
@@ -148,8 +149,11 @@ export class GoogleAuthentication implements AuthGateway {
     if(!token || !/^[\w-]{42,60}$/.test(token))return null;
     const row=this.db.prepare(`SELECT u.id,u.email,u.display_name,m.home_id,m.role FROM auth_sessions s
       JOIN auth_users u ON u.id=s.user_id
-      JOIN home_memberships m ON m.user_id=u.id
-      WHERE s.token_hash=? AND s.expires_at>? ORDER BY m.joined_at ASC LIMIT 1`).get(hash(token),new Date().toISOString());
+      JOIN home_memberships m ON m.user_id=u.id AND m.home_id=COALESCE(
+        (SELECT home_id FROM home_memberships WHERE user_id=u.id AND home_id=s.home_id),
+        (SELECT home_id FROM home_memberships WHERE user_id=u.id ORDER BY joined_at LIMIT 1)
+      )
+      WHERE s.token_hash=? AND s.expires_at>? LIMIT 1`).get(hash(token),new Date().toISOString());
     if(!row)return null;
     return {id:String(row.id),email:String(row.email),name:String(row.display_name),
       homeId:String(row.home_id),role:String(row.role) as AuthUser["role"]};
@@ -158,6 +162,18 @@ export class GoogleAuthentication implements AuthGateway {
     const user=this.user(req);
     if(!user)throw new DomainError("Sign in with Google to access your home.",401);
     return user;
+  }
+  switchHome(req: http.IncomingMessage, homeId: string): AuthUser {
+    const current=this.requireUser(req);
+    const role=this.db.prepare("SELECT role FROM home_memberships WHERE home_id=? AND user_id=?")
+      .get(homeId,current.id);
+    if(!role)throw new DomainError("You are not a member of that household.",403);
+    const token=cookies(req).get(SESSION_COOKIE);
+    if(!token)throw new DomainError("Sign in again.",401);
+    const changed=this.db.prepare("UPDATE auth_sessions SET home_id=? WHERE token_hash=? AND user_id=?")
+      .run(homeId,hash(token),current.id);
+    if(Number(changed.changes)!==1)throw new DomainError("Session expired.",401);
+    return {...current,homeId,role:String(role.role) as AuthUser["role"]};
   }
   beginLogin(res: http.ServerResponse): void {
     this.checkEnabled();
@@ -238,8 +254,11 @@ export class GoogleAuthentication implements AuthGateway {
           .run(homeId,id,now);
       }
       this.db.prepare("DELETE FROM auth_sessions WHERE expires_at < ?").run(now);
-      this.db.prepare("INSERT INTO auth_sessions(token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)")
-        .run(hash(sessionToken),id,later(SESSION_SECONDS),now);
+      const selected=this.db.prepare("SELECT home_id FROM home_memberships WHERE user_id=? ORDER BY joined_at LIMIT 1")
+        .get(id);
+      if(!selected)throw new DomainError("Account setup failed.",500);
+      this.db.prepare("INSERT INTO auth_sessions(token_hash,user_id,expires_at,created_at,home_id) VALUES (?,?,?,?,?)")
+        .run(hash(sessionToken),id,later(SESSION_SECONDS),now,String(selected.home_id));
       this.db.exec("COMMIT;");
     }catch(error){this.db.exec("ROLLBACK;");throw error;}
     setCookie(res,SESSION_COOKIE,sessionToken,this.secure,SESSION_SECONDS);
