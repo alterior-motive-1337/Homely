@@ -29,21 +29,22 @@
       <button class="nav-item" data-view="files">Files</button>
     </nav>
     <div class="sidebar-footer">
-      <div class="account-menu"><span id="account-email" class="account-email"></span><button id="household-settings" type="button" class="button">Household settings</button><button id="sign-out" type="button" class="button">Sign out</button></div>
+      <div class="account-menu"><span id="account-email" class="account-email" title="Signed-in account"></span><button id="household-settings" type="button" class="button">Settings</button><button id="sign-out" type="button" class="button">Sign out</button></div>
       <div class="runtime-status" id="runtime-status"><span class="dot"></span><span id="runtime-text">Checking state…</span></div>
     </div>
   </aside>
   <main class="workspace">
-    <header class="topbar"><div><h1 id="page-title">Home</h1></div><div class="topbar-actions"><div id="today"></div><button class="icon-button" id="refresh-view" type="button" title="Refresh records" aria-label="Refresh records">↻</button></div></header>
+    <header class="topbar"><h1 id="page-title">Home</h1><div class="topbar-actions"><div id="today" hidden></div><button class="icon-button" id="refresh-view" type="button" title="Refresh records" aria-label="Refresh records">↻</button><button class="button chat-trigger" id="chat-trigger" type="button" aria-expanded="false" aria-controls="chat-rail">Ask Homely</button></div></header>
     <section id="content" class="content"></section>
   </main>
-  <aside class="chat-rail" id="chat-rail">
-    <header class="chat-head"><div><strong>Ask Homely</strong><small id="agent-state">Home-aware assistant</small></div><button class="icon-button mobile-only" id="chat-close" aria-label="Close chat">×</button></header>
+  <aside class="chat-rail" id="chat-rail" aria-hidden="true" aria-label="Homely assistant">
+    <header class="chat-head"><div><strong>Ask Homely</strong><small id="agent-state">Home-aware assistant</small></div><button class="icon-button" id="chat-close" type="button" aria-label="Close chat">×</button></header>
     <div class="chat-body" id="chat-body"><div class="chat-empty">What needs attention?</div></div>
     <form class="chat-form" id="chat-form"><textarea id="chat-input" maxlength="4000" rows="3" placeholder="Ask Homely…" required></textarea><div class="chat-actions"><button class="button voice-button" id="voice-button" type="button">Voice</button><button class="primary-button" type="submit">Send</button></div></form>
   </aside>
 </div>
-<button class="chat-fab mobile-only" id="chat-open">Ask Homely</button>
+<button class="chat-backdrop" id="chat-backdrop" type="button" aria-label="Close assistant" hidden></button>
+<button class="chat-fab" id="chat-open" type="button" aria-expanded="false" aria-controls="chat-rail">Ask Homely</button>
 <dialog class="modal" id="modal" aria-label="Home record"><button class="modal-close" id="modal-close" aria-label="Close record">×</button><div id="modal-body"></div></dialog>
 <dialog class="viewer" id="viewer" aria-labelledby="viewer-title"><header class="viewer-head"><div><p class="eyebrow">File viewer</p><strong id="viewer-title">File</strong></div><div class="viewer-controls"><button class="button" id="analyze-file" type="button" hidden>Analyze</button><button class="icon-button" id="viewer-close" aria-label="Close file">×</button></div></header><div class="viewer-body" id="viewer-body"></div><div id="viewer-insight" class="viewer-insight" hidden></div></dialog>
 <div class="toast" id="toast" role="status"></div>
