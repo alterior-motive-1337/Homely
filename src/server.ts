@@ -22,6 +22,7 @@ import { startUpload, appendUploadChunk, finishUpload, streamStoredFile, UPLOAD_
 import { analyzeDocument } from "./evidence/analyze.js";
 import { GoogleAuthentication, type AuthGateway } from "./security/googleAuth.js";
 import { enterHome } from "./security/homeScope.js";
+import { RequestLimiter } from "./security/traffic.js";
 
 function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-content-type-options", "nosniff");
@@ -115,6 +116,7 @@ export async function startServer(
 
   const agentRuntime = createAgentRuntime(db);
   const auth = authentication ?? new GoogleAuthentication(db);
+  const limits = new RequestLimiter();
 
   const server = http.createServer(async (req, res) => {
     if (!req.url) return sendJson(res, 400, { error: "Missing URL" });
@@ -130,10 +132,12 @@ export async function startServer(
         return sendJson(res, 200, auth.status(req), { "cache-control": "no-store" });
       }
       if (req.method === "GET" && url.pathname === "/auth/google") {
+        limits.enforce("oauth-start:"+String(req.socket.remoteAddress??"unknown"),15,15*60_000);
         auth.beginLogin(res);
         return;
       }
       if (req.method === "GET" && url.pathname === "/auth/google/callback") {
+        limits.enforce("oauth-callback:"+String(req.socket.remoteAddress??"unknown"),30,15*60_000);
         try { await auth.finishLogin(req,res,url); }
         catch (error) {
           console.error("Google sign-in failed:", error instanceof DomainError ? error.message : "Identity provider unavailable");
@@ -157,6 +161,15 @@ export async function startServer(
       if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/demo-documents/")) {
         const user=auth.requireUser(req);
         enterHome(user.homeId);
+        // Limit expensive operations by authenticated Google identity, not by household IP.
+        if (req.method!=="GET" && req.method!=="HEAD") {
+          const key=user.id;
+          if(url.pathname==="/api/agent/respond")limits.enforce("agent:"+key,12,60_000);
+          else if(url.pathname.endsWith("/analyze"))limits.enforce("analysis:"+key,5,60_000);
+          else if(url.pathname==="/api/uploads/start")limits.enforce("upload-start:"+key,20,60*60_000);
+          else if(url.pathname.includes("/chunks/"))limits.enforce("chunks:"+key,240,60_000);
+          else limits.enforce("write:"+key,90,60_000);
+        }
         if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET"))
           throw new DomainError("Your household membership is read-only.",403);
       }
@@ -292,7 +305,10 @@ export async function startServer(
       if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "Not found" });
       return serveStatic(res, url.pathname);
     } catch (error) {
-      if (error instanceof DomainError) return sendJson(res, error.status, { error: error.message });
+      if (error instanceof DomainError) {
+        if(error.status===429)res.setHeader("retry-after","60");
+        return sendJson(res, error.status, { error: error.message });
+      }
       console.error(error);
       return sendJson(res, 500, { error: "Homely could not complete this request." });
     }
