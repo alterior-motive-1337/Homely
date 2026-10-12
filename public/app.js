@@ -4,7 +4,7 @@ const content=$("#content"), pageTitle=$("#page-title"), nav=$("#nav");
 const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewerBody=$("#viewer-body"), viewerTitle=$("#viewer-title");
 const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input"), voiceButton=$("#voice-button");
 const runtime=$("#runtime-status"), runtimeText=$("#runtime-text"), agentState=$("#agent-state");
-const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false};
+const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0};
 const viewPanels=new Map();
 const VIEW_CACHE_MS=120000;
 
@@ -421,16 +421,16 @@ async function selectView(view){
   if(state.view && content.hasChildNodes() && !stale && !content.querySelector(".loading,.error")){
     const fragment=document.createDocumentFragment();
     while(content.firstChild)fragment.appendChild(content.firstChild);
-    viewPanels.set(state.view,{fragment:fragment,time:Date.now()});
+    viewPanels.set(state.view,{fragment:fragment,time:state.viewLoadedAt||Date.now()});
   }else{content.replaceChildren()}
   state.needsReload=false;state.view=next;
   pageTitle.textContent=views[next][0];document.title=views[next][0]+" · Homely";
   $$(".nav-item").forEach(function(b){b.classList.toggle("active",b.dataset.view===next);if(b.dataset.view===next)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
   const saved=viewPanels.get(next);
   if(saved && Date.now()-saved.time<VIEW_CACHE_MS){
-    viewPanels.delete(next);content.appendChild(saved.fragment);return;
+    viewPanels.delete(next);state.viewLoadedAt=saved.time;content.appendChild(saved.fragment);return;
   }
-  viewPanels.delete(next);
+  viewPanels.delete(next);state.viewLoadedAt=Date.now();
   await views[next][1]();
 }
 function navigate(view,replace){view=normalizeView(view);const url=view==="home"?"/":"/?view="+encodeURIComponent(view);if(replace)history.replaceState({view:view},"",url);else history.pushState({view:view},"",url);void selectView(view)}
