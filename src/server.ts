@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { URL, pathToFileURL } from "node:url";
 import { config } from "./config.js";
 import { migrate, openDatabase, type HomelyDatabase } from "./db.js";
@@ -32,6 +33,8 @@ function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-frame-options", "DENY");
   res.setHeader("referrer-policy", "no-referrer");
   res.setHeader("permissions-policy", "camera=(), microphone=(self), geolocation=()");
+  res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; frame-src 'self' blob: https://drive.google.com; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  if(process.env.RENDER==="true")res.setHeader("strict-transport-security","max-age=31536000; includeSubDomains");
 }
 
 function sendJson(
@@ -122,13 +125,34 @@ export async function startServer(
   const limits = new RequestLimiter();
 
   const server = http.createServer(async (req, res) => {
+    const requestId=randomUUID();
+    const start=Date.now();
+    res.setHeader("x-request-id",requestId);
+    res.on("finish",()=>{
+      const pathOnly=String(req.url??"").split("?")[0]??"";
+      const category=pathOnly.startsWith("/api/files/")?"/api/files/:id"
+        :pathOnly.startsWith("/api/uploads/")?"/api/uploads/:id"
+        :pathOnly.startsWith("/api/transactions/")?"/api/transactions/:id"
+        :pathOnly.startsWith("/api/homes/invitations/")?"/api/homes/invitations/:id"
+        :pathOnly.startsWith("/api/homes/members/")?"/api/homes/members/:id"
+        :pathOnly.startsWith("/auth/")?"/auth/:route"
+        :pathOnly.startsWith("/api/")?pathOnly: "static";
+      console.info(JSON.stringify({type:"http",requestId,method:req.method,route:category,
+        status:res.statusCode,durationMs:Date.now()-start}));
+    });
     if (!req.url) return sendJson(res, 400, { error: "Missing URL" });
     try {
       const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
       assertSameOrigin(req);
+      if(req.method==="GET" && url.pathname==="/api/ready") {
+        db.prepare("SELECT 1 AS ok").get();
+        const ready=auth.status(req).enabled;
+        return sendJson(res,ready?200:503,{ready,storage:"TURSO",googleAuthConfigured:ready},
+          {"cache-control":"no-store"});
+      }
       if (req.method === "GET" && url.pathname === "/api/health") {
         db.prepare("SELECT 1 AS ok").get();
-        return sendJson(res, 200, { ok: true, service: "Homely", database: "OK", mode: "POC", durability: "TURSO" });
+        return sendJson(res, 200, { ok: true, service: "Homely", database: "OK", mode: "MULTI_HOME", durability: "TURSO" });
       }
 
       if (req.method === "GET" && url.pathname === "/api/auth/status") {
@@ -165,6 +189,10 @@ export async function startServer(
         const user=auth.requireUser(req);
         enterHome(user.homeId);
         // Limit expensive operations by authenticated Google identity, not by household IP.
+        if(req.method==="GET" && url.pathname==="/api/account/export")
+          limits.enforce("export:"+user.id,3,60*60_000);
+        if(req.method==="GET" && url.pathname.startsWith("/api/files/"))
+          limits.enforce("media-download:"+user.id,300,60_000);
         if (req.method!=="GET" && req.method!=="HEAD") {
           const key=user.id;
           if(url.pathname==="/api/agent/respond")limits.enforce("agent:"+key,12,60_000);
@@ -284,7 +312,7 @@ export async function startServer(
       if (req.method === "GET" && url.pathname === "/api/transactions") return sendJson(res, 200, listTransactions(db));
       if (req.method === "GET" && url.pathname === "/api/integrations/status") {
         return sendJson(res, 200, {
-          mode: "POC",
+          mode: "MULTI_HOME",
           storage: { provider: "TURSO" },
           ai: agentRuntime.status,
           research: agentRuntime.researchStatus,
