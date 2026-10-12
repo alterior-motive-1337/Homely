@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { HomelyDatabase } from "../db.js";
+import { activeHomeId } from "../security/homeScope.js";
 import { agentToolDefinitions, executeHomelyTool, type HomelyToolName } from "../tools/homelyTools.js";
 import { HomeResearch } from "../integrations/webResearch.js";
 import { executeResearchTool, researchToolDefinitions, type ResearchToolName } from "./researchTools.js";
@@ -57,7 +58,7 @@ function proposalFromResult(result: unknown): AgentProposal | null {
 }
 
 export class GroqAgentProvider implements AgentProvider {
-  private readonly conversationHistories = new Map<string, unknown[]>();
+  private readonly conversationHistories = new Map<string, {homeId:string|null;messages:unknown[]}>();
 
   constructor(
     private readonly db: HomelyDatabase,
@@ -75,7 +76,8 @@ export class GroqAgentProvider implements AgentProvider {
       ...researchToolDefinitions(this.research)
     ];
     const prior = request.previousResponseId
-      ? this.conversationHistories.get(request.previousResponseId) ?? []
+      ? (this.conversationHistories.get(request.previousResponseId)?.homeId===activeHomeId()
+          ? this.conversationHistories.get(request.previousResponseId)?.messages : null) ?? []
       : [];
     let groqInput: unknown[] = [...prior, { role: "user", content: message }];
 
@@ -149,7 +151,7 @@ export class GroqAgentProvider implements AgentProvider {
 
     if (response.id) {
       const history = [...groqInput, ...response.output].slice(-80);
-      this.conversationHistories.set(response.id, history);
+      this.conversationHistories.set(response.id, {homeId:activeHomeId(),messages:history});
       while (this.conversationHistories.size > 32) {
         const oldest = this.conversationHistories.keys().next().value;
         if (!oldest) break;

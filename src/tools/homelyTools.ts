@@ -1,4 +1,5 @@
 import type { HomelyDatabase } from "../db.js";
+import { activeHomeId } from "../security/homeScope.js";
 import {
   getAsset,
   getOverview,
@@ -339,7 +340,7 @@ export function executeHomelyTool(
   }
 
   if (name === "get_document") {
-    const doc = db.prepare("SELECT * FROM documents WHERE id = ?").get(String(args.documentId ?? ""));
+    const doc = db.prepare("SELECT * FROM documents WHERE id = ? AND home_id IS COALESCE(?,home_id)").get(String(args.documentId ?? ""),activeHomeId());
     if (!doc) throw new DomainError("Document not found.", 404);
     const file = db.prepare("SELECT id,mime_type,content,expected_bytes FROM file_uploads WHERE document_id = ?").get(String(doc.id));
     const analyzed=db.prepare("SELECT content_text,model FROM file_analysis WHERE document_id=?").get(String(doc.id));
