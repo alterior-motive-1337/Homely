@@ -12,7 +12,7 @@ const GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const GOOGLE_KEYS_ENDPOINT = "https://www.googleapis.com/oauth2/v3/certs";
 
-export interface AuthUser { id: string; email: string; name: string }
+export interface AuthUser { id: string; email: string; name: string; homeId: string; role: "OWNER" | "MEMBER" | "VIEWER" }
 export interface AuthStatus {
   enabled: boolean;
   authenticated: boolean;
@@ -130,7 +130,7 @@ export class GoogleAuthentication implements AuthGateway {
     const isSecure=uri?.protocol==="https:";
     const localHttp=uri?.protocol==="http:" && ["localhost","127.0.0.1"].includes(uri.hostname);
     this.secure=Boolean(isSecure);
-    this.enabled=Boolean(settings.clientId && settings.clientSecret && settings.allowedEmail &&
+    this.enabled=Boolean(settings.clientId && settings.clientSecret &&
       uri && (isSecure || localHttp) && !uri.username && !uri.password &&
       uri.pathname==="/auth/google/callback" && !uri.search && !uri.hash);
   }
@@ -146,12 +146,13 @@ export class GoogleAuthentication implements AuthGateway {
     if(!this.enabled)return null;
     const token=cookies(req).get(SESSION_COOKIE);
     if(!token || !/^[\w-]{42,60}$/.test(token))return null;
-    const row=this.db.prepare(`SELECT u.id,u.email,u.display_name FROM auth_sessions s
+    const row=this.db.prepare(`SELECT u.id,u.email,u.display_name,m.home_id,m.role FROM auth_sessions s
       JOIN auth_users u ON u.id=s.user_id
-      JOIN home_owners o ON o.user_id=u.id
-      WHERE s.token_hash=? AND s.expires_at>? LIMIT 1`).get(hash(token),new Date().toISOString());
-    if(!row || String(row.email).trim().toLowerCase()!==this.settings.allowedEmail.trim().toLowerCase())return null;
-    return {id:String(row.id),email:String(row.email),name:String(row.display_name)};
+      JOIN home_memberships m ON m.user_id=u.id
+      WHERE s.token_hash=? AND s.expires_at>? ORDER BY m.joined_at ASC LIMIT 1`).get(hash(token),new Date().toISOString());
+    if(!row)return null;
+    return {id:String(row.id),email:String(row.email),name:String(row.display_name),
+      homeId:String(row.home_id),role:String(row.role) as AuthUser["role"]};
   }
   requireUser(req: http.IncomingMessage): AuthUser {
     const user=this.user(req);
@@ -192,26 +193,50 @@ export class GoogleAuthentication implements AuthGateway {
     const subject=String(identity.sub??"");
     const email=String(identity.email??"").trim().toLowerCase();
     const verified=identity.email_verified===true || identity.email_verified==="true";
-    if(!subject || !verified || email!==this.settings.allowedEmail.trim().toLowerCase()){
-      throw new DomainError("This Google account is not authorized for this household.",403);
+    if(!subject || !verified || !email){
+      throw new DomainError("A verified Google email is required.",403);
     }
     const name=String(identity.name??"").slice(0,120).trim()||"Homeowner";
     const sessionToken=randomToken();
     const now=new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE;");
     try {
-      const home=this.db.prepare("SELECT id FROM homes ORDER BY created_at LIMIT 1").get();
-      if(!home)throw new DomainError("No home has been configured.",403);
-      const owner=this.db.prepare(`SELECT u.google_subject FROM home_owners o
-        JOIN auth_users u ON u.id=o.user_id WHERE o.home_id=?`).get(String(home.id));
-      if(owner && String(owner.google_subject)!==subject)throw new DomainError("Household belongs to another Google identity.",403);
-      let user=this.db.prepare("SELECT id FROM auth_users WHERE google_subject=?").get(subject);
-      const id=user?String(user.id):"user-"+randomUUID();
-      if(!user)this.db.prepare(`INSERT INTO auth_users(id,google_subject,email,display_name,created_at,last_login_at)
+      const existing=this.db.prepare("SELECT id FROM auth_users WHERE google_subject=?").get(subject);
+      const id=existing?String(existing.id):"user-"+randomUUID();
+      if(!existing)this.db.prepare(`INSERT INTO auth_users(id,google_subject,email,display_name,created_at,last_login_at)
         VALUES(?,?,?,?,?,?)`).run(id,subject,email,name,now,now);
       else this.db.prepare("UPDATE auth_users SET email=?,display_name=?,last_login_at=? WHERE id=?").run(email,name,now,id);
-      if(!owner)this.db.prepare("INSERT INTO home_owners(home_id,user_id,claimed_at) VALUES (?,?,?)")
-        .run(String(home.id),id,now);
+
+      const membership=this.db.prepare("SELECT home_id FROM home_memberships WHERE user_id=? ORDER BY joined_at LIMIT 1").get(id);
+      if(!membership){
+        // Only explicitly configured legacy owner can claim an existing unowned POC home.
+        let homeId: string | null = null;
+        if(this.settings.allowedEmail && email===this.settings.allowedEmail.trim().toLowerCase()){
+          const unclaimed=this.db.prepare(`SELECT h.id FROM homes h
+            LEFT JOIN home_memberships m ON m.home_id=h.id
+            WHERE m.home_id IS NULL ORDER BY h.created_at LIMIT 1`).get();
+          homeId=unclaimed?String(unclaimed.id):null;
+        }
+        if(!homeId){
+          homeId="home-"+randomUUID();
+          this.db.prepare("INSERT INTO homes(id,name,address_label,created_at,updated_at) VALUES(?,?,NULL,?,?)")
+            .run(homeId,"My Home",now,now);
+          const systems=[
+            ["Electrical","ELECTRICAL"],["Solar / Energy","SOLAR"],["Plumbing","PLUMBING"],
+            ["Security","SECURITY"],["Structure","STRUCTURE"],["Appliances","APPLIANCES"],
+            ["Garden / Outdoor","GARDEN"],["Furniture","FURNITURE"]
+          ];
+          for(let i=0;i<systems.length;i++){
+            this.db.prepare(`INSERT INTO systems(id,home_id,name,category,description,position,created_at,updated_at)
+              VALUES(?,?,?,?,NULL,?,?,?)`).run("sys-"+randomUUID(),homeId,systems[i]![0],systems[i]![1],i+1,now,now);
+          }
+        }
+        this.db.prepare("INSERT INTO home_memberships(home_id,user_id,role,joined_at) VALUES(?,?,'OWNER',?)")
+          .run(homeId,id,now);
+        // Retain legacy ownership table as a compatibility record.
+        this.db.prepare("INSERT INTO home_owners(home_id,user_id,claimed_at) VALUES(?,?,?)")
+          .run(homeId,id,now);
+      }
       this.db.prepare("DELETE FROM auth_sessions WHERE expires_at < ?").run(now);
       this.db.prepare("INSERT INTO auth_sessions(token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)")
         .run(hash(sessionToken),id,later(SESSION_SECONDS),now);
