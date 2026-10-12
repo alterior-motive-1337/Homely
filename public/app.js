@@ -19,7 +19,7 @@ async function api(path,options){
   const init=Object.assign({},options||{});
   if(init.body&&typeof init.body!=="string"&&!(init.body instanceof Blob)){init.headers=Object.assign({"content-type":"application/json"},init.headers||{});init.body=JSON.stringify(init.body)}
   const res=await fetch(path,init);let data=null;try{data=await res.json()}catch(_){}
-  if(res.ok && /\\\/(commit|undo)$/.test(path)){
+  if(res.ok && (path.endsWith("/commit")||path.endsWith("/undo"))){
     viewPanels.clear();state.assets=[];state.needsReload=true;
   }
   if(!res.ok)throw new Error(data&&data.error?data.error:"Request failed: "+res.status);
