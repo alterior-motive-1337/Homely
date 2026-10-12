@@ -170,6 +170,20 @@ async function openRepair(repair){
   }catch(e){notify(e.message)}
 }
 
+
+async function openAssetForm(){
+  const systems=await api("/api/systems");
+  const options=systems.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'}).join("");
+  if(!options){notify("No home systems available.");return}
+  openModal('<p class="eyebrow">Asset register</p><h2>Register appliance or furniture</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" placeholder="APPLIANCE / FURNITURE" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Condition</label><select name="condition"><option>UNKNOWN</option><option>NEW</option><option>GOOD</option><option>FAIR</option><option>POOR</option><option>FAILED</option></select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>Purchase price (ZAR)</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  $("[data-cancel]",modalBody).onclick=closeModal;
+  $("#asset-form").onsubmit=async function(e){
+    e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("purchaseCost")||"").trim();
+    try{await previewAction("CREATE_ASSET",{systemId:d.get("systemId"),name:d.get("name"),category:d.get("category"),condition:d.get("condition"),location:d.get("location"),manufacturer:d.get("manufacturer"),model:d.get("model"),serialNumber:d.get("serialNumber"),purchaseDate:d.get("purchaseDate")||null,purchaseCostCents:cost?Math.round(Number(cost)*100):null,warrantyEnd:d.get("warrantyEnd")||null,notes:d.get("notes")},"Homeowner registered a household asset.")}
+    catch(err){notify(err.message)}
+  };
+}
+
 function renderAssets(items){
   $("#asset-results").innerHTML='<div class="table-wrap"><table><thead><tr><th>Asset</th><th>Condition</th><th>Health</th><th>System</th><th>Location</th><th>Purchase</th></tr></thead><tbody>'+items.map(function(a){return '<tr data-asset="'+esc(a.id)+'"><td><strong>'+esc(a.name)+'</strong><div class="row-meta">'+esc(a.manufacturer||"")+" "+esc(a.model||"")+'</div></td><td>'+badge(a.condition||"UNKNOWN")+"</td><td>"+badge(a.health)+"</td><td>"+esc(a.system_name)+"</td><td>"+esc(a.location||"—")+'</td><td>'+money(a.purchase_cost_cents)+"</td></tr>"}).join("")+"</tbody></table></div>";
   $$("[data-asset]",$("#asset-results")).forEach(function(r){r.onclick=function(){openAsset(r.dataset.asset)}})
@@ -178,8 +192,8 @@ async function showAppliances(){
   loading();const revision=state.viewRevision;
   try{
     state.assets=await api("/api/assets");if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="hero"><div><p class="eyebrow">Appliances & furniture</p><h2>Asset registry</h2><p>Condition, age, purchase information, faults, repairs and evidence.</p></div></div><div class="toolbar"><input class="search" id="asset-search" type="search" placeholder="Search assets, systems or rooms…"></div><div id="asset-results"></div>';
-    renderAssets(state.assets);$("#asset-search").oninput=function(e){const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(function(a){return [a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(function(v){return String(v||"").toLowerCase().includes(q)})}))}
+    content.innerHTML='<div class="hero"><div><p class="eyebrow">Appliances & furniture</p><h2>Asset registry</h2><p>Condition, age, purchase information, faults, repairs and evidence.</p></div><div class="hero-actions"><button class="primary-button" id="new-asset">Register asset</button></div></div><div class="toolbar"><input class="search" id="asset-search" type="search" placeholder="Search assets, systems or rooms…"></div><div id="asset-results"></div>';
+    $("#new-asset").onclick=openAssetForm;renderAssets(state.assets);$("#asset-search").oninput=function(e){const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(function(a){return [a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(function(v){return String(v||"").toLowerCase().includes(q)})}))}
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 async function openAsset(id){
