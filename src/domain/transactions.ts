@@ -697,6 +697,9 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
 
   db.exec("BEGIN IMMEDIATE;");
   try {
+    // Recheck referenced assets, systems, evidence and other associations at approval time.
+    // A valid preview never grants authority over another home after ownership changes.
+    if (activeHomeId()) validatePayload(db,actionType,payload);
     if (actionType === "UPDATE_ASSET") {
       const assetId = String(payload.assetId);
       const before = db.prepare("SELECT * FROM assets WHERE id = ?").get(assetId) as JsonRecord | undefined;
