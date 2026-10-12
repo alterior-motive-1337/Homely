@@ -51,3 +51,24 @@ test("cached multimedia analysis uses no repeat Groq calls",async()=>{
   assert.equal(second.text,"example evidence text");
   db.close();
 });
+
+test("image analysis routes through a vision model and persists the result",async()=>{
+  const db=createTestDatabase();migrate(db);seedDemo(db);
+  const bytes=Buffer.from([137,80,78,71,13,10,26,10]);
+  const upload=startUpload(db,{name:"label.png",mimeType:"image/png",size:bytes.length});
+  appendUploadChunk(db,upload.id,0,bytes);finishUpload(db,upload.id);
+  const preview=proposeTransaction(db,{actionType:"ATTACH_DOCUMENT",reason:"Test photo",payload:{title:"Label",documentType:"PHOTO",provider:"LOCAL",uploadId:upload.id}});
+  commitTransaction(db,String(preview.transaction?.id));
+  const doc=String(db.prepare("SELECT document_id FROM file_uploads WHERE id=?").get(upload.id)?.document_id);
+  let calls=0,passedModel="";
+  const mock={chat:{completions:{create:async(input:{model:string})=>{
+    calls++;passedModel=input.model;
+    return {choices:[{message:{content:"A visible appliance serial label."}}]};
+  }}}};
+  const first=await analyzeDocument(db,doc,mock as never);
+  const second=await analyzeDocument(db,doc,mock as never);
+  assert.equal(passedModel,"qwen/qwen3.8-27b");
+  assert.equal(first.text,"A visible appliance serial label.");
+  assert.equal(second.cached,true);assert.equal(calls,1);
+  db.close();
+});
