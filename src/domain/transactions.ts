@@ -237,9 +237,9 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
       : null;
     const uploadId = raw.uploadId ? requireText(raw.uploadId, "Upload", 120) : null;
     const upload = uploadId
-      ? db.prepare("SELECT document_id,mime_type FROM file_uploads WHERE id = ?").get(uploadId)
+      ? db.prepare("SELECT document_id,mime_type,completed FROM file_uploads WHERE id = ?").get(uploadId)
       : null;
-    if (uploadId && (!upload || upload.document_id || provider !== "LOCAL")) {
+    if (uploadId && (!upload || upload.document_id || Number(upload.completed) !== 1 || provider !== "LOCAL")) {
       throw new DomainError("Staged upload is missing, already linked or incompatible.", 409);
     }
     if (provider === "LOCAL" && !sourceUrl && !webViewLink && !uploadId) {

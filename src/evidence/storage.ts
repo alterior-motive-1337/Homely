@@ -37,6 +37,9 @@ export function appendUploadChunk(db: HomelyDatabase, id: string, index: number,
     const nextIndex = Number(db.prepare("SELECT COUNT(*) AS n FROM file_upload_chunks WHERE upload_id=?").get(id)?.n ?? 0);
     if (nextIndex !== index) throw new DomainError("Chunks must be uploaded in order.", 409);
     const total = Number(file.received_bytes) + bytes.length;
+    if (total < Number(file.expected_bytes) && bytes.length !== UPLOAD_CHUNK_BYTES) {
+      throw new DomainError("Only the final chunk may be smaller than 1 MB.", 409);
+    }
     if (total > Number(file.expected_bytes)) throw new DomainError("Upload exceeds the declared size.", 413);
     db.prepare("INSERT INTO file_upload_chunks(upload_id,chunk_index,content) VALUES (?,?,?)").run(id,index,bytes);
     db.prepare("UPDATE file_uploads SET received_bytes=? WHERE id=?").run(total,id);
