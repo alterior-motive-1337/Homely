@@ -4,6 +4,7 @@ import { migrate } from "../src/db.js";
 import { createTestDatabase } from "./helpers.js";
 import { seedDemo } from "../src/seed.js";
 import { proposeTransaction,commitTransaction,undoTransaction } from "../src/domain/transactions.js";
+import { executeHomelyTool } from "../src/tools/homelyTools.js";
 
 test("uploaded evidence is staged, approval-gated and linked to durable document", () => {
   const db=createTestDatabase();migrate(db);seedDemo(db);
@@ -16,6 +17,9 @@ test("uploaded evidence is staged, approval-gated and linked to durable document
   assert.equal(Buffer.from(file.content as Uint8Array).toString("utf8"),"receipt");
   const document=db.prepare("SELECT local_path FROM documents WHERE id = ?").get(String(file.document_id));
   assert.equal(document?.local_path,"/api/files/"+file.document_id);
+  const read=executeHomelyTool(db,"get_document",{documentId:String(file.document_id)}) as Record<string,unknown>;
+  assert.equal(read.contentText,"receipt");
+  assert.equal(read.contentReadable,true);
   undoTransaction(db,String(p.transaction?.id));
   assert.equal(db.prepare("SELECT 1 FROM file_uploads WHERE id = ?").get("upload-1"),undefined);
   db.close();
