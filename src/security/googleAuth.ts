@@ -228,7 +228,7 @@ export class GoogleAuthentication implements AuthGateway {
           ];
           for(let i=0;i<systems.length;i++){
             this.db.prepare(`INSERT INTO systems(id,home_id,name,category,description,position,created_at,updated_at)
-              VALUES(?,?,?,?,NULL,?,?,?)`).run("sys-"+randomUUID(),homeId,systems[i]![0],systems[i]![1],i+1,now,now);
+              VALUES(?,?,?,?,NULL,?,?,?)`).run("sys-"+randomUUID(),homeId,String(systems[i]![0]),String(systems[i]![1]),i+1,now,now);
           }
         }
         this.db.prepare("INSERT INTO home_memberships(home_id,user_id,role,joined_at) VALUES(?,?,'OWNER',?)")
