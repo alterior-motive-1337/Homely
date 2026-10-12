@@ -23,6 +23,7 @@ import { analyzeDocument } from "./evidence/analyze.js";
 import { GoogleAuthentication, type AuthGateway } from "./security/googleAuth.js";
 import { enterHome } from "./security/homeScope.js";
 import { RequestLimiter } from "./security/traffic.js";
+import { streamHomeArchive } from "./domain/exportHome.js";
 import { acceptInvite, inviteMember, listHouseholds, listInvitations, listMembers, removeMember, renameHome, revokeInvite } from "./domain/households.js";
 
 function securityHeaders(res: http.ServerResponse): void {
@@ -176,6 +177,9 @@ export async function startServer(
           throw new DomainError("Your household membership is read-only.",403);
       }
 
+      if(req.method==="GET" && url.pathname==="/api/account/export") {
+        return streamHomeArchive(db,auth.requireUser(req),res);
+      }
       if(req.method==="GET" && url.pathname==="/api/homes") {
         const user=auth.requireUser(req);
         return sendJson(res,200,{currentHomeId:user.homeId,homes:listHouseholds(db,user)},{"cache-control":"no-store"});
