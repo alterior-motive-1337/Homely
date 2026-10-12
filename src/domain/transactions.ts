@@ -231,8 +231,15 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
     const providerFileId = provider === "GOOGLE_DRIVE"
       ? requireText(raw.providerFileId, "Drive file ID", 300)
       : null;
-    if (provider === "LOCAL" && !sourceUrl && !webViewLink) {
-      throw new DomainError("Link evidence requires a source URL.");
+    const uploadId = raw.uploadId ? requireText(raw.uploadId, "Upload", 120) : null;
+    const upload = uploadId
+      ? db.prepare("SELECT document_id,mime_type FROM file_uploads WHERE id = ?").get(uploadId)
+      : null;
+    if (uploadId && (!upload || upload.document_id || provider !== "LOCAL")) {
+      throw new DomainError("Staged upload is missing, already linked or incompatible.", 409);
+    }
+    if (provider === "LOCAL" && !sourceUrl && !webViewLink && !uploadId) {
+      throw new DomainError("Evidence requires a source link or staged upload.");
     }
 
     return {
@@ -245,7 +252,8 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
       documentType,
       provider,
       providerFileId,
-      mimeType: optionalText(raw.mimeType, 200),
+      uploadId,
+      mimeType: upload ? String(upload.mime_type) : optionalText(raw.mimeType, 200),
       webViewLink,
       sourceUrl,
       provenance: optionalText(raw.provenance, 1000) ?? (provider === "GOOGLE_DRIVE"
@@ -878,7 +886,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         String(payload.documentType),
         String(payload.provider),
         payload.providerFileId ? String(payload.providerFileId) : null,
-        null,
+        payload.uploadId ? "/api/files/" + documentId : null,
         payload.mimeType === null || payload.mimeType === undefined ? null : String(payload.mimeType),
         payload.webViewLink === null || payload.webViewLink === undefined ? null : String(payload.webViewLink),
         payload.assetId ? String(payload.assetId) : null,
@@ -894,6 +902,12 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         createdAt,
         createdAt
       );
+      if (payload.uploadId) {
+        const linked = db.prepare(
+          "UPDATE file_uploads SET document_id = ? WHERE id = ? AND document_id IS NULL"
+        ).run(documentId, String(payload.uploadId));
+        if (Number(linked.changes) !== 1) throw new DomainError("Staged upload has expired or is already linked.", 409);
+      }
       const document = db.prepare("SELECT * FROM documents WHERE id = ?").get(documentId) as JsonRecord;
       recordChange(db, transactionId, "document", documentId, "CREATE", null, document, createdAt);
       createTimelineEvent(db, transactionId, {

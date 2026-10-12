@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import http from "node:http";
 import { URL, pathToFileURL } from "node:url";
@@ -50,13 +51,13 @@ function sendHtml(
   res.end(body);
 }
 
-async function readBody(req: http.IncomingMessage): Promise<Buffer> {
+async function readBody(req: http.IncomingMessage, maxSize = 1_000_000): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 1_000_000) throw new DomainError("Request body is too large.", 413);
+    if (size > maxSize) throw new DomainError("Request body is too large.", 413);
     chunks.push(buffer);
   }
   return Buffer.concat(chunks);
@@ -127,6 +128,40 @@ export async function startServer(db: HomelyDatabase = openDatabase()): Promise<
       if (req.method === "GET" && url.pathname === "/auth/login") {
         res.writeHead(303, { location: "/", "cache-control": "no-store" });
         return res.end();
+      }
+
+      // Binary evidence remains in Turso, never in Render's disposable filesystem.
+      if (req.method === "POST" && url.pathname === "/api/uploads/stage") {
+        const mimeType = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+        const safeMimes = /^(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/(mpeg|mp4|wav|ogg|webm)|application\/(pdf|octet-stream|zip|msword|vnd\.openxmlformats-officedocument\.[a-z-]+)|text\/plain)$/;
+        if (!safeMimes.test(mimeType)) throw new DomainError("This file type is not supported.", 415);
+        let filename: string;
+        try { filename = decodeURIComponent(String(req.headers["x-file-name"] ?? "Attachment")); }
+        catch { throw new DomainError("Invalid filename."); }
+        filename = filename.replace(/[\\/\x00-\x1f]/g, "").slice(0, 180).trim() || "Attachment";
+        const bytes = await readBody(req, 2_000_000);
+        if (!bytes.length) throw new DomainError("The selected file is empty.");
+        const id = "upload-" + randomUUID();
+        db.prepare("DELETE FROM file_uploads WHERE document_id IS NULL AND substr(created_at,1,10) < date('now','-1 day')").run();
+        db.prepare("INSERT INTO file_uploads(id,file_name,mime_type,content,created_at) VALUES (?,?,?,?,?)")
+          .run(id, filename, mimeType, bytes, new Date().toISOString());
+        return sendJson(res, 201, { id, name: filename, mimeType, size: bytes.length });
+      }
+
+      if (req.method === "GET" && /^\/api\/files\/[a-zA-Z0-9-]+$/.test(url.pathname)) {
+        const documentId = url.pathname.slice("/api/files/".length);
+        const upload = db.prepare("SELECT mime_type,content FROM file_uploads WHERE document_id = ?").get(documentId);
+        if (!upload) return sendJson(res, 404, { error: "File not found" });
+        const mimeType = String(upload.mime_type);
+        securityHeaders(res);
+        res.writeHead(200, {
+          "content-type": mimeType,
+          "content-disposition": /^(image\/|audio\/|video\/|application\/pdf$)/.test(mimeType)
+            ? "inline" : "attachment",
+          "cache-control": "private, no-store",
+          "x-content-type-options": "nosniff"
+        });
+        return res.end(Buffer.from(upload.content as Uint8Array));
       }
 
       if (req.method === "GET" && url.pathname === "/api/overview") return sendJson(res, 200, getOverview(db));
