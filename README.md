@@ -11,6 +11,10 @@ TURSO_DATABASE_URL=libsql://your-database.turso.io
 TURSO_AUTH_TOKEN=...
 GROQ_API_KEY=...
 EXA_API_KEY=...
+GOOGLE_CLIENT_ID=... 
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://your-homely-host.example/auth/google/callback
+GOOGLE_ALLOWED_EMAIL=your-google-account@example.com
 ```
 
 ```bash
@@ -18,7 +22,7 @@ npm ci
 npm run dev
 ```
 
-Open http://localhost:4173. The POC opens without a password gate.
+Open http://localhost:4173. Google Sign-In is required to access household records. For local development, register `http://localhost:4173/auth/google/callback` as an additional OAuth redirect URI and use it for `GOOGLE_REDIRECT_URI`.
 
 ## Storage
 
@@ -40,7 +44,9 @@ One Node/TypeScript server serves the existing HTML/CSS/JavaScript frontend and 
 
 Voice input uses the browser and needs no service key. Stop listening ends capture; dictation does not submit automatically.
 
-There are no Google Drive, external MCP, Firecrawl, password/session or backup integrations to configure. Evidence metadata and associations stay in Turso; existing source links remain viewable. Supported media open in the viewer and ordinary web pages retain an Open source link.
+There is **no Google Drive integration**. Google is used solely for login (scopes: `openid email profile`); Turso stores hashed server-side sessions and binds the existing home to the approved Google subject. The Google email configured in `GOOGLE_ALLOWED_EMAIL` must match a verified Google account; other Google accounts cannot access the demo home's records. To support independent or shared households, the domain layer requires tenant-aware queries and membership roles before enabling open registration. No Google refresh tokens are stored.
+
+There are no external MCP, Firecrawl or backup integrations to configure. Evidence metadata and associations stay in Turso; existing source links remain viewable. Supported media open in the viewer and ordinary web pages retain an Open source link.
 
 ## Evidence and file limits
 

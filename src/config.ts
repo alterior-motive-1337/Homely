@@ -9,6 +9,10 @@ export const config = {
   publicDir: path.resolve(root, "public"),
   migrationsDir: path.resolve(root, "migrations"),
 
+  googleClientId: process.env.GOOGLE_CLIENT_ID?.trim() ?? "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET?.trim() ?? "",
+  googleRedirectUri: process.env.GOOGLE_REDIRECT_URI?.trim() ?? "",
+  googleAllowedEmail: process.env.GOOGLE_ALLOWED_EMAIL?.trim() ?? "",
   groqApiKey: process.env.GROQ_API_KEY?.trim() ?? "",
   groqModel: "openai/gpt-oss-120b",
   exaApiKey: process.env.EXA_API_KEY?.trim() ?? "",

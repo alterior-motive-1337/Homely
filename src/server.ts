@@ -20,6 +20,7 @@ import { createAgentRuntime } from "./agent/runtime.js";
 import { assertSameOrigin } from "./security/request.js";
 import { startUpload, appendUploadChunk, finishUpload, streamStoredFile, UPLOAD_CHUNK_BYTES } from "./evidence/storage.js";
 import { analyzeDocument } from "./evidence/analyze.js";
+import { GoogleAuthentication, type AuthGateway } from "./security/googleAuth.js";
 
 function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-content-type-options", "nosniff");
@@ -104,12 +105,16 @@ function serveStatic(res: http.ServerResponse, pathname: string) {
   return res.end(fs.readFileSync(filePath));
 }
 
-export async function startServer(db: HomelyDatabase = openDatabase()): Promise<http.Server> {
+export async function startServer(
+  db: HomelyDatabase = openDatabase(),
+  authentication?: AuthGateway
+): Promise<http.Server> {
   migrate(db);
   const seeded = !hasHome(db);
   if (seeded) seedDemo(db);
 
   const agentRuntime = createAgentRuntime(db);
+  const auth = authentication ?? new GoogleAuthentication(db);
 
   const server = http.createServer(async (req, res) => {
     if (!req.url) return sendJson(res, 400, { error: "Missing URL" });
@@ -122,13 +127,35 @@ export async function startServer(db: HomelyDatabase = openDatabase()): Promise<
       }
 
       if (req.method === "GET" && url.pathname === "/api/auth/status") {
-        return sendJson(res, 200, { enabled: false, authenticated: true, mode: "POC" });
+        return sendJson(res, 200, auth.status(req), { "cache-control": "no-store" });
       }
-
-      // Old bookmarks open the POC directly; there is no password/session flow.
+      if (req.method === "GET" && url.pathname === "/auth/google") {
+        auth.beginLogin(res);
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/auth/google/callback") {
+        try { await auth.finishLogin(req,res,url); }
+        catch (error) {
+          console.error("Google sign-in failed:", error instanceof DomainError ? error.message : "Identity provider unavailable");
+          res.setHeader("cache-control","no-store");
+          res.writeHead(303,{location:"/?auth_error=signin","referrer-policy":"no-referrer"});
+          res.end();
+        }
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/auth/login") {
-        res.writeHead(303, { location: "/", "cache-control": "no-store" });
+        res.writeHead(303,{location:"/","cache-control":"no-store"});
         return res.end();
+      }
+      if (req.method === "POST" && url.pathname === "/auth/logout") {
+        auth.logout(req,res);
+        res.writeHead(204);
+        return res.end();
+      }
+      // Every home API, file download, upload and agent operation requires a valid owner session.
+      // No Google account can access the existing household just by registering.
+      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/demo-documents/")) {
+        auth.requireUser(req);
       }
 
       // Upload each 50 MB file in small durable Turso transactions.

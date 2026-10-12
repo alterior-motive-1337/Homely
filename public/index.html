@@ -9,7 +9,16 @@
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<div class="app-shell">
+<section class="auth-screen" id="auth-screen" hidden>
+  <div class="auth-card">
+    <img src="/house.svg" alt="" width="48" height="48">
+    <p class="eyebrow">Homely</p>
+    <h1>Your home, remembered.</h1>
+    <p id="auth-message">Sign in to access your household records and files.</p>
+    <a class="primary-button auth-google" id="google-signin" href="/auth/google">Continue with Google</a>
+  </div>
+</section>
+<div class="app-shell" id="app-shell" hidden>
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="Homely home"><img class="brand-mark" src="/house.svg" width="32" height="32" alt=""><span><strong>Homely</strong><small>Home memory</small></span></a>
     <nav id="nav" class="nav">
@@ -20,6 +29,7 @@
       <button class="nav-item" data-view="files">Files</button>
     </nav>
     <div class="sidebar-footer">
+      <div class="account-menu"><span id="account-email" class="account-email"></span><button id="sign-out" type="button" class="button">Sign out</button></div>
       <div class="runtime-status" id="runtime-status"><span class="dot"></span><span id="runtime-text">Checking state…</span></div>
     </div>
   </aside>

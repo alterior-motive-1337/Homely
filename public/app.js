@@ -22,6 +22,7 @@ async function api(path,options){
   if(res.ok && (path.endsWith("/commit")||path.endsWith("/undo"))){
     viewPanels.clear();state.assets=[];state.needsReload=true;
   }
+  if(res.status===401){window.location.replace("/");throw new Error("Session expired. Please sign in again.")}
   if(!res.ok)throw new Error(data&&data.error?data.error:"Request failed: "+res.status);
   return data
 }
@@ -438,7 +439,38 @@ nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.
 window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
 $("#chat-open").onclick=function(){chatRail.classList.add("open")};$("#chat-close").onclick=function(){if(state.stopVoice)state.stopVoice();chatRail.classList.remove("open")};
 $("#refresh-view").onclick=function(){viewPanels.clear();state.needsReload=true;void selectView(state.view)};
-const initial=normalizeView(new URLSearchParams(location.search).get("view")||"home");
-void refreshStatus();void selectView(initial);renderChat();setupVoiceInput();
+async function bootstrap(){
+  try{
+    const response=await fetch("/api/auth/status",{cache:"no-store"});
+    if(!response.ok)throw new Error("Authentication status unavailable.");
+    const auth=await response.json();
+    if(!auth.authenticated){
+      $("#app-shell").hidden=true;$("#auth-screen").hidden=false;
+      $("#google-signin").setAttribute("aria-disabled",auth.enabled?"false":"true");
+      const message=location.search.includes("auth_error=")
+        ? "Google sign-in was unsuccessful. Check your account and try again."
+        : auth.enabled ? "Sign in with your approved Google account to access your home."
+        : "Google Sign-In is not configured yet. Add the OAuth credentials in Render.";
+      $("#auth-message").textContent=message;
+      return;
+    }
+    $("#auth-screen").hidden=true;$("#app-shell").hidden=false;
+    $("#account-email").textContent=auth.user&&auth.user.email?auth.user.email:"Signed in";
+    $("#sign-out").onclick=async function(){
+      try{
+        const res=await fetch("/auth/logout",{method:"POST",credentials:"same-origin"});
+        if(!res.ok)throw new Error("Could not sign out.");
+        window.location.replace("/");
+      }catch(error){notify(error.message)}
+    };
+    const initial=normalizeView(new URLSearchParams(location.search).get("view")||"home");
+    void refreshStatus();void selectView(initial);renderChat();setupVoiceInput();
+  }catch(error){
+    $("#app-shell").hidden=true;$("#auth-screen").hidden=false;
+    $("#auth-message").textContent=error.message;
+    $("#google-signin").setAttribute("aria-disabled","true");
+  }
+}
+void bootstrap();
 window.addEventListener("keydown",function(e){if(e.key==="Escape"&&!modal.open&&!viewer.open){if(state.stopVoice)state.stopVoice();chatRail.classList.remove("open")}});
 
