@@ -4,6 +4,7 @@ import type { HomelyDatabase } from "../db.js";
 
 export type ActionType =
   | "CREATE_ASSET"
+  | "UPDATE_ASSET"
   | "REPORT_ISSUE"
   | "CREATE_MAINTENANCE"
   | "RESOLVE_ISSUE"
@@ -116,7 +117,9 @@ function getProject(db: HomelyDatabase, projectId: string) {
 }
 
 function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRecord): JsonRecord {
-  if (actionType === "CREATE_ASSET") {
+  if (actionType === "CREATE_ASSET" || actionType === "UPDATE_ASSET") {
+    const assetId = actionType === "UPDATE_ASSET" ? requireText(raw.assetId, "Asset", 120) : null;
+    if (assetId) getAsset(db, assetId);
     const systemId = requireText(raw.systemId, "System", 120);
     if (!db.prepare("SELECT id FROM systems WHERE id = ?").get(systemId)) throw new DomainError("System not found.", 404);
     const condition = raw.condition ? requireText(raw.condition, "Condition", 20).toUpperCase() : "UNKNOWN";
@@ -127,6 +130,7 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
       if (!Number.isSafeInteger(purchaseCostCents) || purchaseCostCents < 0 || purchaseCostCents > 100_000_000_000) throw new DomainError("Invalid purchase cost.");
     }
     return {
+      ...(assetId ? { assetId } : {}),
       systemId,
       name: requireText(raw.name, "Asset name", 180),
       category: requireText(raw.category, "Category", 80),
@@ -438,6 +442,13 @@ function addDays(date: string, days: number): string {
 }
 
 function previewFor(db: HomelyDatabase, actionType: ActionType, payload: JsonRecord) {
+  if (actionType === "UPDATE_ASSET") {
+    return {
+      title: `Update asset: ${payload.name}`,
+      summary: "Revise recorded condition, purchase and warranty information",
+      effects: ["Update an existing asset", "Preserve the original values in the transaction audit", "Add an asset timeline event"]
+    };
+  }
   if (actionType === "CREATE_ASSET") {
     const system = db.prepare("SELECT name FROM systems WHERE id = ?").get(String(payload.systemId));
     return {
@@ -683,6 +694,34 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
 
   db.exec("BEGIN IMMEDIATE;");
   try {
+    if (actionType === "UPDATE_ASSET") {
+      const assetId = String(payload.assetId);
+      const before = db.prepare("SELECT * FROM assets WHERE id = ?").get(assetId) as JsonRecord | undefined;
+      if (!before) throw new DomainError("Asset not found.", 404);
+      db.prepare(`
+        UPDATE assets SET system_id=?,name=?,category=?,location=?,manufacturer=?,model=?,
+          serial_number=?,purchase_date=?,purchase_cost_cents=?,warranty_end=?,notes=?,condition=?,updated_at=?
+        WHERE id=?
+      `).run(
+        String(payload.systemId),String(payload.name),String(payload.category),
+        payload.location ? String(payload.location) : null,
+        payload.manufacturer ? String(payload.manufacturer) : null,
+        payload.model ? String(payload.model) : null,
+        payload.serialNumber ? String(payload.serialNumber) : null,
+        payload.purchaseDate ? String(payload.purchaseDate) : null,
+        payload.purchaseCostCents === null ? null : Number(payload.purchaseCostCents),
+        payload.warrantyEnd ? String(payload.warrantyEnd) : null,
+        payload.notes ? String(payload.notes) : null,
+        String(payload.condition),createdAt,assetId
+      );
+      const after = db.prepare("SELECT * FROM assets WHERE id = ?").get(assetId);
+      recordChange(db, transactionId, "asset", assetId, "UPDATE", before, after, createdAt);
+      createTimelineEvent(db, transactionId, {
+        eventType: "ASSET_UPDATED", title: `Updated: ${payload.name}`,
+        summary: "Asset condition and details updated.", occurredAt: createdAt, assetId
+      }, createdAt);
+    }
+
     if (actionType === "CREATE_ASSET") {
       const assetId = newId("asset");
       db.prepare(`
@@ -1105,6 +1144,25 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
 
   if (operation === "UPDATE") {
     if (!before || !after) throw new DomainError("Transaction history is incomplete.", 409);
+    if (entityType === "asset") {
+      const current = db.prepare("SELECT * FROM assets WHERE id = ?").get(entityId);
+      if (!sameRow(current, after)) throw new DomainError("Asset has changed since this update.", 409);
+      db.prepare(`
+        UPDATE assets SET system_id=?,name=?,category=?,location=?,manufacturer=?,model=?,
+          serial_number=?,purchase_date=?,purchase_cost_cents=?,warranty_end=?,notes=?,condition=?,updated_at=?
+        WHERE id=?
+      `).run(
+        String(before.system_id),String(before.name),String(before.category),
+        before.location as string | null, before.manufacturer as string | null,
+        before.model as string | null, before.serial_number as string | null,
+        before.purchase_date as string | null,
+        before.purchase_cost_cents as number | null, before.warranty_end as string | null,
+        before.notes as string | null, String(before.condition), String(before.updated_at), entityId
+      );
+      const restored = db.prepare("SELECT * FROM assets WHERE id = ?").get(entityId);
+      recordChange(db, undoId, entityType, entityId, "UPDATE", after, restored, changedAt);
+      return;
+    }
 
     if (entityType === "issue") {
       const current = db.prepare("SELECT * FROM issues WHERE id = ?").get(entityId);

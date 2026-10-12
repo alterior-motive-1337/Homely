@@ -224,7 +224,7 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
       properties: {
         actionType: {
           type: "string",
-          enum: ["CREATE_ASSET","REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","RECORD_REPAIR","CREATE_CHARGE","SAVE_PURCHASE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]
+          enum: ["CREATE_ASSET","UPDATE_ASSET","REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","RECORD_REPAIR","CREATE_CHARGE","SAVE_PURCHASE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]
         },
         payload: {
           type: "object",
