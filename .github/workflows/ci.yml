@@ -172,6 +172,14 @@ jobs:
           await page.locator("#invite-home-form input[name=email]").fill("ci-invite@example.test");
           await page.locator("#invite-home-form select[name=role]").selectOption("VIEWER");
           await page.getByRole("button", { name: "Create invite link" }).click();
+          await page.waitForTimeout(500);
+          const inviteDebug = await page.evaluate(() => ({
+            valid: document.querySelector("#invite-home-form")?.checkValidity(),
+            email: document.querySelector('#invite-home-form input[name="email"]')?.value,
+            toast: document.querySelector("#toast")?.textContent,
+            created: !!document.querySelector("#invite-link")
+          }));
+          if (!inviteDebug.created) throw new Error("Invitation form failed: " + JSON.stringify(inviteDebug) + " | " + errors.join(" | "));
           await page.locator("#invite-link").waitFor();
           await page.getByRole("button", { name: "Delete account…" }).click();
           await page.locator("#delete-account-form").waitFor();
