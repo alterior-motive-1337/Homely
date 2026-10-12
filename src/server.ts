@@ -23,6 +23,7 @@ import { analyzeDocument } from "./evidence/analyze.js";
 import { GoogleAuthentication, type AuthGateway } from "./security/googleAuth.js";
 import { enterHome } from "./security/homeScope.js";
 import { RequestLimiter } from "./security/traffic.js";
+import { acceptInvite, inviteMember, listHouseholds, listInvitations, listMembers, removeMember, renameHome, revokeInvite } from "./domain/households.js";
 
 function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-content-type-options", "nosniff");
@@ -170,8 +171,51 @@ export async function startServer(
           else if(url.pathname.includes("/chunks/"))limits.enforce("chunks:"+key,240,60_000);
           else limits.enforce("write:"+key,90,60_000);
         }
-        if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET"))
+        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept";
+        if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET") && !selfServe)
           throw new DomainError("Your household membership is read-only.",403);
+      }
+
+      if(req.method==="GET" && url.pathname==="/api/homes") {
+        const user=auth.requireUser(req);
+        return sendJson(res,200,{currentHomeId:user.homeId,homes:listHouseholds(db,user)},{"cache-control":"no-store"});
+      }
+      if(req.method==="POST" && url.pathname==="/api/homes/active") {
+        if(!auth.switchHome)throw new DomainError("Home switching is not available.",503);
+        const user=auth.switchHome(req,String((await readJson(req)).homeId??""));
+        enterHome(user.homeId);
+        return sendJson(res,200,{homeId:user.homeId,role:user.role});
+      }
+      if(req.method==="GET" && url.pathname==="/api/homes/members") {
+        return sendJson(res,200,listMembers(db,auth.requireUser(req)));
+      }
+      if(req.method==="PATCH" && url.pathname==="/api/homes/current") {
+        const user=auth.requireUser(req);
+        return sendJson(res,200,renameHome(db,user,(await readJson(req)).name));
+      }
+      if(req.method==="GET" && url.pathname==="/api/homes/invitations") {
+        return sendJson(res,200,listInvitations(db,auth.requireUser(req)));
+      }
+      if(req.method==="POST" && url.pathname==="/api/homes/invitations") {
+        const body=await readJson(req);
+        const invitation=inviteMember(db,auth.requireUser(req),body.email,body.role);
+        return sendJson(res,201,{...invitation,link:"/?invite="+encodeURIComponent(invitation.token)},{"cache-control":"no-store"});
+      }
+      if(req.method==="POST" && url.pathname==="/api/homes/invitations/accept") {
+        const accepted=acceptInvite(db,auth.requireUser(req),(await readJson(req)).token);
+        if(auth.switchHome) {
+          auth.switchHome(req,accepted.homeId);
+          enterHome(accepted.homeId);
+        }
+        return sendJson(res,200,accepted);
+      }
+      const invitationRevoke=/^\\/api\\/homes\\/invitations\\/([a-zA-Z0-9-]+)$/.exec(url.pathname);
+      if(req.method==="DELETE" && invitationRevoke) {
+        return sendJson(res,200,revokeInvite(db,auth.requireUser(req),invitationRevoke[1]!));
+      }
+      const membershipRemove=/^\\/api\\/homes\\/members\\/([a-zA-Z0-9-]+)$/.exec(url.pathname);
+      if(req.method==="DELETE" && membershipRemove) {
+        return sendJson(res,200,removeMember(db,auth.requireUser(req),membershipRemove[1]!));
       }
 
       // Upload each 50 MB file in small durable Turso transactions.
