@@ -16,7 +16,7 @@ test("registering a new appliance requires approval and preserves asset details"
   const id=String(proposal.transaction?.id);
   commitTransaction(db,id);
   assert.equal(listAssets(db).length,before+1);
-  assert.ok(listAssets(db).some((a)=>a.name==="Desk lamp" && a.condition==="GOOD"));
+  assert.ok(listAssets(db).some((a)=>String((a as Record<string,unknown>).name)==="Desk lamp" && String((a as Record<string,unknown>).condition)==="GOOD"));
   undoTransaction(db,id);
   assert.equal(listAssets(db).length,before);
   db.close();
