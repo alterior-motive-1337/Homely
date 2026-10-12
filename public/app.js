@@ -32,10 +32,21 @@ function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&
 function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(v||"UNKNOWN")+"</span>"}
 function row(title,meta,right,note){return '<div class="row"><div><div class="row-title">'+esc(title)+'</div><div class="row-meta">'+esc(meta||"")+'</div>'+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
+
 function emptyState(title,description,buttons,compact=false){
-  return '<section class="empty-state'+(compact?' compact':'')+'"><h2>'+esc(title)+'</h2>'
+  return '<section class="empty-state'+(compact?' compact':'')+'"><div class="empty-symbol" aria-hidden="true">▤</div><h2>'+esc(title)+'</h2>'
     +(description?'<p>'+esc(description)+'</p>':'')
     +(buttons?'<div class="hero-actions">'+buttons+'</div>':'')+'</section>';
+}
+function ledger(title,count,action,body,emptyMessage,columns){
+  return '<section class="ledger" aria-label="'+esc(title)+'">'
+   +'<header class="ledger-toolbar"><div class="ledger-identity"><span class="ledger-overline">'+esc(title)+'</span><span class="ledger-count">'+count+' '+(count===1?'entry':'entries')+'</span></div>'
+   +'<div class="ledger-controls">'+(action||'')+'</div></header>'
+   +'<div class="ledger-columns"><span>'+esc(columns||'Record')+'</span><span>Details</span><span>Related</span></div>'
+   +'<div class="ledger-rows">'+(body||'<div class="ledger-zero"><span class="ledger-zero-mark" aria-hidden="true">—</span><div><strong>No records yet</strong><p>'+esc(emptyMessage||'Nothing has been recorded.')+'</p></div></div>')+'</div></section>';
+}
+function linkedFilesButton(label,id){
+  return '<button type="button" class="ledger-file-link" data-'+label+'="'+esc(id)+'" title="Open record and related files" aria-label="Open record and related files">▤ <span>Files</span></button>';
 }
 
 function setRuntime(x){
@@ -172,28 +183,34 @@ async function showHistory(){
   }catch(e){notify(e.message)}
 }
 
+
 async function showIssues(){
   loading();const revision=state.viewRevision;
   try{
     const [items,assets]=await Promise.all([api("/api/issues"),api("/api/assets")]);
     if(revision!==state.viewRevision)return;
     state.assets=assets;
-    let body=items.map(function(i){const active=!["RESOLVED","CLOSED"].includes(i.status);return '<div class="row"><button class="row-open" data-issue-open="'+esc(i.id)+'"><div class="row-title">'+esc(i.title)+'</div><div class="row-meta">'+esc(i.asset_name)+" · "+fmtDate(i.detected_at)+'</div><div class="row-note">'+esc(i.description||"")+'</div></button><div class="row-actions">'+badge(i.severity)+badge(i.status)+(active?'<button class="button" data-repair="'+esc(i.id)+'">Repair</button><button class="button" data-resolve="'+esc(i.id)+'">Resolve</button>':"")+"</div></div>"}).join("");
-    if(!items.length) {
-      content.innerHTML=emptyState(assets.length?"No issues recorded.":"Start with an asset.",
-        assets.length?"Report an issue when something needs attention.":"Register an appliance or fixture before reporting a problem.",
-        assets.length?'<button class="primary-button" id="new-issue">Report issue</button>':'<button class="primary-button" id="new-asset">Register asset</button>');
-      const report=$("#new-issue");if(report)report.onclick=openIssueForm;
-      const asset=$("#new-asset");if(asset)asset.onclick=()=>openAssetForm();
-      return;
-    }
-    content.innerHTML='<div class="hero"><div class="hero-actions"><button class="primary-button" id="new-issue">Report issue</button></div></div><section class="card"><div class="card-body rows">'+body+'</div></section>';
-    $("#new-issue").onclick=openIssueForm;
+    const action=assets.length
+       ? '<button class="primary-button" id="new-issue" type="button">+ Report issue</button>'
+       : '<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
+    const body=items.map((item,index)=>{
+      const active=!["RESOLVED","CLOSED"].includes(item.status);
+      return '<div class="ledger-entry"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+(item.description?' · '+esc(item.description):'')+'</small></span></button>'
+        +'<div class="ledger-details"><span>'+fmtDate(item.detected_at)+'</span>'+badge(item.status)+badge(item.severity)+'</div>'
+        +'<div class="ledger-actions">'+linkedFilesButton("issue-files",item.id)
+        +(active?'<button class="ledger-quiet-action" type="button" data-repair="'+esc(item.id)+'">Repair</button><button class="ledger-quiet-action" type="button" data-resolve="'+esc(item.id)+'">Resolve</button>':'')
+        +'</div></div>';
+    }).join("");
+    content.innerHTML=ledger("Issues",items.length,action,body,assets.length?"Report an issue to create a dated record and keep its files together.":"Register the first household asset to begin logging issues.","Issue");
+    const add=$("#new-issue");if(add)add.onclick=openIssueForm;
+    const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
     $$("[data-resolve]",content).forEach(b=>b.onclick=()=>openResolveForm(items.find(i=>i.id===b.dataset.resolve)));
     $$("[data-repair]",content).forEach(b=>b.onclick=()=>openRepairForm(items.find(i=>i.id===b.dataset.repair)));
     $$("[data-issue-open]",content).forEach(b=>b.onclick=()=>openIssue(items.find(i=>i.id===b.dataset.issueOpen)));
+    $$("[data-issue-files]",content).forEach(b=>b.onclick=()=>openIssue(items.find(i=>i.id===b.dataset.issueFiles)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
+
 
 async function showRepairs(){
   loading();const revision=state.viewRevision;
@@ -201,18 +218,13 @@ async function showRepairs(){
     const [items,assets]=await Promise.all([api("/api/repairs"),api("/api/assets")]);
     if(revision!==state.viewRevision)return;
     state.assets=assets;
-    if(!items.length){
-      content.innerHTML=emptyState(assets.length?"No repairs yet.":"Start with an asset.",
-        assets.length?"When something gets fixed, record the work and cost here.":"Add an appliance or fixture before recording its repair.",
-        assets.length?'<button class="primary-button" id="new-repair">Record repair</button>':'<button class="primary-button" id="new-asset">Register asset</button>');
-      const repair=$("#new-repair");if(repair)repair.onclick=()=>openRepairForm();
-      const asset=$("#new-asset");if(asset)asset.onclick=()=>openAssetForm();
-      return;
-    }
-    const body=items.map(r=>'<div class="row"><button class="row-open" data-repair-open="'+esc(r.id)+'"><div class="row-title">'+esc(r.title)+'</div><div class="row-meta">'+esc(r.asset_name)+" · "+fmtDate(r.repair_date)+(r.contractor?" · "+esc(r.contractor):"")+'</div><div class="row-note">'+esc(r.outcome||r.description||"")+'</div></button><div class="row-actions"><span class="money">'+money(r.cost_cents)+"</span>"+(r.issue_title?'<span class="badge">ISSUE LINKED</span>':"")+"</div></div>").join("");
-    content.innerHTML='<div class="hero"><div class="hero-actions"><button class="primary-button" id="new-repair">Record repair</button></div></div><section class="card"><div class="card-body rows">'+body+'</div></section>';
-    $("#new-repair").onclick=()=>openRepairForm();
+    const action=assets.length?'<button class="primary-button" id="new-repair" type="button">+ Record repair</button>':'<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
+    const body=items.map((r,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+(r.outcome||r.description?' · '+esc(r.outcome||r.description):'')+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
+    content.innerHTML=ledger("Repairs",items.length,action,body,assets.length?"Repairs and their costs will appear here.":"Register a household asset to begin recording repairs.","Repair");
+    const add=$("#new-repair");if(add)add.onclick=()=>openRepairForm();
+    const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
     $$("[data-repair-open]",content).forEach(b=>b.onclick=()=>openRepair(items.find(r=>r.id===b.dataset.repairOpen)));
+    $$("[data-repair-files]",content).forEach(b=>b.onclick=()=>openRepair(items.find(r=>r.id===b.dataset.repairFiles)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -258,29 +270,25 @@ async function openAssetForm(existing){
   };
 }
 
-function renderAssets(items){
-  if(!items.length){
-    const filtered=state.assets.length>0;
-    $("#asset-results").innerHTML=filtered?'<p class="quiet-status">No matching assets.</p>':
-      emptyState("Build your asset registry.","Track appliances, furniture and fixtures, with purchase details and maintenance history.",
-        '<button class="primary-button" id="asset-empty-create">Register asset</button>');
-    const add=$("#asset-empty-create");if(add)add.onclick=()=>openAssetForm();
-    return;
-  }
-  $("#asset-results").innerHTML='<div class="table-wrap"><table><thead><tr><th>Asset</th><th>Condition</th><th>Health</th><th>System</th><th>Location</th><th>Purchase</th></tr></thead><tbody>'+items.map(function(a){return '<tr data-asset="'+esc(a.id)+'"><td><strong>'+esc(a.name)+'</strong><div class="row-meta">'+esc(a.manufacturer||"")+" "+esc(a.model||"")+'</div></td><td>'+badge(a.condition||"UNKNOWN")+"</td><td>"+badge(a.health)+"</td><td>"+esc(a.system_name)+"</td><td>"+esc(a.location||"—")+'</td><td>'+money(a.purchase_cost_cents)+"</td></tr>"}).join("")+"</tbody></table></div>";
-  $$("[data-asset]",$("#asset-results")).forEach(r=>r.onclick=()=>openAsset(r.dataset.asset));
-}
 
+function renderAssets(items){
+  const target=$("#asset-results");
+  if(!target)return;
+  const filtered=state.assets.length>0;
+  const body=items.map((a,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+'<span>'+money(a.purchase_cost_cents)+'</span></div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">▤ <span>Files</span></button></div></div>').join("");
+  target.innerHTML=ledger("Appliances & furniture",items.length,'<button type="button" class="primary-button" id="new-asset">+ Register asset</button>',body,filtered?"No assets match your search.":"Your appliances, furniture and fixtures will appear here.","Asset");
+  $("#new-asset").onclick=()=>openAssetForm();
+  $$("[data-asset]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.asset));
+  $$("[data-asset-file]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.assetFile));
+}
 async function showAppliances(){
   loading();const revision=state.viewRevision;
   try{
     state.assets=await api("/api/assets");
     if(revision!==state.viewRevision)return;
-    content.innerHTML=(state.assets.length?'<div class="hero"><div class="hero-actions"><button class="primary-button" id="new-asset">Register asset</button></div></div><div class="toolbar"><input class="search" id="asset-search" type="search" placeholder="Search assets…" aria-label="Search assets"></div>':'')+'<div id="asset-results"></div>';
-    const add=$("#new-asset");if(add)add.onclick=()=>openAssetForm();
+    content.innerHTML='<div class="toolbar register-search"><input class="search" id="asset-search" type="search" placeholder="Search appliances & furniture" aria-label="Search assets"></div><div id="asset-results"></div>';
     renderAssets(state.assets);
-    const search=$("#asset-search");
-    if(search)search.oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))))};
+    $("#asset-search").oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))))};
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -431,22 +439,40 @@ async function openUploadEvidenceForm(defaults){
   };
 }
 
+
 async function showFiles(){
   loading();const revision=state.viewRevision;
   try{
     const docs=await api("/api/documents");
     if(revision!==state.viewRevision)return;
-    if(!docs.length){
-      content.innerHTML=emptyState("Keep every file in one place.","Store receipts, manuals, images, videos and related household evidence.",
-        '<button class="primary-button" id="upload-file">Upload file</button><button class="button" id="save-link">Save link</button>');
-    }else{
-      content.innerHTML='<div class="hero"><div class="hero-actions"><button class="button" id="save-link">Save link</button><button class="primary-button" id="upload-file">Upload file</button></div></div><div class="toolbar"><input class="search" id="file-search" type="search" placeholder="Search files…" aria-label="Search files"></div><div class="file-grid">'+docs.map(function(d){const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);return '<button class="file-card" data-file="'+esc(d.id)+'"><div class="file-type">'+esc(d.type||"FILE")+'</div><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"General evidence")+" · "+fmtDate(d.occurred_at||d.created_at))+'</small>'+(d.evidence_reason?'<span class="file-reason">'+esc(d.evidence_reason)+'</span>':"")+'</button>'}).join("")+'</div>';
-    }
-    const search=$("#file-search");
-    if(search)search.oninput=e=>{const q=e.target.value.toLowerCase().trim();$$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q)})};
+    const buttons='<button class="button" id="save-link" type="button">+ Save link</button><button class="primary-button" id="upload-file" type="button">+ Upload file</button>';
+    let cards=docs.map(d=>{
+      const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
+      return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false"><span class="file-glyph" aria-hidden="true">▤</span><span class="file-type">'+esc(d.type||"FILE")+'</span><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"Household file"))+'</small></button>';
+    }).join("");
+    if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">▤</span><strong>No files yet</strong><p>Receipts, manuals, photos and documents will appear here.</p></div>';
+    content.innerHTML='<section class="file-browser"><div class="ledger-toolbar"><div class="ledger-identity"><span class="ledger-overline">Files</span><span class="ledger-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span></div><div class="ledger-controls">'+buttons+'</div></div>'
+      +'<div class="file-browser-body"><div class="file-browser-main"><div class="file-browser-search"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">▤</span><p>Select a file to see its details.</p></div></aside></div></section>';
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
-    $$("[data-file]",content).forEach(b=>b.onclick=()=>openFile(docs.find(d=>d.id===b.dataset.file)));
+    const inspector=$("#file-inspector");
+    function selectFile(doc){
+      $$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed",String(card.dataset.file===doc.id)));
+      const related=[doc.asset_name,doc.issue_title&&"Issue: "+doc.issue_title,doc.repair_title&&"Repair: "+doc.repair_title,doc.charge_name&&"Charge: "+doc.charge_name,doc.purchase_title&&"Purchase: "+doc.purchase_title].filter(Boolean).join(" · ");
+      inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-heading"><span class="file-glyph" aria-hidden="true">▤</span><strong>'+esc(doc.title)+'</strong></div><dl class="inspector-details">'
+        +'<div><dt>Type</dt><dd>'+esc(doc.type||"File")+'</dd></div><div><dt>Date</dt><dd>'+fmtDate(doc.occurred_at||doc.created_at)+'</dd></div>'
+        +(related?'<div><dt>Linked to</dt><dd>'+esc(related)+'</dd></div>':'')
+        +(doc.evidence_reason?'<div><dt>Reason</dt><dd>'+esc(doc.evidence_reason)+'</dd></div>':'')
+        +'</dl><button type="button" class="primary-button inspector-open" id="inspect-open">Open file ↗</button>';
+      $("#inspect-open").onclick=()=>openFile(doc);
+    }
+    const search=$("#file-search");
+    search.oninput=e=>{const q=e.target.value.toLowerCase().trim();$$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q)})};
+    $$("[data-file]",content).forEach(b=>{
+      const doc=docs.find(d=>d.id===b.dataset.file);
+      b.onclick=()=>selectFile(doc);
+      b.ondblclick=()=>openFile(doc);
+    });
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
