@@ -243,3 +243,15 @@ tbody tr:hover{background:#15191a}
  .empty-state{min-height:45vh}
 }
 @media(prefers-reduced-motion:reduce){.chat-rail{transition:none}}
+
+/* Small unboxed affordances and contained account footer. */
+.account-email{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-utilities{border-top:1px solid var(--line);padding-top:17px}
+.utility-links{display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+.utility-links .ghost-link{font-size:13px;font-weight:570;color:#b9c3c6}
+.utility-links .ghost-link:hover{color:#fff}
+.quiet-status{color:#a8b2b6;margin:0;font-size:13px;padding:5px 0}
+.home-overview .home-priority{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.home-overview .home-memory{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.chat-visible .chat-fab{display:none}
+@media(max-width:760px){.utility-links{gap:18px}.home-overview .home-priority,.home-overview .home-memory{grid-template-columns:1fr}}

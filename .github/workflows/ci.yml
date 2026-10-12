@@ -185,12 +185,17 @@ jobs:
           await page.locator("#delete-account-form").waitFor();
           await page.getByRole("button", { name: "Cancel" }).click();
 
+          // Chat is intentionally collapsed to maximize workspace width.
+          await page.getByRole("button", { name: "Ask Homely", exact: true }).click();
+          await page.locator("#chat-rail").waitFor({ state: "visible" });
           await page.getByRole("button", { name: "Voice", exact: true }).click();
           if ((await page.locator("#chat-input").inputValue()) !== "check the kitchen tap") {
             throw new Error("voice input did not populate chat");
           }
           await page.getByRole("button", { name: "Stop listening", exact: true }).click();
           if ((await page.evaluate(() => window.__voiceAborts)) !== 1) throw new Error("Stop listening must abort voice capture");
+          await page.locator("#chat-close").click();
+          await page.locator("#chat-rail").waitFor({ state: "hidden" });
 
           const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
           if (horizontalOverflow) throw new Error("desktop shell has horizontal overflow");
@@ -247,7 +252,9 @@ jobs:
           await page.locator("#viewer").waitFor({ state: "visible" });
           await page.locator("#viewer-close").click();
 
+          await page.getByRole("button", { name: "Ask Homely", exact: true }).click();
           await page.getByText("Chat unavailable").waitFor();
+          await page.locator("#chat-close").click();
           if (!(await page.locator('#chat-form button[type="submit"]').isDisabled())) throw new Error("chat should be disabled when AI is unavailable");
 
           await page.setViewportSize({ width: 390, height: 844 });
