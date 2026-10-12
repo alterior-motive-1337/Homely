@@ -1,5 +1,4 @@
 import { Exa } from "exa-js";
-import Firecrawl from "@mendable/firecrawl-js";
 import { config } from "../config.js";
 
 export type ResearchPurpose = "LOCAL_SERVICE" | "PRODUCT" | "GENERAL";
@@ -11,15 +10,15 @@ function clip(value: unknown, max = 4000): string {
 }
 
 export class HomeResearch {
-  private readonly exa = config.exaApiKey ? new Exa(config.exaApiKey) : null;
-  private readonly firecrawl = config.firecrawlApiKey ? new Firecrawl({ apiKey: config.firecrawlApiKey }) : null;
   private readonly readableUrls = new Set<string>();
+
+  constructor(private readonly exa: Pick<Exa, "search" | "getContents"> | null =
+    config.exaApiKey ? new Exa(config.exaApiKey) : null) {}
 
   get status() {
     return {
       exa: { configured: Boolean(this.exa) },
-      firecrawl: { configured: Boolean(this.firecrawl) },
-      available: Boolean(this.exa || this.firecrawl)
+      available: Boolean(this.exa)
     };
   }
 
@@ -50,7 +49,11 @@ export class HomeResearch {
     const results = response.results.slice(0, maxResults).map((raw: unknown) => {
       const row = raw as unknown as JsonRecord;
       const url = clip(row.url, 1500);
-      if (url) this.readableUrls.add(url);
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === "https:") this.readableUrls.add(parsed.toString());
+      } catch { /* Invalid result URLs are not eligible for reading. */ }
+      while (this.readableUrls.size > 256) this.readableUrls.delete(this.readableUrls.values().next().value!);
       return {
         title: clip(row.title, 300),
         url,
@@ -66,7 +69,7 @@ export class HomeResearch {
   }
 
   async readSearchResult(urlValue: string) {
-    if (!this.firecrawl) throw new Error("Firecrawl is not configured.");
+    if (!this.exa) throw new Error("Exa search is not configured.");
 
     let parsed: URL;
     try {
@@ -78,16 +81,18 @@ export class HomeResearch {
       throw new Error("The page must be an HTTPS result returned by Homely search in this session.");
     }
 
-    const result = await this.firecrawl.scrape(parsed.toString(), {
-      formats: ["markdown"],
-      onlyMainContent: true
+    const result = await this.exa.getContents([parsed.toString()], {
+      text: { maxCharacters: 14000 }
     });
-    const row = result as unknown as JsonRecord;
+    const row = result.results[0];
+    if (!row?.text) throw new Error("This search result has no readable page content.");
 
     return {
       url: parsed.toString(),
-      markdown: clip(row.markdown, 14000),
-      metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : null
+      text: clip(row.text, 14000),
+      title: clip(row.title, 300),
+      publishedDate: row.publishedDate ?? null
     };
   }
 }
+

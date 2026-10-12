@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { pipeline } from "node:stream/promises";
 import { google, type drive_v3 } from "googleapis";
 import type { Credentials } from "google-auth-library";
 import { config } from "../config.js";
@@ -15,17 +14,6 @@ export interface DriveFileMetadata {
   modifiedTime: string | null;
   webViewLink: string | null;
   size: string | null;
-}
-
-export interface DriveBackupMetadata {
-  id: string;
-  name: string;
-  createdTime: string | null;
-  size: string | null;
-}
-
-function escapeDriveQuery(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 export class GoogleDriveIntegration {
@@ -180,121 +168,6 @@ export class GoogleDriveIntegration {
     throw new DomainError("This Drive file type is not text-readable yet.", 415);
   }
 
-  private async backupFolderId(): Promise<string> {
-    const drive = this.authorizedDrive();
-    const folderName = config.googleDriveBackupFolder;
-    const query = [
-      "trashed = false",
-      "mimeType = 'application/vnd.google-apps.folder'",
-      `name = '${escapeDriveQuery(folderName)}'`,
-      "appProperties has { key='homelyRole' and value='backup-folder' }"
-    ].join(" and ");
-
-    const existing = await drive.files.list({
-      q: query,
-      pageSize: 1,
-      fields: "files(id,name)"
-    });
-
-    const existingId = existing.data.files?.[0]?.id;
-    if (existingId) return existingId;
-
-    const created = await drive.files.create({
-      requestBody: {
-        name: folderName,
-        mimeType: "application/vnd.google-apps.folder",
-        appProperties: { homelyRole: "backup-folder" }
-      },
-      fields: "id"
-    });
-
-    if (!created.data.id) throw new DomainError("Drive backup folder could not be created.", 502);
-    return created.data.id;
-  }
-
-  async uploadBackup(filePath: string, fileName: string): Promise<DriveBackupMetadata> {
-    const drive = this.authorizedDrive();
-    const folderId = await this.backupFolderId();
-    const response = await drive.files.create({
-      requestBody: {
-        name: fileName,
-        parents: [folderId],
-        appProperties: { homelyRole: "sqlite-backup" }
-      },
-      media: {
-        mimeType: "application/vnd.sqlite3",
-        body: fs.createReadStream(filePath)
-      },
-      fields: "id,name,createdTime,size"
-    });
-
-    const file = response.data;
-    if (!file.id || !file.name) throw new DomainError("Drive backup upload returned incomplete metadata.", 502);
-    return {
-      id: file.id,
-      name: file.name,
-      createdTime: file.createdTime ?? null,
-      size: file.size ?? null
-    };
-  }
-
-  async listBackups(limit = 100): Promise<DriveBackupMetadata[]> {
-    const drive = this.authorizedDrive();
-    const folderId = await this.backupFolderId();
-    const response = await drive.files.list({
-      q: [
-        "trashed = false",
-        `'${folderId}' in parents`,
-        "appProperties has { key='homelyRole' and value='sqlite-backup' }"
-      ].join(" and "),
-      orderBy: "createdTime desc",
-      pageSize: Math.max(1, Math.min(100, limit)),
-      fields: "files(id,name,createdTime,size)"
-    });
-
-    return (response.data.files ?? [])
-      .filter((file): file is typeof file & { id: string; name: string } => Boolean(file.id && file.name))
-      .map((file) => ({
-        id: file.id,
-        name: file.name,
-        createdTime: file.createdTime ?? null,
-        size: file.size ?? null
-      }));
-  }
-
-  async downloadLatestBackup(destinationPath: string): Promise<DriveBackupMetadata | null> {
-    const [latest] = await this.listBackups(1);
-    if (!latest) return null;
-
-    const drive = this.authorizedDrive();
-    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
-    const temporaryPath = destinationPath + ".restore";
-    const response = await drive.files.get(
-      { fileId: latest.id, alt: "media" },
-      { responseType: "stream" }
-    );
-
-    try {
-      await pipeline(response.data, fs.createWriteStream(temporaryPath));
-      fs.renameSync(temporaryPath, destinationPath);
-    } catch (error) {
-      if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true });
-      throw error;
-    }
-
-    return latest;
-  }
-
-  async pruneBackups(keep: number): Promise<number> {
-    const backups = await this.listBackups(100);
-    const remove = backups.slice(Math.max(1, keep));
-    const drive = this.authorizedDrive();
-    for (const backup of remove) {
-      await drive.files.delete({ fileId: backup.id });
-    }
-    return remove.length;
-  }
-
   disconnect(): void {
     if (config.googleDriveRefreshToken) {
       throw new DomainError("Google Drive credentials are managed by the cloud secret store.", 409);
@@ -302,3 +175,4 @@ export class GoogleDriveIntegration {
     if (fs.existsSync(config.googleDriveTokenPath)) fs.rmSync(config.googleDriveTokenPath);
   }
 }
+

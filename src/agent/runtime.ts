@@ -16,7 +16,6 @@ export interface AgentRuntime {
   };
   researchStatus: {
     exa: { configured: boolean };
-    firecrawl: { configured: boolean };
     available: boolean;
   };
 }
@@ -58,3 +57,4 @@ export function createAgentRuntime(db: HomelyDatabase): AgentRuntime {
     researchStatus: research.status
   };
 }
+

@@ -1,6 +1,8 @@
 name: Homely CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -14,7 +16,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: npm install
+      - run: npm ci
       - run: npm run build
       - run: npm test
       - run: node --check public/app.js
@@ -25,7 +27,6 @@ jobs:
             npx playwright install --with-deps chromium
           fi
       - run: npm run db:reset
-      - run: npm run mcp:smoke
       - name: Start Homely and verify real state
         shell: bash
         run: |
@@ -48,7 +49,7 @@ jobs:
           const health = await (await get("/api/health")).json();
           assert(health.ok === true, "health endpoint not ready");
           assert(health.database === "OK", "database readiness missing");
-          assert(["LOCAL","READY","DEGRADED"].includes(health.durability), "durability readiness missing");
+          assert(["LOCAL","TURSO"].includes(health.durability), "durability readiness missing");
 
           const overview = await (await get("/api/overview")).json();
           assert(overview.home.name === "14 Hawthorn Residence", "seed home missing");
@@ -80,8 +81,10 @@ jobs:
           const projects = await (await get("/api/projects")).json();
           assert(projects.some((project) => project.title === "Battery storage expansion" && project.status === "PLANNED"), "seed project missing");
 
-          const backupProbe = await fetch("http://127.0.0.1:4173/api/backups/now", { method: "POST" });
-          assert(backupProbe.status === 409, "manual backup should report disabled backup state in CI");
+          const access = await (await get("/api/auth/status")).json();
+          assert(access.enabled === false && access.authenticated === true, "POC must open without password access");
+          const icon = await get("/favicon.svg");
+          assert(icon.headers.get("content-type").includes("image/svg+xml"), "house favicon must use SVG content type");
 
           const warranty = await get("/demo-documents/inverter-warranty.txt");
           assert((await warranty.text()).includes("20 January 2030"), "warranty document did not resolve");
@@ -132,13 +135,14 @@ jobs:
           const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
           await page.addInitScript(() => {
             class FakeSpeechRecognition {
+              constructor() { window.__recognition = this; }
+              abort() { window.__voiceAborts = (window.__voiceAborts || 0) + 1; this.onend?.(); }
               start() {
                 this.onstart?.();
                 this.onresult?.({
                   resultIndex: 0,
                   results: [[{ transcript: "check the kitchen tap" }]]
                 });
-                this.onend?.();
               }
             }
             Object.defineProperty(window, "SpeechRecognition", {
@@ -154,11 +158,13 @@ jobs:
 
           await page.goto("http://127.0.0.1:4173", { waitUntil: "networkidle" });
           await page.getByText("14 Hawthorn Residence").waitFor();
-          await page.getByText("Local memory active").waitFor();
+          await page.getByText("Home memory active").waitFor();
           await page.getByRole("button", { name: "Voice", exact: true }).click();
           if ((await page.locator("#chat-input").inputValue()) !== "check the kitchen tap") {
             throw new Error("voice input did not populate chat");
           }
+          await page.getByRole("button", { name: "Stop listening", exact: true }).click();
+          if ((await page.evaluate(() => window.__voiceAborts)) !== 1) throw new Error("Stop listening must abort voice capture");
 
           const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
           if (horizontalOverflow) throw new Error("desktop shell has horizontal overflow");
@@ -172,6 +178,9 @@ jobs:
 
           await page.locator("#nav").getByRole("button", { name: "Issues", exact: true }).click();
           await page.getByText("Camera 4 intermittent disconnect").waitFor();
+          await page.locator("[data-issue-open]").filter({ hasText: "Camera 4 intermittent disconnect" }).click();
+          await page.locator("#modal").getByRole("heading", { name: "Files", exact: true }).waitFor();
+          await page.locator("#modal-close").click();
           await page.getByRole("button", { name: "Report issue" }).click();
           await page.locator("#issue-form select[name=assetId]").selectOption("asset-tap");
           await page.locator("#issue-form input[name=title]").fill("Browser transaction issue");
@@ -190,6 +199,9 @@ jobs:
           await page.getByText("Approval required").waitFor();
           await page.getByRole("button", { name: "Approve & commit" }).click();
           await page.getByText("Browser repair record").waitFor();
+          await page.locator("[data-repair-open]").filter({ hasText: "Browser repair record" }).click();
+          await page.locator("#modal").getByRole("heading", { name: "Work performed", exact: true }).waitFor();
+          await page.locator("#modal-close").click();
 
           await page.locator("#nav").getByRole("button", { name: "Files", exact: true }).click();
           await page.getByText("Sunsynk 8 kW inverter warranty").waitFor();
@@ -197,7 +209,7 @@ jobs:
           await page.locator("#viewer").waitFor({ state: "visible" });
           await page.locator("#viewer-close").click();
 
-          await page.getByText("Structured memory only").waitFor();
+          await page.getByText("Chat unavailable").waitFor();
           if (!(await page.locator('#chat-form button[type="submit"]').isDisabled())) throw new Error("chat should be disabled when AI is unavailable");
 
           await page.setViewportSize({ width: 390, height: 844 });
@@ -216,3 +228,4 @@ jobs:
           kill "$(cat /tmp/homely.pid)"
       - if: failure()
         run: cat /tmp/homely.log || true
+

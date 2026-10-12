@@ -26,7 +26,7 @@ export function researchToolDefinitions(research: HomeResearch): OpenAI.Response
     });
   }
 
-  if (research.status.firecrawl.configured) {
+  if (research.status.exa.configured) {
     tools.push({
       type: "function",
       name: "read_web_page",
@@ -64,3 +64,4 @@ export async function executeResearchTool(
 
   throw new Error("Unknown research tool.");
 }
+

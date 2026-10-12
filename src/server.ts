@@ -18,8 +18,7 @@ import {
 import { hasHome, seedDemo } from "./seed.js";
 import { createAgentRuntime } from "./agent/runtime.js";
 import { GoogleDriveIntegration } from "./integrations/googleDrive.js";
-import { DriveBackupService } from "./integrations/driveBackup.js";
-import { LoginAttemptLimiter, loginPage, OwnerAuth } from "./security/auth.js";
+import { assertSameOrigin } from "./security/request.js";
 
 function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-content-type-options", "nosniff");
@@ -68,21 +67,12 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
   const body = await readBody(req);
   if (!body.length) return {};
   try {
-    return JSON.parse(body.toString("utf8")) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(body.toString("utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Not an object");
+    return parsed as Record<string, unknown>;
   } catch {
     throw new DomainError("Request body must be valid JSON.");
   }
-}
-
-async function readForm(req: http.IncomingMessage): Promise<URLSearchParams> {
-  const body = await readBody(req);
-  return new URLSearchParams(body.toString("utf8"));
-}
-
-function loginAttemptKey(req: http.IncomingMessage): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return raw?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
 }
 
 function mimeType(filePath: string): string {
@@ -91,6 +81,9 @@ function mimeType(filePath: string): string {
   if (ext === ".css") return "text/css; charset=utf-8";
   if (ext === ".js") return "text/javascript; charset=utf-8";
   if (ext === ".txt") return "text/plain; charset=utf-8";
+  if (ext === ".svg") return "image/svg+xml";
+  if (ext === ".png") return "image/png";
+  if (ext === ".ico") return "image/x-icon";
   return "application/octet-stream";
 }
 
@@ -102,28 +95,16 @@ function serveStatic(res: http.ServerResponse, pathname: string) {
   }
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     const indexPath = path.join(config.publicDir, "index.html");
-    return sendHtml(res, 200, fs.readFileSync(indexPath, "utf8"));
+    if (path.extname(pathname)) return sendJson(res, 404, { error: "File not found" });
+    return sendHtml(res, 200, fs.readFileSync(indexPath, "utf8"), { "cache-control": "no-cache" });
   }
   securityHeaders(res);
-  res.writeHead(200, { "content-type": mimeType(filePath) });
+  res.writeHead(200, { "content-type": mimeType(filePath), "cache-control": "no-cache" });
   return res.end(fs.readFileSync(filePath));
 }
 
 async function main(): Promise<void> {
-  const auth = new OwnerAuth({
-    enabled: config.authEnabled,
-    password: config.ownerPassword,
-    secret: config.sessionSecret,
-    sessionDays: config.sessionDays,
-    secureCookies: config.secureCookies
-  });
-
-  const loginLimiter = new LoginAttemptLimiter();
   const googleDrive = new GoogleDriveIntegration();
-  const backups = new DriveBackupService(googleDrive);
-  backups.assertReady();
-  await backups.restoreIfDatabaseMissing();
-
   const db = openDatabase();
   migrate(db);
   const seeded = !hasHome(db);
@@ -131,100 +112,24 @@ async function main(): Promise<void> {
 
   const agentRuntime = createAgentRuntime(db);
 
-  if (seeded && config.backupEnabled) {
-    await backups.backupNow(db, "initial-seed");
-  }
-  backups.startPeriodic(db);
-
-  async function durable<T extends Record<string, unknown>>(result: T, reason: string): Promise<T & {
-    durability: { driveBackup: "OK" | "DISABLED" | "DEGRADED" };
-  }> {
-    if (!config.backupEnabled) {
-      return { ...result, durability: { driveBackup: "DISABLED" } };
-    }
-    try {
-      await backups.backupNow(db, reason);
-      return { ...result, durability: { driveBackup: "OK" } };
-    } catch (error) {
-      console.error("Homely state committed but off-site backup is degraded:", error);
-      return { ...result, durability: { driveBackup: "DEGRADED" } };
-    }
-  }
-
   const server = http.createServer(async (req, res) => {
     if (!req.url) return sendJson(res, 400, { error: "Missing URL" });
-    const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
-
     try {
+      const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+      assertSameOrigin(req);
       if (req.method === "GET" && url.pathname === "/api/health") {
         db.prepare("SELECT 1 AS ok").get();
-        const durability = !config.backupEnabled
-          ? "LOCAL"
-          : googleDrive.status.connected
-            ? "READY"
-            : "DEGRADED";
-        return sendJson(res, 200, { ok: true, service: "Homely", database: "OK", durability });
+        return sendJson(res, 200, { ok: true, service: "Homely", database: "OK", mode: "POC", durability: config.tursoDatabaseUrl ? "TURSO" : "LOCAL" });
       }
 
       if (req.method === "GET" && url.pathname === "/api/auth/status") {
-        return sendJson(res, 200, {
-          enabled: auth.enabled,
-          authenticated: auth.isAuthenticated(req)
-        });
+        return sendJson(res, 200, { enabled: false, authenticated: true, mode: "POC" });
       }
 
+      // Old bookmarks open the POC directly; there is no password/session flow.
       if (req.method === "GET" && url.pathname === "/auth/login") {
-        if (!auth.enabled || auth.isAuthenticated(req)) {
-          res.writeHead(303, { location: "/" });
-          return res.end();
-        }
-        return sendHtml(res, 200, loginPage());
-      }
-
-      if (req.method === "POST" && url.pathname === "/auth/login") {
-        const key = loginAttemptKey(req);
-        const blockedFor = loginLimiter.retryAfterSeconds(key);
-        if (blockedFor > 0) {
-          return sendHtml(res, 429, loginPage("Too many failed attempts. Try again later."), {
-            "retry-after": String(blockedFor),
-            "cache-control": "no-store"
-          });
-        }
-
-        const form = await readForm(req);
-        const password = form.get("password") ?? "";
-        if (!auth.verifyPassword(password)) {
-          const retryAfter = loginLimiter.recordFailure(key);
-          return sendHtml(
-            res,
-            retryAfter > 0 ? 429 : 401,
-            loginPage(retryAfter > 0 ? "Too many failed attempts. Try again later." : "Incorrect owner password."),
-            retryAfter > 0 ? { "retry-after": String(retryAfter), "cache-control": "no-store" } : { "cache-control": "no-store" }
-          );
-        }
-
-        loginLimiter.clear(key);
-        res.writeHead(303, {
-          location: "/",
-          "set-cookie": auth.sessionCookie(),
-          "cache-control": "no-store"
-        });
+        res.writeHead(303, { location: "/", "cache-control": "no-store" });
         return res.end();
-      }
-
-      if (req.method === "POST" && url.pathname === "/api/auth/logout") {
-        return sendJson(res, 200, { authenticated: false }, {
-          "set-cookie": auth.clearCookie(),
-          "cache-control": "no-store"
-        });
-      }
-
-      if (!auth.isAuthenticated(req)) {
-        if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
-          res.writeHead(303, { location: "/auth/login" });
-          return res.end();
-        }
-        return sendJson(res, 401, { error: "Owner authentication required." });
       }
 
       if (req.method === "GET" && url.pathname === "/api/overview") return sendJson(res, 200, getOverview(db));
@@ -249,12 +154,12 @@ async function main(): Promise<void> {
       if (req.method === "GET" && url.pathname === "/api/transactions") return sendJson(res, 200, listTransactions(db));
       if (req.method === "GET" && url.pathname === "/api/integrations/status") {
         return sendJson(res, 200, {
-          auth: { enabled: auth.enabled },
+          mode: "POC",
+          storage: { provider: config.tursoDatabaseUrl ? "TURSO" : "LOCAL" },
           ai: agentRuntime.status,
           research: agentRuntime.researchStatus,
-          voice: { enabled: config.voiceEnabled, available: false },
-          googleDrive: googleDrive.status,
-          backup: backups.status
+          voice: { input: "BROWSER" },
+          googleDrive: googleDrive.status
         });
       }
 
@@ -292,14 +197,6 @@ async function main(): Promise<void> {
       if (req.method === "POST" && url.pathname === "/api/google-drive/disconnect") {
         googleDrive.disconnect();
         return sendJson(res, 200, { connected: false });
-      }
-
-      if (req.method === "POST" && url.pathname === "/api/backups/now") {
-        if (!config.backupEnabled) throw new DomainError("Off-site backups are disabled.", 409);
-        if (!googleDrive.status.connected) throw new DomainError("Google Drive backup credentials are not ready.", 503);
-        const backup = await backups.backupNow(db, "manual");
-        if (!backup) throw new DomainError("Backup did not complete.", 503);
-        return sendJson(res, 200, { backup, status: backups.status });
       }
 
       if (req.method === "POST" && url.pathname === "/api/agent/respond") {
@@ -356,18 +253,18 @@ async function main(): Promise<void> {
         if (req.method === "POST" && operation === "commit") {
           const result = commitTransaction(db, transactionId);
           if (!result) throw new DomainError("Committed transaction could not be reloaded.", 500);
-          return sendJson(res, 200, await durable(result, "transaction-commit"));
+          return sendJson(res, 200, result);
         }
 
         if (req.method === "POST" && operation === "reject") {
           const result = rejectTransaction(db, transactionId);
           if (!result) throw new DomainError("Rejected transaction could not be reloaded.", 500);
-          return sendJson(res, 200, await durable(result, "transaction-reject"));
+          return sendJson(res, 200, result);
         }
 
         if (req.method === "POST" && operation === "undo") {
           const result = undoTransaction(db, transactionId);
-          return sendJson(res, 200, await durable(result, "transaction-undo"));
+          return sendJson(res, 200, result);
         }
       }
 
@@ -384,13 +281,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(`Homely received ${signal}; preserving state before shutdown.`);
-    backups.stopPeriodic();
-    try {
-      if (config.backupEnabled) await backups.backupNow(db, "shutdown");
-    } catch (error) {
-      console.error("Final Homely backup failed during shutdown:", error);
-    }
+    console.log(`Homely received ${signal}; closing home memory.`);
     server.close(() => {
       db.close();
       process.exit(0);
@@ -409,3 +300,4 @@ main().catch((error) => {
   console.error("Homely failed to start:", error);
   process.exit(1);
 });
+

@@ -1,185 +1,69 @@
 # Homely
 
-Homely is the persistent operating memory for one physical home.
+Homely is the persistent operating memory for one physical home. Issues, repairs, appliances/furniture, evidence, recurring charges and saved purchases remain structured records; the assistant explains those records and proposes changes.
 
-The application keeps structured household state in SQLite, preserves important history, and layers an optional home-aware agent on top. The AI layer is not the source of truth: Issues, Repairs, Assets, Files, Charges, Potential Purchases, Maintenance, Projects, Timeline Events and Transactions remain explicit domain records.
-
-## Run locally
+## Run
 
 Requires Node.js 24.x.
 
 ```bash
-npm install
-npm run db:reset
+npm ci
 npm run dev
 ```
 
-Open http://localhost:4173.
+Open http://localhost:4173. Migrations run at startup and an empty database receives the fictional demo home. The functional POC opens directly without a shared password or owner session. It is a public demo, not authenticated household hosting. Real private household hosting requires a separate authentication design.
 
-The server applies migrations automatically and seeds the demo property only when the database is empty.
+## Interface
 
-## Commands
+The five main pages follow the original notes: **Home, Issues, Repairs, Appliances, Files**. Chat stays alongside normal pages and opens as a drawer on smaller screens. The file viewer contains only the selected evidence.
 
-```bash
-npm run dev
-npm run build
-npm test
-npm run db:migrate
-npm run db:seed
-npm run db:reset
-npm run mcp
-npm run mcp:smoke
-```
+Home shows attention items, upcoming work and compact summaries. Charges, saved purchases and history open from Home; full record lists live in their own pages. The brand and browser tab use the same stick-house shape.
 
 ## Architecture
 
-```text
-Browser UI             Groq agent             MCP hosts
-    |                    |                       |
-HTTP API          Homely tool layer         Homely MCP
-    |                    |                       |
-    +--------------------+-----------+-----------+
-                                     |
-                     guarded Homely transactions
-                                     |
-                                   SQLite
-                                     |
-                         optional Google Drive backup
+One Node/TypeScript server serves the existing HTML/CSS/JavaScript frontend and the household API. Groq uses the same internal domain tools as the UI. Exa supplies search and content extraction. Optional Google Drive selection attaches evidence files; it does not store or recover the database. There is no external MCP server, Firecrawl client or Drive database-backup scheduler.
+
+All mutations follow **proposal → preview → approval → commit → audit**. The agent cannot commit changes. Issues and repairs retain permanent history; reversible changes remain available to undo from Home's History view.
+
+## Storage
+
+Without cloud credentials, SQLite stores records at `HOMELY_DB_PATH` (default `./data/homely.db`). A local database file survives ordinary local restarts.
+
+For durable cloud records, configure both:
+
+```bash
+TURSO_DATABASE_URL=libsql://your-database.turso.io
+TURSO_AUTH_TOKEN=...
 ```
 
-SQLite owns authoritative state. The agent and MCP layer can read that state and create inert proposals, but they are not given commit/undo authority.
+Homely uses a libSQL embedded replica with reads served locally and writes forwarded to Turso. It syncs before migrations and seeding. The replica uses a separate `.replica` file, preserving any existing local SQLite file. Failure to open or sync Turso stops startup instead of silently switching to a disposable database. The health endpoint identifies `LOCAL` or `TURSO` storage.
 
-Mutations follow:
+Existing local records are not automatically imported into an empty Turso database. `db:reset` applies only to a local demo and refuses to run when Turso is configured. Render's free filesystem is ephemeral; durable cloud history needs Turso credentials before real records are added.
 
-```text
-propose → preview → human approval → commit → audit
-```
-
-Reversible record types may later be undone through Homely. Committed Issues and Repairs are historical records and are intentionally not deletable through transaction undo; corrections are recorded as additional history.
-
-## Primary product surface
-
-The main interface is intentionally small:
-
-- **Home** — current state, attention items, recent repairs, charges, purchases and timeline memory.
-- **Issues** — active and resolved problem history.
-- **Repairs** — permanent repair history including date, cost, contractor, outcome and linked issue.
-- **Appliances** — household assets/furniture with acquisition, condition, warranty and history.
-- **Files** — household evidence with provenance, evidence date, reason, status and associations.
-
-Maintenance, Projects, Timeline and Transactions remain available in the underlying domain/tooling without dominating primary navigation.
-
-## Files and evidence
-
-Evidence can be associated with any combination of:
-
-- asset
-- issue
-- repair
-- recurring charge
-- potential purchase
-
-Google Drive files can be selected and attached through the approval flow. Direct source/product/manual URLs can also be saved as evidence from the Files tab.
-
-Evidence metadata includes type, provenance, evidence date, reason and status. The built-in viewer opens local demo files, Drive links and saved source URLs. Photos and videos from supported file sources are treated as normal evidence records.
-
-## Agent
-
-Set `AI_ENABLED=true` and configure Groq:
+## Assistant and research
 
 ```bash
 AI_ENABLED=true
 GROQ_API_KEY=...
 GROQ_MODEL=openai/gpt-oss-120b
-```
-
-The Groq credential stays server-side. Homely sends Responses-compatible requests to Groq's API endpoint. The `openai` npm package is retained only as the compatible client transport; inference is provided by Groq.
-
-Homely carries bounded multi-turn conversation history inside the application and gives Groq the same provider-neutral Homely tools and proposal-only mutation boundary.
-
-If Groq is not configured, the structured home application continues to work without AI.
-
-## Web research
-
-Optional research tools can be enabled with:
-
-```bash
 EXA_API_KEY=...
-FIRECRAWL_API_KEY=...
 ```
 
-Exa provides current search results for products, prices, suppliers and local services. Firecrawl can read a page that came from a Homely search result.
+The `openai` package is only the compatible transport to Groq. Credentials stay on the server. The assistant retrieves household state and creates inert proposals with bounded conversation history. Exa searches and reads only HTTPS URLs returned by Homely search. Local-service searches require a location supplied by the user.
 
-Local-service research requires a location explicitly supplied by the user; Homely does not infer a precise home location.
+Chat accepts browser speech input where available. Press Voice to dictate and Stop listening to end capture; dictation does not submit automatically. ElevenLabs is not required for the POC.
 
-## Voice input
+## Evidence
 
-The chat includes browser speech input when the browser exposes the Web Speech recognition API. This path does not require a separate paid voice API key.
+Files retain provenance, dates, reason, status and associations with assets, issues, repairs, charges or purchases. Source links can be saved through preview/approval. Optional Drive file selection uses `drive.file` access; configure the Google credentials in `.env.example` and use a matching callback URL. Drive remains disabled by default. Supported media open inside the file viewer; ordinary web pages retain an Open source link.
 
-Unsupported browsers simply hide the Voice control. Microphone permission remains user-controlled by the browser.
-
-## MCP
-
-Homely runs an official MCP v2 stdio server:
+## Checks
 
 ```bash
-npm run mcp
+npm run build
+npm test
+node --check public/app.js
 ```
 
-Current read/proposal tools include:
+CI also verifies password-free access, favicon delivery, browser navigation, issue/repair approval, evidence viewing, optional chat and mobile layout without spending model or voice credits.
 
-- `get_home_summary`
-- `list_assets`
-- `get_asset`
-- `list_issues`
-- `list_repairs`
-- `list_charges`
-- `list_purchases`
-- `list_documents`
-- `get_asset_history`
-- `search_history`
-- `list_maintenance_due`
-- `list_projects`
-- `preview_action`
-- `get_transaction`
-
-MCP intentionally does **not** expose commit, reject or undo operations. Models may investigate the home and prepare a proposal; the human approves or rejects it inside Homely.
-
-## Google Drive
-
-Drive has two roles:
-
-1. off-site SQLite backup/recovery for the cloud-primary deployment;
-2. optional household evidence import.
-
-Interactive file access uses the `drive.file` scope rather than unrestricted Drive access.
-
-Relevant configuration is documented in `.env.example` and `docs/render-deployment.md`.
-
-## Render deployment
-
-The supported low-infrastructure deployment is:
-
-```text
-Browser → Render → Homely / ephemeral SQLite → Google Drive backup
-```
-
-The Render Blueprint in `render.yaml` configures owner authentication, Groq-first AI settings, optional web research, Google Drive recovery and the free-service SQLite path.
-
-On startup, Homely restores the newest valid Drive snapshot before opening/migrating SQLite. Important committed transactions trigger durability backups, and periodic backups run while the service is awake.
-
-See [docs/render-deployment.md](docs/render-deployment.md) for setup and recovery verification.
-
-## Validation
-
-CI currently runs:
-
-- TypeScript build
-- unit tests
-- JavaScript syntax validation
-- fresh database reset/migrations
-- MCP smoke test
-- desktop/mobile browser regression
-- browser voice-input regression
-
-The canonical October 2026 product model is documented in [docs/canonical-product-model.md](docs/canonical-product-model.md).
