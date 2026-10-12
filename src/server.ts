@@ -24,6 +24,7 @@ import { GoogleAuthentication, type AuthGateway } from "./security/googleAuth.js
 import { enterHome } from "./security/homeScope.js";
 import { RequestLimiter } from "./security/traffic.js";
 import { streamHomeArchive } from "./domain/exportHome.js";
+import { deleteAccount } from "./domain/deleteAccount.js";
 import { acceptInvite, inviteMember, listHouseholds, listInvitations, listMembers, removeMember, renameHome, revokeInvite } from "./domain/households.js";
 
 function securityHeaders(res: http.ServerResponse): void {
@@ -172,11 +173,21 @@ export async function startServer(
           else if(url.pathname.includes("/chunks/"))limits.enforce("chunks:"+key,240,60_000);
           else limits.enforce("write:"+key,90,60_000);
         }
-        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept";
+        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept"||url.pathname==="/api/account/delete";
         if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET") && !selfServe)
           throw new DomainError("Your household membership is read-only.",403);
       }
 
+      if(req.method==="DELETE" && url.pathname==="/api/account/delete") {
+        const user=auth.requireUser(req);
+        if(!auth.recentlyAuthenticated || !auth.recentlyAuthenticated(req,15*60_000))
+          throw new DomainError("Sign out and sign in again before deleting your account.",403);
+        deleteAccount(db,user,(await readJson(req)).confirmation);
+        auth.logout(req,res);
+        res.setHeader("cache-control","no-store");
+        res.writeHead(204);
+        return res.end();
+      }
       if(req.method==="GET" && url.pathname==="/api/account/export") {
         return streamHomeArchive(db,auth.requireUser(req),res);
       }
