@@ -6,6 +6,7 @@ import { activeHomeId } from "../security/homeScope.js";
 import { DomainError } from "../domain/transactions.js";
 
 export const MAX_FILE_BYTES = 50_000_000;
+export const HOME_STORAGE_BYTES = 500_000_000;
 export const UPLOAD_CHUNK_BYTES = 1_000_000;
 
 export function allowedMime(mime: string): boolean {
@@ -22,9 +23,26 @@ export function startUpload(db: HomelyDatabase, input: Record<string,unknown>) {
     throw new DomainError("File size must be between 1 byte and 50 MB.", 413);
   }
   const id = "upload-" + randomUUID();
-  db.prepare("DELETE FROM file_uploads WHERE document_id IS NULL AND created_at < datetime('now','-1 day')").run();
-  db.prepare(`INSERT INTO file_uploads(id,file_name,mime_type,content,created_at,expected_bytes,received_bytes,completed,home_id)
-    VALUES (?,?,?,?,?,?,0,0,?)`).run(id,name,mimeType,Buffer.alloc(0),new Date().toISOString(),size,activeHomeId());
+  const homeId = activeHomeId();
+  db.exec("BEGIN IMMEDIATE;");
+  try {
+    // Reserve capacity before chunks arrive: concurrent staged uploads count toward the quota.
+    if (homeId) {
+      const total = db.prepare("SELECT COALESCE(SUM(CASE WHEN expected_bytes>0 THEN expected_bytes ELSE length(content) END),0) AS used FROM file_uploads WHERE home_id=?")
+        .get(homeId);
+      if (Number(total?.used ?? 0) + size > HOME_STORAGE_BYTES) {
+        throw new DomainError("Household storage limit reached (500 MB). Remove unused files before uploading.", 413);
+      }
+    }
+    db.prepare("DELETE FROM file_uploads WHERE document_id IS NULL AND created_at < ?")
+      .run(new Date(Date.now()-24*60*60*1000).toISOString());
+    db.prepare(`INSERT INTO file_uploads(id,file_name,mime_type,content,created_at,expected_bytes,received_bytes,completed,home_id)
+      VALUES (?,?,?,?,?,?,0,0,?)`).run(id,name,mimeType,Buffer.alloc(0),new Date().toISOString(),size,homeId);
+    db.exec("COMMIT;");
+  } catch(error) {
+    db.exec("ROLLBACK;");
+    throw error;
+  }
   return { id, name, mimeType, size, chunkSize: UPLOAD_CHUNK_BYTES };
 }
 
