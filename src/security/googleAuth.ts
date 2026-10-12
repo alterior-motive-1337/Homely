@@ -104,8 +104,8 @@ export async function verifyGoogleIdentity(jwt: string, clientId: string, expect
   if(!valid)throw new DomainError("Invalid Google identity signature.",401);
   const now=Math.floor(Date.now()/1000);
   if(!["https://accounts.google.com","accounts.google.com"].includes(String(claims.iss??"")) ||
-     claims.aud!==clientId || !Number.isSafeInteger(claims.exp) || Number(claims.exp)<=now ||
-     !Number.isSafeInteger(claims.iat) || Number(claims.iat)>now+60 ||
+     claims.aud!==clientId || (typeof claims.exp!=="number" || !Number.isSafeInteger(claims.exp)) || Number(claims.exp)<=now ||
+     (typeof claims.iat!=="number" || !Number.isSafeInteger(claims.iat)) || Number(claims.iat)>now+60 ||
      claims.nonce!==expectedNonce || !claims.sub || typeof claims.sub!=="string" ||
      typeof claims.email!=="string" || !claims.email.trim() ||
      (claims.email_verified!==true && claims.email_verified!=="true")){
