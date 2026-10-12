@@ -22,7 +22,7 @@ test("HTTP driver migrations, seeding and approval/undo retain atomic transactio
     db.exec("CREATE TABLE schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL);");
     migrate(db);
     migrate(db); // Restarting must skip applied migrations without changing records.
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count, 10);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count, 11);
     seedDemo(db);
     assert.ok(hasHome(db));
     const proposal = proposeTransaction(db, { actionType: "COMPLETE_MAINTENANCE", reason: "HTTP transaction check",

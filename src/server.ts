@@ -209,11 +209,11 @@ export async function startServer(
         }
         return sendJson(res,200,accepted);
       }
-      const invitationRevoke=/^\\/api\\/homes\\/invitations\\/([a-zA-Z0-9-]+)$/.exec(url.pathname);
+      const invitationRevoke=url.pathname.match(new RegExp("^/api/homes/invitations/([a-zA-Z0-9-]+)$"));
       if(req.method==="DELETE" && invitationRevoke) {
         return sendJson(res,200,revokeInvite(db,auth.requireUser(req),invitationRevoke[1]!));
       }
-      const membershipRemove=/^\\/api\\/homes\\/members\\/([a-zA-Z0-9-]+)$/.exec(url.pathname);
+      const membershipRemove=url.pathname.match(new RegExp("^/api/homes/members/([a-zA-Z0-9-]+)$"));
       if(req.method==="DELETE" && membershipRemove) {
         return sendJson(res,200,removeMember(db,auth.requireUser(req),membershipRemove[1]!));
       }
