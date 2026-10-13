@@ -22,6 +22,10 @@ try {
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "desktop tabs need visible text labels");
   assert.ok(await page.locator(".sidebar").evaluate(el => { const r=el.getBoundingClientRect(); return r.width > 1100 && r.height <= 72; }), "desktop navigation must fit a compact header");
   assert.ok(await page.locator(".metric").first().evaluate(el => el.getBoundingClientRect().height <= 125), "overview counters should not become oversized cards");
+  assert.equal(await page.locator(".metrics").evaluate(el => getComputedStyle(el).borderTopWidth),"0px","overview metrics should have no enclosing border");
+  assert.equal(await page.locator(".metric").first().evaluate(el => getComputedStyle(el).borderRightWidth),"0px","metrics should not be separated by visible dividers");
+  assert.equal(await page.locator(".nav-item.active").evaluate(el => getComputedStyle(el).borderBottomWidth),"2px");
+  assert.equal(await page.locator(".nav-item.active").evaluate(el => getComputedStyle(el).borderBottomColor), "rgba(0, 0, 0, 0)", "active navigation uses text emphasis rather than an accent line");
   const assistantWidth=()=>page.locator("#chat-rail").evaluate(el=>Math.round(el.getBoundingClientRect().width));
   const defaultWidth=await assistantWidth();
   const divider=page.locator("#assistant-resizer");
@@ -63,6 +67,7 @@ try {
   page.on("request", request => { if (request.method() === "GET" && new URL(request.url()).pathname === "/api/issues") issueFetches++; });
   await go("issues");
   const total = await page.locator(".ledger-entry").count();
+  assert.equal(await page.locator(".ledger").evaluate(el => getComputedStyle(el).borderTopWidth),"0px","registers should not be boxed in");
   await page.locator('[data-status="resolved"]').click();
   assert.ok(await page.locator(".ledger-entry:visible").count() < total);
   await page.locator('[data-status="all"]').click();
@@ -258,6 +263,12 @@ try {
   for (const view of ["issues", "repairs", "appliances", "files"]) {
     await fresh.locator('[data-view="' + view + '"]').click();
     await fresh.locator(view === "files" ? ".files-empty" : ".ledger-zero").waitFor();
+    if(view==="files"){
+      assert.equal(await fresh.locator("#file-info-toggle").isVisible(),false,"unused file inspector toggle must disappear when no files exist");
+      assert.equal(await fresh.locator("#file-inspector").isVisible(),false,"unused file inspector must disappear when no files exist");
+    } else {
+      assert.equal(await fresh.locator(".ledger-columns").isVisible(),false,"empty registers should not show useless column headings");
+    }
   }
   // Render saved and new replies using provider-free Markdown fixtures.
   const markdown = await browser.newPage({ viewport: { width: 1366, height: 768 } });
