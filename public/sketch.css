@@ -1208,3 +1208,71 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   .home-overview .metric span{font-size:9px!important}
 }
 
+
+/* Search is an optional local filter; the assistant is the primary natural-language lookup. */
+.quick-search{
+  position:relative;
+  display:flex;
+  align-items:center;
+  width:36px;
+  min-width:36px;
+  height:36px;
+  flex:none;
+}
+.quick-search .search-toggle{
+  display:grid;
+  place-items:center;
+  width:36px;
+  height:36px;
+  min-width:36px;
+  border:0!important;
+  border-radius:8px;
+  background:transparent!important;
+  color:#a7a7ad;
+}
+.quick-search .search-toggle:hover,
+.quick-search .search-toggle[aria-expanded="true"]{
+  color:#f0f0f2;
+  background:#252528!important;
+}
+.quick-search .search-toggle .ui-icon{width:17px;height:17px}
+.quick-search .search{
+  position:absolute;
+  top:calc(100% + 8px);
+  left:0;
+  z-index:15;
+  width:min(310px,calc(100vw - 40px))!important;
+  max-width:none!important;
+  min-height:40px;
+  box-shadow:0 15px 35px #0007;
+  border:1px solid #3a3a3e!important;
+  background-color:#19191b!important;
+}
+.quick-search .search[hidden]{display:none!important}
+.page-controls .controls-leading{
+  flex:1 1 auto;
+}
+.page-controls .controls-leading:has(.quick-search){
+  flex-wrap:nowrap;
+}
+.page-controls .controls-leading .register-filters{flex:none}
+@media(max-width:700px){
+  .page-controls .controls-leading:has(.quick-search){
+    grid-column:1;
+    grid-row:1;
+    width:auto;
+    flex:0 1 auto;
+    flex-wrap:nowrap;
+  }
+  .page-controls .controls-actions{
+    grid-column:2;
+    grid-row:1;
+  }
+  .page-controls .search-count{
+    grid-column:1/-1;
+    grid-row:2;
+    justify-self:start;
+  }
+  .quick-search .search{width:min(280px,calc(100vw - 38px))!important}
+}
+
