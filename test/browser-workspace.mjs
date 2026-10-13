@@ -311,7 +311,8 @@ try {
   await fresh.getByRole("heading", { name: "No assets" }).waitFor();
   assert.equal(await fresh.locator(".home-empty").evaluate(el=>{
     const r=el.getBoundingClientRect();
-    return Math.abs((r.left+r.right)/2-innerWidth/2)<12;
+    const view=document.querySelector(".workspace").getBoundingClientRect();
+    return Math.abs((r.left+r.right)/2-(view.left+view.right)/2)<12;
   }),true,"empty Home must be centered");
   await fresh.getByRole("button", { name: "Register asset" }).click();
   await fresh.locator("#asset-form").waitFor(); await fresh.locator("#modal-close").click();
