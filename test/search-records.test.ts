@@ -54,8 +54,10 @@ test("Groq agent can call unified household search", async () => {
     const reply=await provider.respond({message:"Find the inverter"});
     assert.deepEqual(reply.toolsUsed,["search_records"]);
     assert.equal(calls.length,2);
-    const history=JSON.stringify(calls[1]?.input??[]);
-    assert.match(history,/"type":"ASSET"/);
-    assert.match(history,/inverter/i);
+    const history=calls[1]?.input as Array<{type?:string;output?:string}>;
+    const output=history.find(item=>item.type==="function_call_output")?.output;
+    assert.ok(output,"agent must receive grounded results");
+    const search=JSON.parse(output) as {matches:Array<{type:string;title:string}>};
+    assert.ok(search.matches.some(item=>item.type==="ASSET"&&item.title.toLowerCase().includes("inverter")));
   } finally {db.close()}
 });
