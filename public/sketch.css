@@ -158,6 +158,40 @@ h3{font-size:13px}
 .message{max-width:100%;border:0;border-radius:8px;padding:13px 14px;color:#e7e7e7;font-size:13px;line-height:1.65}
 .message.user{background:#252525;margin-left:20px}
 .message.assistant{background:transparent;padding:0 2px;margin-right:0}
+.message .markdown-body{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.message .markdown-body p{white-space:normal;margin:0 0 12px;line-height:1.7}
+.markdown-body> :first-child{margin-top:0!important}
+.markdown-body> :last-child{margin-bottom:0!important}
+.markdown-body h1,.markdown-body h2{font-size:16px;font-weight:650;line-height:1.4;margin:22px 0 10px;letter-spacing:-.02em}
+.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{font-size:14px;font-weight:650;line-height:1.5;margin:18px 0 8px}
+.markdown-body strong{font-weight:650;color:#f2f2f2}
+.markdown-body ul,.markdown-body ol{padding-left:21px;margin:0 0 14px}
+.markdown-body li{padding-left:3px;margin:5px 0}
+.markdown-body li::marker{color:#a5a5a5}
+.markdown-body li>p{margin-bottom:7px}
+.markdown-body li>ul,.markdown-body li>ol{margin:6px 0}
+.markdown-body input[type=checkbox]{accent-color:#ddd;margin:0 6px 0 0;vertical-align:middle}
+.markdown-body a{color:#eee;text-decoration:underline;text-decoration-color:#777;text-underline-offset:3px;overflow-wrap:anywhere}
+.markdown-body a:hover{color:#fff;text-decoration-color:#fff}
+.markdown-body blockquote{margin:14px 0;padding:1px 0 1px 13px;border-left:2px solid #666;color:#bdbdbd}
+.markdown-body blockquote> :last-child{margin-bottom:0}
+.markdown-body hr{border:0;border-top:1px solid #333;margin:20px 0}
+.markdown-body code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:12px;line-height:1.6}
+.markdown-body :not(pre)>code{padding:2px 5px;border:1px solid #363636;border-radius:4px;background:#212121;color:#f2f2f2;white-space:break-spaces;overflow-wrap:anywhere}
+.markdown-code{max-width:100%;min-width:0;margin:14px 0;border:1px solid #353535;border-radius:7px;overflow:hidden;background:#171717}
+.markdown-code-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;padding:6px 11px;border-bottom:1px solid #303030;font-size:10px;color:#aaa;overflow-wrap:anywhere}
+.code-copy{flex-shrink:0;border:0;border-radius:4px;background:transparent;color:#bbb;padding:4px 6px;font-size:11px}
+.code-copy:hover{background:#303030;color:#fff}
+.markdown-code pre{max-width:100%;margin:0;padding:13px;overflow-x:auto;white-space:pre;scrollbar-width:thin;scrollbar-color:#555 transparent}
+.markdown-code pre code{padding:0;border:0;background:none;white-space:pre;overflow-wrap:normal}
+.markdown-table{max-width:100%;margin:14px 0;overflow-x:auto;border:1px solid #353535;border-radius:6px;scrollbar-width:thin;scrollbar-color:#555 transparent}
+.markdown-table table{width:100%;margin:0;background:#171717;table-layout:auto}
+.markdown-table th,.markdown-table td{padding:9px 11px;font-size:12px;line-height:1.5;text-transform:none;letter-spacing:0;white-space:normal;min-width:90px;border-bottom:1px solid #333;overflow-wrap:normal}
+.markdown-table th{background:#222;color:#e8e8e8;font-weight:600}
+.markdown-table tbody tr{cursor:default}
+.markdown-table tbody tr:last-child td{border-bottom:0}
+.markdown-table [align=center]{text-align:center}
+.markdown-table [align=right]{text-align:right}
 .message-role{letter-spacing:.04em;margin-bottom:7px}
 .proposal{border-radius:6px;border-color:#404040;padding:12px}
 .message-role{font-size:10px;color:#aaa}

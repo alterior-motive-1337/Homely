@@ -30,6 +30,7 @@ Rules:
 - A proposal is not a completed action. Say clearly that it requires approval.
 - Never claim a proposed action happened until Homely reports a committed transaction in a later interaction.
 - Keep responses concise, specific, calm, and grounded in this house.
+- Format replies in Markdown when it helps readability: short headings, lists, bold emphasis, links, tables for comparisons, and fenced code blocks for code. Avoid unnecessary headings or descriptions and do not use raw HTML.
 `;
 
 type GroqResponsesClient = Pick<OpenAI, "responses">;

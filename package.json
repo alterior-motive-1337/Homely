@@ -14,7 +14,9 @@
     "db:seed": "node --env-file-if-exists=.env --import tsx scripts/seed.ts",
     "backup": "node --env-file-if-exists=.env --import tsx scripts/backup.ts",
     "restore": "node --env-file-if-exists=.env --import tsx scripts/restore.ts",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "prebuild": "node scripts/vendor-chat.mjs",
+    "predev": "node scripts/vendor-chat.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -22,9 +24,11 @@
     "typescript": "^5.9.0"
   },
   "dependencies": {
+    "dompurify": "3.4.17",
     "exa-js": "^2.25.0",
     "libsql": "^0.5.29",
     "mammoth": "1.13.0",
+    "marked": "18.1.1",
     "openai": "7.23.0",
     "pdfjs-dist": "6.4.299"
   }

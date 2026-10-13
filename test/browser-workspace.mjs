@@ -252,6 +252,63 @@ try {
     await fresh.locator('[data-view="' + view + '"]').click();
     await fresh.locator(view === "files" ? ".files-empty" : ".ledger-zero").waitFor();
   }
+  // Render saved and new replies using provider-free Markdown fixtures.
+  const markdown = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  markdown.on("pageerror", error => errors.push(String(error)));
+  await markdown.addInitScript(() => {
+    Object.defineProperty(navigator,"clipboard",{value:{writeText:async text=>{window.__copiedCode=text}}});
+  });
+  const formattedReply = [
+    "## Kitchen check", "", "Check **pressure** and *flow*. Use `safe_mode`.", "",
+    "- Inspect the filter", "  - Keep the washer", "- [x] Record the reading", "",
+    "1. Close the valve", "2. Test again", "", "> Keep the receipt.", "",
+    "| Item | Price | Condition | Next step |", "| --- | ---: | --- | --- |",
+    "| Filter | R250 | Good | Inspect |", "",
+    "```javascript", 'const sample = "<script>literal code</script>";', "x".repeat(180), "```", "",
+    "[Supplier](https://example.com/products) and https://example.com/help", "",
+    "[Unsafe](javascript:alert(1)) [Encoded](jav&#x61;script:alert(1)) [Data](data:text/html,test)", "",
+    '<script>window.__markdownExecuted=true</script><img src=x onerror="window.__markdownExecuted=true">', "",
+    '<svg onload="window.__markdownExecuted=true"></svg>', "",
+    "![Image reference](https://example.invalid/tracking.png)"
+  ].join("\n");
+  await markdown.route("**/api/integrations/status",async route=>{
+    const response=await route.fetch(),data=await response.json();data.ai.available=true;await route.fulfill({response,json:data});
+  });
+  await markdown.route("**/api/agent/history",route=>route.fulfill({json:{messages:[
+    {role:"user",text:"**Keep my input literal**",proposals:[]},
+    {role:"assistant",text:formattedReply,proposals:[]}
+  ],previousResponseId:null}}));
+  await markdown.route("**/api/agent/respond",route=>route.fulfill({json:{text:"### New reply\n\n**Ready** to review.",responseId:"markdown-response",proposals:[{
+    transactionId:"markdown-proposal",reason:"User requested a record",preview:{title:"Review proposed change",summary:"A proposal still requires approval"}
+  }]}}));
+  await markdown.goto(base);
+  await markdown.locator(".markdown-body h2").filter({hasText:"Kitchen check"}).waitFor();
+  assert.equal(await markdown.locator(".message.user p").textContent(),"**Keep my input literal**");
+  assert.ok(await markdown.locator(".markdown-body strong").count()>0);
+  assert.ok(await markdown.locator(".markdown-body ul ul").count()>0);
+  assert.ok(await markdown.locator(".markdown-body ol").count()>0);
+  assert.equal(await markdown.locator('.markdown-body input[type="checkbox"]').isDisabled(),true);
+  assert.equal(await markdown.locator(".markdown-table table").count(),1);
+  assert.equal(await markdown.locator(".markdown-code pre code").textContent(), 'const sample = "<script>literal code</script>";\n'+"x".repeat(180)+"\n");
+  await markdown.getByRole("button",{name:"Copy code",exact:true}).click();
+  assert.ok((await markdown.evaluate(()=>window.__copiedCode)).includes("literal code"));
+  const supplier=markdown.getByRole("link",{name:"Supplier",exact:true});
+  assert.equal(await supplier.getAttribute("target"),"_blank");
+  assert.equal(await supplier.getAttribute("rel"),"noopener noreferrer");
+  assert.equal(await markdown.locator('.markdown-body a[href^="javascript:"],.markdown-body a[href^="data:"]').count(),0);
+  assert.equal(await markdown.locator(".markdown-body script,.markdown-body img,.markdown-body svg,.markdown-body iframe,.markdown-body [onerror]").count(),0);
+  assert.equal(await markdown.evaluate(()=>window.__markdownExecuted),undefined);
+  await markdown.locator("#assistant-resizer").focus();await markdown.keyboard.press("Home");
+  assert.equal(await markdown.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false,"Markdown must fit narrow desktop pane");
+  await markdown.locator("#chat-input").fill("Format this reply");await markdown.getByRole("button",{name:"Send",exact:true}).click();
+  await markdown.locator(".markdown-body h3").filter({hasText:"New reply"}).waitFor();
+  assert.equal(await markdown.locator('[data-approve="markdown-proposal"]').count(),1,"Markdown must preserve proposal controls");
+  for(const width of [390,320]){
+    await markdown.setViewportSize({width,height:844});
+    if(await markdown.locator("#chat-open").isVisible())await markdown.locator("#chat-open").click();
+    assert.equal(await markdown.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false,"Markdown must not overflow on mobile");
+    assert.equal(await markdown.locator("#chat-rail").evaluate(el=>el.scrollWidth>el.clientWidth+2),false,"Code and tables must scroll within the panel");
+  }
   assert.deepEqual(errors, [], "browser errors");
-  console.log("Workspace browser checks passed: panel resizing/collapse/persistence, record commits, search/cache, related files, keyboard viewer, desktop/mobile, fresh home and voice.");
+  console.log("Workspace browser checks passed: safe Markdown/history/replies/code copy, panel resizing/collapse/persistence, record commits, search/cache, related files, keyboard viewer, desktop/mobile, fresh home and voice.");
 } finally { await browser.close(); }

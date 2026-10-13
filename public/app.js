@@ -1,3 +1,5 @@
+import { renderMarkdown } from "./markdown.js";
+
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 const content=$("#content"), pageTitle=$("#page-title"), nav=$("#nav");
@@ -622,10 +624,11 @@ async function showFiles(){
 }
 
 function messageMarkup(m){
-  return '<article class="message '+m.role+'"><div class="message-role">'+(m.role==="user"?"You":"Homely")+'</div><p>'+esc(m.text)+'</p>'+(m.proposals||[]).map(function(p){return '<div class="proposal"><strong>'+esc(p.preview.title)+'</strong><div class="row-meta">'+esc(p.preview.summary)+'</div><div class="row-note">'+esc(p.reason)+'</div>'+(p.status==="PROPOSED"?'<div class="proposal-actions"><button class="button" data-reject="'+esc(p.transactionId)+'">Reject</button><button class="primary-button" data-approve="'+esc(p.transactionId)+'">Approve</button></div>':'<div class="row-meta">'+esc(p.status)+"</div>")+"</div>"}).join("")+"</article>"
+  return '<article class="message '+(m.role==="user"?"user":"assistant")+'"><div class="message-role">'+(m.role==="user"?"You":"Homely")+'</div>'+(m.role==="user"?'<p>'+esc(m.text)+'</p>':'<div class="markdown-body"></div>')+(m.proposals||[]).map(function(p){return '<div class="proposal"><strong>'+esc(p.preview.title)+'</strong><div class="row-meta">'+esc(p.preview.summary)+'</div><div class="row-note">'+esc(p.reason)+'</div>'+(p.status==="PROPOSED"?'<div class="proposal-actions"><button class="button" data-reject="'+esc(p.transactionId)+'">Reject</button><button class="primary-button" data-approve="'+esc(p.transactionId)+'">Approve</button></div>':'<div class="row-meta">'+esc(p.status)+"</div>")+"</div>"}).join("")+"</article>"
 }
 function renderChat(){
   chatBody.innerHTML=state.agentMessages.length?state.agentMessages.map(messageMarkup).join(""):"";
+  const messages=$$(".message",chatBody);state.agentMessages.forEach((message,index)=>{if(message.role!=="user")$(".markdown-body",messages[index]).append(renderMarkdown(message.text))});
   $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
   $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
   chatBody.scrollTop=chatBody.scrollHeight
@@ -852,7 +855,7 @@ window.addEventListener("keydown",function(e){
   if(modal.open||viewer.open)return;
   if(e.key==="Escape"&&(chatRail.contains(document.activeElement)||chatRail.classList.contains("open"))){closeChat();return}
   if(e.key==="Tab"&&chatRail.classList.contains("open")&&!window.matchMedia("(min-width: 960px)").matches){
-    const controls=$$("button:not(:disabled),textarea:not(:disabled),a[href]",chatRail).filter(el=>!el.hidden&&el.getClientRects().length);
+    const controls=$$("button:not(:disabled),textarea:not(:disabled),a[href],[tabindex='0']",chatRail).filter(el=>!el.hidden&&el.getClientRects().length);
     if(controls.length){
       e.preventDefault();const index=controls.indexOf(document.activeElement);
       controls[(index+(e.shiftKey?-1:1)+controls.length)%controls.length].focus();
