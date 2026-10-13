@@ -306,7 +306,7 @@ async function showHome(){
       }else{
         html+='<div class="home-recent-list">'+assets.slice(0,3).map(a=>'<button class="home-recent-item" type="button" data-home-asset="'+esc(a.id)+'"><span class="home-recent-name">'+esc(a.name)+'</span><span class="home-recent-detail">'+esc(a.category||"Asset")+'</span></button>').join("")+'</div>';
       }
-      html+='<div class="home-recent-tail"><button class="ghost-link" '+(recent.length?'id="home-history-link"':'data-go="appliances"')+'>'+(recent.length?'History':'View all')+'</button></div></section>';
+      html+='</section>';
     }
     html+='<nav class="home-utilities" aria-label="Other home records"><div class="utility-links"><button class="ghost-link" id="view-charges-shortcut">Charges</button><button class="ghost-link" id="view-purchases-shortcut">Purchases</button><button class="ghost-link" id="view-history">History</button></div></nav></div>';
     content.innerHTML=html;
@@ -635,7 +635,7 @@ async function showFiles(){
     }).join("");
     if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
     content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading">'+quickSearch("files","file-search")+'</div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+buttons+'</div></div>'
-      +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-grid" role="list" aria-label="Files">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><div class="panel-resizer" id="file-info-resizer" role="separator" tabindex="0" aria-label="Resize file information" aria-orientation="vertical" aria-controls="file-inspector" title="Drag or use arrow keys to resize. Double-click to reset."></div><div id="file-inspector-content"><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></div></aside></div></section>';
+      +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><div class="panel-resizer" id="file-info-resizer" role="separator" tabindex="0" aria-label="Resize file information" aria-orientation="vertical" aria-controls="file-inspector" title="Drag or use arrow keys to resize. Double-click to reset."></div><div id="file-inspector-content"><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></div></aside></div></section>';
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
     const browser=$(".file-browser"),infoPanel=$("#file-inspector"),infoToggle=$("#file-info-toggle");
