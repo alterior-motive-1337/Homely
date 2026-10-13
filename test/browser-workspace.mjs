@@ -73,8 +73,8 @@ try {
   await page.locator("#modal").waitFor({state:"visible"});
   assert.match(await page.locator("#modal-body").textContent(),/Opening settings/,"slow settings must acknowledge the click immediately");
   releaseHomes();
-  await page.unroute("**/api/homes");
   await page.getByRole("link", { name: "Export household" }).waitFor();
+  await page.unroute("**/api/homes");
   const inlineSettings=await page.locator("#rename-home-form").evaluate(form=>{
     const input=form.querySelector("input").getBoundingClientRect();
     const button=form.querySelector('button[type="submit"]').getBoundingClientRect();
@@ -200,8 +200,8 @@ try {
   await page.locator("#modal").waitFor({state:"visible"});
   assert.match(await page.locator("#modal-body").textContent(),/Preparing file options/,"upload action must respond before metadata loads");
   releaseRepairOptions();
-  await page.unroute("**/api/repairs");
   await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
+  await page.unroute("**/api/repairs");
   await page.locator("#modal-close").click();
   await page.locator("#save-link").click();
   await page.locator('#link-evidence-form input[name="sourceUrl"]').waitFor();
