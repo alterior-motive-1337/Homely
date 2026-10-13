@@ -476,9 +476,9 @@ body.panel-resizing iframe{pointer-events:none}
 #chat-close{display:none!important}
 .chat-body{display:flex;flex-direction:column;align-items:stretch;gap:21px;min-height:0;overflow-y:auto;padding:21px 17px}
 .chat-empty{padding:0;border:0;color:#aaaab1;background:transparent;font-size:12px}
-.message{max-width:100%;border:0;background:none;font-size:13px;line-height:1.65;padding:0}
+.message{min-width:0;max-width:100%;border:0;background:#1e1e1e;font-size:13px;line-height:1.65;padding:14px 16px;overflow-wrap:anywhere}
 .message.user{align-self:flex-end;margin:0;max-width:92%;padding:12px 15px;border:0;border-radius:15px 15px 4px 15px;background:#252525}
-.message.assistant{background:none;margin:0;padding:0 3px;border:0}
+.message.assistant{align-self:flex-start;width:100%;background:#1e1e1e;margin:0;padding:14px 16px;border:0;border-radius:14px 14px 14px 4px}
 .message-role{font-size:11px;color:#999;letter-spacing:0;text-transform:none;margin:0 0 7px}
 .message.user .message-role{display:none}
 .message p{font-size:13px;line-height:1.65}
@@ -1048,8 +1048,20 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 .chat-actions .button.voice-button:hover{background:#242427!important}
 .message.user{border:0!important;background:#252525!important}
-.message.assistant{background:transparent!important}
-.chat-pending{margin:0;padding:8px 3px;color:#9f9fa6;font-size:12px;letter-spacing:.01em}
+.message.assistant{background:#1e1e1e!important}
+.chat-pending{margin:0;color:#aaa;font-size:13px;letter-spacing:0}
+.chat-pending .markdown-body{color:#aaa}
+.message-error{box-shadow:inset 3px 0 #888}
+.review-content{display:grid;gap:12px;min-width:0}
+.review-title{font-size:13px;font-weight:600;line-height:1.5}
+.review-effects{margin:0;padding-left:20px;color:#ddd}
+.review-effects li{margin:7px 0;padding-left:2px}
+.review-reason{color:#aaa;font-size:12px}
+.proposal .markdown-body p,.preview .markdown-body p{margin:0;font-size:13px;line-height:1.65}
+.viewer-insight .message{max-width:100%;font-size:14px}
+.viewer-insight .markdown-body p{font-size:14px}
+.viewer-insight .message.assistant{padding:18px 20px;border-radius:12px}
+.preview.message{width:100%;margin-top:8px}
 .proposal{border:0!important;background:#232323!important}
 .modal,.viewer{border:0!important}
 #modal-body>.card-head,#modal-body .card-head{border:0!important}

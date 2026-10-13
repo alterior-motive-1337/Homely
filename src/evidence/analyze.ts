@@ -52,7 +52,7 @@ export async function analyzeDocument(
     if(visualFrames){
       const visionModel="qwen/qwen3.8-27b";model=visionModel+":video-frames";
       const result=await api.chat.completions.create({model:visionModel,messages:[{role:"user",content:[
-        {type:"text",text:"Interpret these three sampled household video frames. Frame times in seconds: "+visualFrames.map(f=>f.timeSeconds).join(", ")+". Describe visible equipment, text or damage. These are samples, not full-video understanding. Do not infer unseen events, motion or audio."},
+        {type:"text",text:"Interpret these three sampled household video frames. Frame times in seconds: "+visualFrames.map(f=>f.timeSeconds).join(", ")+". Describe visible equipment, text or damage. These are samples, not full-video understanding. Do not infer unseen events, motion or audio. Format the response as concise Markdown with lists and emphasis when helpful, without boilerplate or raw HTML."},
         ...visualFrames.map(frame=>({type:"image_url" as const,image_url:{url:frame.image}}))
       ]}],max_completion_tokens:1200});
       const text=result.choices[0]?.message.content?.trim()??"";
@@ -65,7 +65,7 @@ export async function analyzeDocument(
       const result=await api.chat.completions.create({
         model,
         messages:[{role:"user",content:[
-          {type:"text",text:"Describe this household evidence accurately, including visible text, equipment, model numbers and any visible damage. Do not invent details or assert facts not visible."},
+          {type:"text",text:"Describe this household evidence accurately, including visible text, equipment, model numbers and any visible damage. Do not invent details or assert facts not visible. Format the response as concise Markdown with lists and emphasis when helpful, without boilerplate or raw HTML."},
           {type:"image_url",image_url:{url:`data:${mime};base64,${data}`}}
         ]}],
         max_completion_tokens:1200
@@ -91,3 +91,4 @@ export async function analyzeDocument(
   `).run(documentId,content,model,new Date().toISOString());
   return {text:content,model,cached:false};
 }
+

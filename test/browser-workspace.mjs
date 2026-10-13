@@ -240,6 +240,8 @@ try {
   await page.locator('#charge-form input[name="category"]').fill("UTILITIES");
   await page.locator('#charge-form input[name="amount"]').fill("100");
   await page.getByRole("button", {name:"Preview",exact:true}).click();
+  await page.locator("#action-review .message.assistant .markdown-body").first().waitFor();
+  assert.equal(await page.locator("#action-review .message.assistant .markdown-body").count()>0,true,"action reviews use the shared Markdown message box");
   await page.getByRole("button", {name:"Approve & commit"}).click();
   await page.locator("#modal").waitFor({state:"hidden"});
   await page.locator("#view-charges-shortcut").click();
@@ -293,13 +295,36 @@ try {
   await page.locator(".file-card").filter({hasText:"Video frame QA"}).click();
   await page.locator("#viewer").waitFor({state:"visible"});
   await page.locator("#viewer-body video").waitFor();
+  let analysisRequests=0,releaseAnalysis;
+  const analysisHeld=new Promise(resolve=>{releaseAnalysis=resolve});
+  const formattedAnalysis="### Visible equipment\n\n**Inverter**\n\n- Check the cable\n\n[Receipt](https://example.com/receipt) [Unsafe](javascript:alert(1))\n\n<script>window.__analysisExecuted=true</script>";
   await page.route("**/api/documents/*/analyze",async route=>{
     const frames=route.request().postDataJSON().visualFrames;assert.equal(frames.length,3);
     assert.ok(frames.every(f=>f.image.startsWith("data:image/jpeg;base64,")&&f.timeSeconds>=0));
-    await route.fulfill({json:{text:"Sampled frame summary.",model:"test",cached:false}});
+    analysisRequests++;
+    if(analysisRequests===1)await analysisHeld;
+    if(analysisRequests===3){await route.fulfill({status:503,json:{error:"**Analysis unavailable**\n\nTry again."}});return}
+    await route.fulfill({json:{text:formattedAnalysis,model:"test",cached:analysisRequests>1}});
   });
   await page.locator("#analyze-file").click();
-  await page.getByText("Sampled frame summary.",{exact:true}).waitFor();
+  await page.locator("#viewer-insight .message.assistant.chat-pending").waitFor();
+  assert.equal(await page.locator("#viewer-insight .chat-pending").getAttribute("role"),"status");
+  releaseAnalysis();
+  await page.locator("#viewer-insight h3").filter({hasText:"Visible equipment"}).waitFor();
+  assert.equal(await page.locator("#viewer-insight .markdown-body strong").textContent(),"Inverter");
+  assert.equal(await page.locator("#viewer-insight .markdown-body ul li").textContent(),"Check the cable");
+  assert.equal(await page.locator('#viewer-insight script,#viewer-insight a[href^="javascript:"],#viewer-insight [onerror]').count(),0);
+  assert.equal(await page.evaluate(()=>window.__analysisExecuted),undefined);
+  assert.equal(await page.getByRole("link",{name:"Receipt",exact:true}).getAttribute("rel"),"noopener noreferrer");
+  assert.notEqual(await page.locator("#viewer-insight .message.assistant").evaluate(el=>getComputedStyle(el).backgroundColor),"rgba(0, 0, 0, 0)","analysis must have a visible message box");
+  if(process.env.TEST_SCREENSHOT_DIR)await page.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/analysis-markdown.png"});
+  await page.locator("#analyze-file").click();
+  await page.locator("#viewer-insight h3").filter({hasText:"Visible equipment"}).waitFor();
+  assert.equal(analysisRequests,2,"cached analyses use the same Markdown surface");
+  await page.locator("#analyze-file").click();
+  await page.locator("#viewer-insight .message-error strong").filter({hasText:"Analysis unavailable"}).waitFor();
+  assert.equal(await page.locator("#viewer-insight .message-error").getAttribute("role"),"alert");
+  assert.equal(await page.locator("#analyze-file").isEnabled(),true,"failed analysis permits a retry");
   await page.locator("#viewer-close").click();
 
   for (const width of [1024, 768, 390, 320]) {
@@ -393,15 +418,19 @@ try {
     const response=await route.fetch(),data=await response.json();data.ai.available=true;await route.fulfill({response,json:data});
   });
   await markdown.route("**/api/agent/history",route=>route.fulfill({json:{messages:[
-    {role:"user",text:"**Keep my input literal**",proposals:[]},
+    {role:"user",text:"**Format my message**",proposals:[]},
     {role:"assistant",text:formattedReply,proposals:[]}
   ],previousResponseId:null}}));
   await markdown.route("**/api/agent/respond",route=>route.fulfill({json:{text:"### New reply\n\n**Ready** to review.",responseId:"markdown-response",proposals:[{
-    transactionId:"markdown-proposal",reason:"User requested a record",preview:{title:"Review proposed change",summary:"A proposal still requires approval"}
+    transactionId:"markdown-proposal",reason:"User requested a **record**",preview:{title:"Review proposed change",summary:"A proposal still requires **approval**",effects:["Keep **history**","Review the [receipt](https://example.com/receipt)"]}
   }]}}));
   await markdown.goto(base);
   await markdown.locator(".markdown-body h2").filter({hasText:"Kitchen check"}).waitFor();
-  assert.equal(await markdown.locator(".message.user p").textContent(),"**Keep my input literal**");
+  assert.equal(await markdown.locator(".message.user .markdown-body strong").textContent(),"Format my message");
+  for(const role of ["user","assistant"]){
+    assert.notEqual(await markdown.locator(".message."+role).first().evaluate(el=>getComputedStyle(el).backgroundColor),"rgba(0, 0, 0, 0)",role+" interactions must have visible bubbles");
+    assert.ok(await markdown.locator(".message."+role).first().evaluate(el=>parseFloat(getComputedStyle(el).borderTopLeftRadius))>0);
+  }
   assert.ok(await markdown.locator(".markdown-body strong").count()>0);
   assert.ok(await markdown.locator(".markdown-body ul ul").count()>0);
   assert.ok(await markdown.locator(".markdown-body ol").count()>0);
@@ -424,6 +453,9 @@ try {
   await markdown.locator("#chat-input").press("Enter");
   await markdown.locator(".markdown-body h3").filter({hasText:"New reply"}).waitFor();
   assert.equal(await markdown.locator("#chat-input").inputValue(),"","Enter submits without leaving extra text");
+  assert.equal(await markdown.locator(".proposal .review-effects li strong").textContent(),"history","proposal effects render Markdown");
+  assert.equal(await markdown.locator(".proposal .review-reason strong").textContent(),"record","proposal reasons render Markdown");
+  if(process.env.TEST_SCREENSHOT_DIR)await markdown.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/chat-bubbles.png"});
   await markdown.keyboard.press("Control+Shift+Space");
   assert.equal(await markdown.locator("#chat-rail").getAttribute("aria-hidden"),"true","Ctrl+Shift+Space toggles chat closed from input");
   await markdown.keyboard.press("Control+Shift+Space");
@@ -439,3 +471,4 @@ try {
   assert.deepEqual(errors, [], "browser errors");
   console.log("Workspace browser checks passed: safe Markdown/history/replies/code copy, panel resizing/collapse/persistence, record commits, search/cache, related files, keyboard viewer, desktop/mobile, fresh home and voice.");
 } finally { await browser.close(); }
+

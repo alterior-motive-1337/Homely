@@ -1,4 +1,4 @@
-import { renderMarkdown } from "./markdown.js";
+import { createInteraction, createReview } from "./interactions.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -232,7 +232,11 @@ async function previewAction(actionType,payload,reason,requestText){
   try{
     const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
     const p=result.preview,t=result.transaction;
-    openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div class="preview"><strong>'+esc(p.summary)+'</strong><ul>'+p.effects.map(function(x){return "<li>"+esc(x)+"</li>"}).join("")+'</ul></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
+    openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div id="action-review"></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
+    const review=createInteraction(null);
+    review.classList.add("preview");
+    review.append(createReview(p,"",{title:false}));
+    $("#action-review").append(review);
     $("#reject-preview").onclick=async function(){
       const button=$("#reject-preview");button.disabled=true;button.textContent="Rejecting…";
       try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected.")}
@@ -561,13 +565,13 @@ async function openFile(doc){
   analyze.disabled=false;analyze.textContent="Analyze";
   analyze.onclick=async function(){
     analyze.disabled=true;analyze.textContent="Analyzing…";
-    insight.hidden=false;insight.textContent="Processing stored evidence…";
+    insight.hidden=false;insight.replaceChildren(createInteraction("Processing stored evidence…",{pending:true}));
     try{
       const visualFrames=mime.startsWith("video/")?await sampleVideoFrames($("video",viewerBody)):undefined;
       if(revision!==state.viewerRevision)return;
       const result=await api("/api/documents/"+encodeURIComponent(doc.id)+"/analyze",{method:"POST",body:visualFrames?{visualFrames}:{}});
-      if(revision===state.viewerRevision)insight.textContent=result.text;
-    }catch(e){if(revision===state.viewerRevision)insight.textContent=e.message}
+      if(revision===state.viewerRevision)insight.replaceChildren(createInteraction(result.text));
+    }catch(e){if(revision===state.viewerRevision)insight.replaceChildren(createInteraction(e.message,{error:true}))}
     finally{if(revision===state.viewerRevision){analyze.disabled=false;analyze.textContent="Analyze"}}
   };
   viewerBody.innerHTML='<div class="viewer-loading" role="status">Opening file…</div>';
@@ -777,21 +781,36 @@ async function showFiles(){
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
-function messageMarkup(m){
-  return '<article class="message '+(m.role==="user"?"user":"assistant")+'"><div class="message-role">'+(m.role==="user"?"You":"Homely")+'</div>'+(m.role==="user"?'<p>'+esc(m.text)+'</p>':'<div class="markdown-body"></div>')+(m.proposals||[]).map(function(p){return '<div class="proposal"><strong>'+esc(p.preview.title)+'</strong><div class="row-meta">'+esc(p.preview.summary)+'</div><div class="row-note">'+esc(p.reason)+'</div>'+(p.status==="PROPOSED"?'<div class="proposal-actions"><button class="button" data-reject="'+esc(p.transactionId)+'">Reject</button><button class="primary-button" data-approve="'+esc(p.transactionId)+'">Approve</button></div>':'<div class="row-meta">'+esc(p.status)+"</div>")+"</div>"}).join("")+"</article>"
+function messageElement(m){
+  const message=createInteraction(m.text,{role:m.role});
+  for(const p of m.proposals||[]){
+    const proposal=document.createElement("section");
+    proposal.className="proposal";
+    proposal.append(createReview(p.preview,p.reason));
+    if(p.status==="PROPOSED"){
+      const actions=document.createElement("div");actions.className="proposal-actions";
+      for(const action of ["reject","approve"]){
+        const button=document.createElement("button");button.type="button";
+        button.className=action==="approve"?"primary-button":"button";
+        button.dataset[action]=p.transactionId;button.textContent=action==="approve"?"Approve":"Reject";
+        actions.append(button);
+      }
+      proposal.append(actions);
+    }else{
+      const status=document.createElement("div");status.className="row-meta";status.textContent=p.status;
+      proposal.append(status);
+    }
+    message.append(proposal);
+  }
+  return message;
 }
 function renderChat(){
   $("#clear-chat").hidden=!state.agentMessages.length;
-  chatBody.innerHTML=state.agentMessages.length?state.agentMessages.map(messageMarkup).join(""):"";
-  const messages=$$(".message",chatBody);state.agentMessages.forEach((message,index)=>{if(message.role!=="user")$(".markdown-body",messages[index]).append(renderMarkdown(message.text))});
+  chatBody.replaceChildren(...state.agentMessages.map(messageElement));
   $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
   $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
   if(state.chatBusy){
-    const pending=document.createElement("p");
-    pending.className="chat-pending";
-    pending.setAttribute("role","status");
-    pending.textContent="Working…";
-    chatBody.appendChild(pending);
+    chatBody.appendChild(createInteraction("Working…",{pending:true}));
   }
   chatBody.scrollTop=chatBody.scrollHeight
 }
