@@ -55,6 +55,18 @@ try {
   assert.equal(await assistantWidth(),defaultWidth,"double-click must reset assistant width");
   await page.locator("#household-settings").click();
   await page.getByRole("link", { name: "Export household" }).waitFor();
+  const inlineSettings=await page.locator("#rename-home-form").evaluate(form=>{
+    const input=form.querySelector("input").getBoundingClientRect();
+    const button=form.querySelector('button[type="submit"]').getBoundingClientRect();
+    return Math.abs(input.bottom-button.bottom)<6 && input.right<button.left;
+  });
+  assert.equal(inlineSettings,true,"name save button must sit beside its input");
+  const inlineInvitation=await page.locator("#invite-home-form").evaluate(form=>{
+    const role=form.querySelector("select").getBoundingClientRect();
+    const button=form.querySelector('button[type="submit"]').getBoundingClientRect();
+    return Math.abs(role.bottom-button.bottom)<6 && role.right<button.left;
+  });
+  assert.equal(inlineInvitation,true,"invite action must sit beside the access selector");
   await page.locator('#invite-home-form input[name="email"]').fill("ci-invite@example.test");
   await page.locator('#invite-home-form select[name="role"]').selectOption("VIEWER");
   await page.getByRole("button", { name: "Create invite link" }).click();
@@ -66,6 +78,13 @@ try {
   let issueFetches = 0;
   page.on("request", request => { if (request.method() === "GET" && new URL(request.url()).pathname === "/api/issues") issueFetches++; });
   await go("issues");
+  const placement=async(searchSelector,actionSelector)=>{
+    const search=await page.locator(searchSelector).boundingBox();
+    const action=await page.locator(actionSelector).boundingBox();
+    return Boolean(search&&action&&Math.abs((search.y+search.height/2)-(action.y+action.height/2))<22&&action.x>search.x+search.width);
+  };
+  assert.equal(await placement("#record-search","#new-issue"),true,"issue search and main action must share a control row");
+  assert.equal(await page.locator(".ledger-toolbar").count(),0,"records must not have a second toolbar band");
   const total = await page.locator(".ledger-entry").count();
   assert.equal(await page.locator(".ledger").evaluate(el => getComputedStyle(el).borderTopWidth),"0px","registers should not be boxed in");
   await page.locator('[data-status="resolved"]').click();
@@ -75,7 +94,10 @@ try {
   assert.equal(await page.locator(".ledger-entry:visible").count(), 1);
   const fetches = issueFetches;
   await go("appliances");
+  assert.equal(await placement("#asset-search","#new-asset"),true,"asset search and main action must share a control row");
+  assert.equal(await page.locator(".ledger-toolbar").count(),0,"asset register should not repeat the action header");
   await page.locator("#asset-search").fill("inverter");
+  assert.equal(await page.locator("#new-asset").count(),1,"search updates must retain the primary action");
   await page.locator("[data-asset]").first().click();
   const fileButtons = page.locator("#modal [data-file]");
   await fileButtons.first().waitFor();
@@ -101,6 +123,7 @@ try {
   await page.locator("[data-issue-open]").filter({ hasText: "Browser transaction issue" }).waitFor();
 
   await go("repairs");
+  assert.equal(await placement("#record-search","#new-repair"),true,"repair search and action must share a control row");
   await page.locator("#new-repair").click();
   await page.locator('#repair-form select[name="assetId"]').selectOption("asset-tap");
   await page.locator('#repair-form input[name="title"]').fill("Browser repair record");
@@ -115,6 +138,9 @@ try {
   await page.locator("#record-search").fill("");
 
   await go("files");
+  assert.equal(await placement("#file-search","#upload-file"),true,"file search and upload must share a control row");
+  assert.equal(await page.locator(".file-browser .ledger-toolbar").count(),0,"file browser must not contain a duplicate toolbar");
+  assert.equal(await page.locator(".file-controls #save-link").count(),1,"save link stays beside file upload");
   const infoDivider=page.locator("#file-info-resizer");
   const infoWidth=()=>page.locator("#file-inspector").evaluate(el=>Math.round(el.getBoundingClientRect().width));
   const originalInfoWidth=await infoWidth();
