@@ -1388,3 +1388,31 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   .file-card .file-type{max-width:70px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 
+/* File opens immediately. Loading and content use the viewer itself, not a delayed dialog. */
+.viewer-body .viewer-loading{
+  display:flex;align-items:center;justify-content:center;
+  min-height:min(55vh,400px);padding:24px;
+  color:#a7a7ad;font-size:13px;
+}
+.viewer-body .viewer-text{
+  box-sizing:border-box;
+  display:block;max-height:70vh;overflow:auto;
+  margin:0;padding:24px;
+  color:#e7e7ea;background:transparent;
+  font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;
+  white-space:pre-wrap;overflow-wrap:anywhere;
+}
+.viewer-body embed[type="application/pdf"]{
+  display:block;width:100%;height:min(70vh,850px);min-height:400px;
+  border:0;
+}
+.viewer-file-action{
+  display:flex;justify-content:flex-end;align-items:center;
+  padding:9px 12px;background:#151517;
+}
+.viewer-body .viewer-link{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+@media(max-width:700px){
+  .viewer-body .viewer-text{padding:16px;font-size:11px}
+  .viewer-body embed[type="application/pdf"]{min-height:270px;height:65vh}
+}
+

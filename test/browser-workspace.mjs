@@ -66,8 +66,15 @@ try {
   await page.setViewportSize({width:1366,height:768});
   await page.locator("#chat-trigger").click();await divider.dblclick();
   assert.equal(await assistantWidth(),defaultWidth,"double-click must reset assistant width");
+  let releaseHomes;
+  const heldHomes=new Promise(resolve=>{releaseHomes=resolve});
+  await page.route("**/api/homes",async route=>{await heldHomes;await route.continue()});
   await page.locator("#household-settings").click();
+  await page.locator("#modal").waitFor({state:"visible"});
+  assert.match(await page.locator("#modal-body").textContent(),/Opening settings/,"slow settings must acknowledge the click immediately");
+  releaseHomes();
   await page.getByRole("link", { name: "Export household" }).waitFor();
+  await page.unroute("**/api/homes");
   const inlineSettings=await page.locator("#rename-home-form").evaluate(form=>{
     const input=form.querySelector("input").getBoundingClientRect();
     const button=form.querySelector('button[type="submit"]').getBoundingClientRect();
@@ -186,13 +193,31 @@ try {
   await infoDivider.focus();await page.keyboard.press("Enter");
   assert.equal(await infoWidth(),originalInfoWidth);
   await noOverflow();
+  let releaseRepairOptions;
+  const repairOptions=new Promise(resolve=>{releaseRepairOptions=resolve});
+  await page.route("**/api/repairs",async route=>{await repairOptions;await route.continue()});
   await page.locator("#upload-file").click();
+  await page.locator("#modal").waitFor({state:"visible"});
+  assert.match(await page.locator("#modal-body").textContent(),/Preparing file options/,"upload action must respond before metadata loads");
+  releaseRepairOptions();
   await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
+  await page.unroute("**/api/repairs");
   await page.locator("#modal-close").click();
   await page.locator("#save-link").click();
   await page.locator('#link-evidence-form input[name="sourceUrl"]').waitFor();
   await page.locator("#modal-close").click();
-  await page.locator(".file-card").first().click();
+  // Opening is single-click and the viewer is visible before a delayed file response.
+  let releaseText;
+  const heldText=new Promise(resolve=>{releaseText=resolve});
+  await page.route("**/demo-documents/inverter-warranty.txt",async route=>{await heldText;await route.continue()});
+  await page.locator(".file-card").filter({hasText:"Sunsynk 8 kW inverter warranty"}).click();
+  await page.locator("#viewer").waitFor({state:"visible"});
+  await page.getByText("Opening file…",{exact:true}).waitFor();
+  releaseText();
+  await page.locator("#viewer-body .viewer-text").waitFor();
+  assert.match(await page.locator("#viewer-body .viewer-text").textContent(),/20 January 2030/);
+  await page.locator("#viewer-close").click();
+  await page.unroute("**/demo-documents/inverter-warranty.txt");
   await page.locator("#inspect-open").waitFor();
   await page.locator(".search-toggle").click();
   await page.locator("#file-search").fill("no-such-file-xyz");
@@ -203,6 +228,7 @@ try {
   await page.locator(".file-card").first().focus();
   await page.keyboard.press("Enter");
   await page.locator("#viewer").waitFor({ state: "visible" });
+  await page.locator("#viewer-body .viewer-text").waitFor();
   await page.locator("#viewer-close").click();
   await go("home");
   await go("files");
@@ -265,7 +291,8 @@ try {
   });
   await page.locator(".file-card").filter({hasText:"Video frame QA"}).waitFor();
   await page.locator(".file-card").filter({hasText:"Video frame QA"}).click();
-  await page.locator("#inspect-open").click();
+  await page.locator("#viewer").waitFor({state:"visible"});
+  await page.locator("#viewer-body video").waitFor();
   await page.route("**/api/documents/*/analyze",async route=>{
     const frames=route.request().postDataJSON().visualFrames;assert.equal(frames.length,3);
     assert.ok(frames.every(f=>f.image.startsWith("data:image/jpeg;base64,")&&f.timeSeconds>=0));

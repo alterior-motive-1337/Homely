@@ -192,10 +192,30 @@ async function refreshStatus(){
   catch(_){agentState.textContent="Chat unavailable"}
 }
 
-function openModal(html){modalBody.innerHTML=html;$$(".field",modalBody).forEach(function(field,index){const label=$("label",field),input=$("input,select,textarea",field);if(label&&input){input.id=input.id||"record-field-"+index;label.htmlFor=input.id}});modal.showModal()}
-function closeModal(){if(modal.open)modal.close();modalBody.innerHTML=""}
+let modalGeneration=0;
+function openModal(html){
+  modalGeneration++;
+  modalBody.innerHTML=html;
+  modalBody.querySelectorAll(".field").forEach(function(field,index){
+    const label=$("label",field),input=$("input,select,textarea",field);
+    if(label&&input){input.id=input.id||"record-field-"+index;label.htmlFor=input.id}
+  });
+  if(!modal.open)modal.showModal();
+  return modalGeneration;
+}
+function closeModal(){
+  modalGeneration++;
+  if(modal.open)modal.close();
+  modalBody.innerHTML="";
+}
+function waitingModal(text){return openModal('<div class="loading" role="status">'+esc(text||"Loading…")+'</div>')}
+function modalPending(token){return modal.open&&modalGeneration===token}
+function modalLoadFailed(token,error){
+  if(modalPending(token)){closeModal();notify(error instanceof Error?error.message:"Could not load form.")}
+}
 $("#modal-close").onclick=closeModal;
 modal.addEventListener("cancel",function(e){e.preventDefault();closeModal()});
+modal.addEventListener("close",()=>{modalGeneration++});
 
 async function assetOptions(selected){
   if(!state.assets.length)state.assets=await api("/api/assets");
@@ -203,15 +223,36 @@ async function assetOptions(selected){
 }
 
 async function previewAction(actionType,payload,reason,requestText){
-  const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
-  const p=result.preview,t=result.transaction;
-  openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div class="preview"><strong>'+esc(p.summary)+'</strong><ul>'+p.effects.map(function(x){return "<li>"+esc(x)+"</li>"}).join("")+'</ul></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
-  $("#reject-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected.")};
-  $("#commit-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});closeModal();notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");await selectView(state.view)}
+  const submit=modal.open?$("form button[type='submit'],form button.primary-button",modalBody):null;
+  if(submit?.disabled)return;
+  const original=submit?.textContent;
+  if(submit){submit.disabled=true;submit.textContent="Preparing…"}
+  try{
+    const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
+    const p=result.preview,t=result.transaction;
+    openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div class="preview"><strong>'+esc(p.summary)+'</strong><ul>'+p.effects.map(function(x){return "<li>"+esc(x)+"</li>"}).join("")+'</ul></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
+    $("#reject-preview").onclick=async function(){
+      const button=$("#reject-preview");button.disabled=true;button.textContent="Rejecting…";
+      try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected.")}
+      catch(error){button.disabled=false;button.textContent="Reject";notify(error.message)}
+    };
+    $("#commit-preview").onclick=async function(){
+      const button=$("#commit-preview");button.disabled=true;button.textContent="Saving…";
+      try{
+        await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});
+        closeModal();notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");
+        await selectView(state.view);
+      }catch(error){if(button.isConnected){button.disabled=false;button.textContent="Approve & commit"}notify(error.message)}
+    };
+  }catch(error){notify(error instanceof Error?error.message:"Could not prepare action.")}
+  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent=original}}
 }
 
 async function openIssueForm(){
-  const options=await assetOptions("");
+  const pending=waitingModal("Preparing issue form…");
+  let options;
+  try{options=await assetOptions("")}catch(error){modalLoadFailed(pending,error);return}
+  if(!modalPending(pending))return;
   openModal('<h2>Report a problem</h2><form class="form" id="issue-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>Title</label><input name="title" maxlength="160" required></div><div class="field"><label>Severity</label><select name="severity"><option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div><div class="field"><label>Detected</label><input type="date" name="detectedAt" value="'+today()+'" required></div><div class="field full"><label>Description</label><textarea name="description"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#issue-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget);await previewAction("REPORT_ISSUE",{assetId:d.get("assetId"),title:d.get("title"),severity:d.get("severity"),description:d.get("description"),detectedAt:d.get("detectedAt")},"Homeowner reported an issue through Homely.")}
@@ -223,8 +264,12 @@ function openResolveForm(issue){
 }
 async function openRepairForm(prefill){
   prefill=prefill||{};
-  const options=await assetOptions(prefill.asset_id||"");
-  const issues=await api("/api/issues");
+  const pending=waitingModal("Preparing repair form…");
+  let options,issues;
+  try{
+    [options,issues]=await Promise.all([assetOptions(prefill.asset_id||""),api("/api/issues")]);
+  }catch(error){modalLoadFailed(pending,error);return}
+  if(!modalPending(pending))return;
   const issueOpts=['<option value="">None</option>'].concat(issues.map(function(i){return '<option value="'+esc(i.id)+'" '+(i.id===prefill.id?"selected":"")+">"+esc(i.title)+" · "+esc(i.asset_name)+"</option>"})).join("");
   const title=prefill.title?"Repair: "+prefill.title:"";
   openModal('<h2>Record a repair</h2><form class="form" id="repair-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field full"><label>Linked issue</label><select name="issueId">'+issueOpts+'</select></div><div class="field full"><label>Repair title</label><input name="title" maxlength="180" required value="'+esc(title)+'"></div><div class="field"><label>Date</label><input type="date" name="repairDate" value="'+today()+'" required></div><div class="field"><label>Cost (ZAR)</label><input type="number" name="cost" min="0" step=".01" placeholder="0.00"></div><div class="field full"><label>Contractor / person</label><input name="contractor" maxlength="240"></div><div class="field full"><label>Work performed</label><textarea name="description"></textarea></div><div class="field full"><label>Outcome</label><textarea name="outcome"></textarea></div></div><div class="row-note">Permanent record.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
@@ -322,18 +367,22 @@ async function showHome(){
 }
 
 async function showCharges(){
-  try{const items=await api("/api/charges");openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">+ Charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+'</span>'+badge(Number(c.active)?'ACTIVE':'INACTIVE')+'<button class="button" data-charge-edit="'+esc(c.id)+'">Edit</button>',c.notes||"")}).join("")||'<div class="empty">No charges.</div>')+'</div>');$("#add-charge").onclick=()=>openChargeForm();$$("[data-charge-edit]",modalBody).forEach(b=>b.onclick=()=>openChargeForm(items.find(c=>c.id===b.dataset.chargeEdit)))}catch(e){notify(e.message)}
+  const pending=waitingModal("Loading records…");
+  try{const items=await api("/api/charges");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">+ Charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+'</span>'+badge(Number(c.active)?'ACTIVE':'INACTIVE')+'<button class="button" data-charge-edit="'+esc(c.id)+'">Edit</button>',c.notes||"")}).join("")||'<div class="empty">No charges.</div>')+'</div>');$("#add-charge").onclick=()=>openChargeForm();$$("[data-charge-edit]",modalBody).forEach(b=>b.onclick=()=>openChargeForm(items.find(c=>c.id===b.dataset.chargeEdit)))}catch(e){modalLoadFailed(pending,e)}
 }
 async function showPurchases(){
-  try{const items=await api("/api/purchases");openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">+ Save</button></div><div class="rows">'+(items.map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)))}catch(e){notify(e.message)}
+  const pending=waitingModal("Loading records…");
+  try{const items=await api("/api/purchases");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">+ Save</button></div><div class="rows">'+(items.map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)))}catch(e){modalLoadFailed(pending,e)}
 }
 async function showHistory(){
+  const pending=waitingModal("Loading records…");
   try{
     const results=await Promise.all([api("/api/timeline"),api("/api/transactions")]);
+    if(!modalPending(pending))return;
     const permanent=["REPORT_ISSUE","RESOLVE_ISSUE","RECORD_REPAIR"];
     openModal('<h2>Home history</h2><div class="rows">'+results[0].map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div><div class="detail-section"><h3>Changes</h3><div class="rows">'+(results[1].map(function(t){return row(t.action_type.replaceAll("_"," "),fmtDate(t.created_at),badge(t.status)+(t.status==="COMMITTED"&&!permanent.includes(t.action_type)?'<button class="button" data-undo="'+esc(t.id)+'">Undo</button>':""),t.reason)}).join("")||'<div class="empty">No changes.</div>')+'</div></div>');
     $$("[data-undo]",modalBody).forEach(function(b){b.onclick=async function(){b.disabled=true;try{await api("/api/transactions/"+encodeURIComponent(b.dataset.undo)+"/undo",{method:"POST"});closeModal();notify("Change undone.");await selectView(state.view)}catch(e){b.disabled=false;notify(e.message)}}});
-  }catch(e){notify(e.message)}
+  }catch(e){modalLoadFailed(pending,e)}
 }
 
 
@@ -387,21 +436,29 @@ function evidenceMarkup(docs){return '<div class="detail-section"><h3>Files</h3>
 function bindEvidence(docs){$$("[data-evidence]",modalBody).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.evidence}))}})}
 async function openIssue(issue){
   if(!issue)return;
-  try{const results=await Promise.all([api("/api/documents"),api("/api/assets/"+encodeURIComponent(issue.asset_id))]),docs=results[0].filter(function(d){return d.issue_id===issue.id}),history=(results[1].history||[]).filter(function(e){return e.issue_id===issue.id});
+  const pending=waitingModal("Opening issue…");
+  try{const results=await Promise.all([api("/api/documents"),api("/api/assets/"+encodeURIComponent(issue.asset_id))]);
+    if(!modalPending(pending))return;
+    const docs=results[0].filter(function(d){return d.issue_id===issue.id}),history=(results[1].history||[]).filter(function(e){return e.issue_id===issue.id});
     openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issue.status)+badge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"—")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-attach">Attach file</button><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
     bindEvidence(docs);$("#issue-attach").onclick=function(){openUploadEvidenceForm({assetId:issue.asset_id,issueId:issue.id})};$("#issue-asset").onclick=function(){openAsset(issue.asset_id)};if($("#issue-repair"))$("#issue-repair").onclick=function(){openRepairForm(issue)};if($("#issue-resolve"))$("#issue-resolve").onclick=function(){openResolveForm(issue)};
-  }catch(e){notify(e.message)}
+  }catch(e){modalLoadFailed(pending,e)}
 }
 async function openRepair(repair){
   if(!repair)return;
+  const pending=waitingModal("Opening repair…");
   try{const docs=(await api("/api/documents")).filter(function(d){return d.repair_id===repair.id});
+    if(!modalPending(pending))return;
     openModal('<p class="eyebrow">Repair · '+esc(repair.asset_name)+'</p><h2>'+esc(repair.title)+'</h2><div class="detail-grid">'+[["Date",fmtDate(repair.repair_date)],["Cost",money(repair.cost_cents)],["Contractor",repair.contractor||"—"]].map(function(pair){return '<div class="detail"><span>'+esc(pair[0])+'</span><strong>'+esc(pair[1])+'</strong></div>'}).join("")+'</div><div class="detail-section"><h3>Work performed</h3><p>'+esc(repair.description||"—")+'</p></div><div class="detail-section"><h3>Outcome</h3><p>'+esc(repair.outcome||"—")+'</p></div>'+(repair.issue_title?'<div class="row-meta">Issue: '+esc(repair.issue_title)+'</div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="repair-attach">Attach file</button><button class="button" id="repair-asset">View asset</button></div>');bindEvidence(docs);$("#repair-attach").onclick=function(){openUploadEvidenceForm({assetId:repair.asset_id,repairId:repair.id})};$("#repair-asset").onclick=function(){openAsset(repair.asset_id)};
-  }catch(e){notify(e.message)}
+  }catch(e){modalLoadFailed(pending,e)}
 }
 
 
 async function openAssetForm(existing){
-  const systems=await api("/api/systems");
+  const pending=waitingModal("Preparing asset form…");
+  let systems;
+  try{systems=await api("/api/systems")}catch(error){modalLoadFailed(pending,error);return}
+  if(!modalPending(pending))return;
   const options=systems.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'}).join("");
   if(!options){notify("No home systems available.");return}
   openModal('<h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Condition</label><select name="condition"><option>UNKNOWN</option><option>NEW</option><option>GOOD</option><option>FAIR</option><option>POOR</option><option>FAILED</option></select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>Purchase price (ZAR)</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
@@ -449,8 +506,10 @@ async function showAppliances(){
 }
 
 async function openAsset(id){
+  const pending=waitingModal("Opening asset…");
   try{
     const a=await api("/api/assets/"+encodeURIComponent(id));
+    if(!modalPending(pending))return;
     let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(a.condition||"UNKNOWN")+badge(a.health)+'</div><div class="detail-grid">';
     [["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Age",assetAge(a)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]].forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
     html+="</div>";if(a.notes)html+='<div class="detail-section"><h3>Notes</h3><div class="row-note">'+esc(a.notes)+"</div></div>";
@@ -458,7 +517,7 @@ async function openAsset(id){
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>')}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
     html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
-    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){try{const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)await openFile(doc)}catch(e){notify(e.message)}}})
+    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$("[data-file]",modalBody).forEach(function(b){b.onclick=function(){const doc=(a.documents||[]).find(d=>d.id===b.dataset.file);if(doc)void openFile(doc)}})
   }catch(e){notify(e.message)}
 }
 
@@ -509,34 +568,74 @@ async function openFile(doc){
     }catch(e){if(revision===state.viewerRevision)insight.textContent=e.message}
     finally{if(revision===state.viewerRevision){analyze.disabled=false;analyze.textContent="Analyze"}}
   };
+  viewerBody.innerHTML='<div class="viewer-loading" role="status">Opening file…</div>';
+  if(!viewer.open)viewer.showModal();
+  const live=()=>revision===state.viewerRevision&&viewer.open;
+  const action=(text,url,download=false)=>'<a class="primary-button" href="'+esc(url)+'" '+(download?'download':'target="_blank" rel="noopener noreferrer"')+'>'+esc(text)+'</a>';
   if(!href){
-    viewerBody.innerHTML='<div class="viewer-link"><strong>No viewable file is attached.</strong></div>';
-  }else if(new URL(href).origin===location.origin){
+    viewerBody.innerHTML='<div class="viewer-link"><strong>No file or source link is attached.</strong></div>';
+    return;
+  }
+  if(new URL(href).origin===location.origin){
+    if(mime.startsWith("video/")||mime.startsWith("audio/")){
+      viewerBody.innerHTML=mime.startsWith("video/")
+        ?'<video controls preload="metadata" src="'+esc(href)+'"></video>'
+        :'<audio controls preload="metadata" src="'+esc(href)+'"></audio>';
+      return;
+    }
+    if(mime.startsWith("image/")){
+      viewerBody.innerHTML='<img src="'+esc(href)+'" alt="'+esc(doc.title)+'">';
+      const image=$("img",viewerBody);
+      image.onerror=()=>{if(live())viewerBody.innerHTML='<div class="viewer-link"><strong>Image unavailable.</strong>'+action("Open file",href)+'</div>'};
+      return;
+    }
+    if(!/^(application\/pdf|text\/plain|text\/csv|application\/json)$/.test(mime)){
+      viewerBody.innerHTML='<div class="viewer-link">'+action("Download file",href,true)+'</div>';
+      return;
+    }
     try{
-      if(stored && mime.startsWith("video/")) viewerBody.innerHTML='<video controls preload="metadata" src="'+esc(href)+'"></video>';
-      else if(stored && mime.startsWith("audio/")) viewerBody.innerHTML='<audio controls preload="metadata" src="'+esc(href)+'"></audio>';
-      else{
-        const res=await fetch(href);
-        if(!res.ok)throw new Error("File unavailable");
-        const blob=await res.blob();state.objectUrl=URL.createObjectURL(blob);
-        const type=mime||blob.type||"";
-        if(type.startsWith("image/"))viewerBody.innerHTML='<img src="'+esc(state.objectUrl)+'" alt="">';
-        else viewerBody.innerHTML='<iframe sandbox title="'+esc(doc.title)+'" src="'+esc(state.objectUrl)+'"></iframe>';
+      const res=await fetch(href,{credentials:"same-origin"});
+      if(!live())return;
+      if(!res.ok)throw new Error("File unavailable (HTTP "+res.status+").");
+      if(mime.startsWith("text/")||mime==="application/json"){
+        const plain=await res.text();
+        if(!live())return;
+        const pre=document.createElement("pre");
+        pre.className="viewer-text";
+        pre.textContent=plain.length>500000?plain.slice(0,500000)+"\n\n[Preview truncated]":plain;
+        viewerBody.replaceChildren(pre);
+      }else{
+        const blob=await res.blob();
+        if(!live())return;
+        state.objectUrl=URL.createObjectURL(blob);
+        viewerBody.innerHTML='<embed type="application/pdf" src="'+esc(state.objectUrl)+'" />'
+          +'<div class="viewer-file-action">'+action("Download PDF",href,true)+'</div>';
       }
-    }catch(e){viewerBody.innerHTML='<div class="viewer-link"><strong>'+esc(e.message)+'</strong></div>'}
+    }catch(e){
+      if(live())viewerBody.innerHTML='<div class="viewer-link"><strong>'+esc(e.message)+'</strong>'+action("Try opening file",href)+'</div>';
+    }
   }else if(doc.provider==="GOOGLE_DRIVE"&&doc.provider_file_id){
     viewerBody.innerHTML='<iframe title="'+esc(doc.title)+'" src="https://drive.google.com/file/d/'+encodeURIComponent(doc.provider_file_id)+'/preview" sandbox="allow-scripts allow-same-origin"></iframe>';
-  }else if(mime.startsWith("image/"))viewerBody.innerHTML='<img src="'+esc(href)+'" alt="'+esc(doc.title)+'">';
-  else if(mime.startsWith("video/"))viewerBody.innerHTML='<video controls src="'+esc(href)+'"></video>';
-  else if(mime.startsWith("audio/"))viewerBody.innerHTML='<audio controls src="'+esc(href)+'"></audio>';
-  else viewerBody.innerHTML='<div class="viewer-link"><a class="primary-button" href="'+esc(href)+'" target="_blank" rel="noreferrer">Open source</a></div>';
-  viewer.showModal();
+  }else if(mime.startsWith("image/")){
+    viewerBody.innerHTML='<img src="'+esc(href)+'" alt="'+esc(doc.title)+'">';
+  }else if(mime.startsWith("video/")){
+    viewerBody.innerHTML='<video controls preload="metadata" src="'+esc(href)+'"></video>';
+  }else if(mime.startsWith("audio/")){
+    viewerBody.innerHTML='<audio controls preload="metadata" src="'+esc(href)+'"></audio>';
+  }else{
+    viewerBody.innerHTML='<div class="viewer-link">'+action("Open source",href)+'</div>';
+  }
 }
 $("#viewer-close").onclick=function(){viewer.close()};
 viewer.addEventListener("close",function(){state.viewerRevision=(state.viewerRevision||0)+1;$("#viewer-insight").hidden=true;if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
 
 async function openLinkEvidenceForm(){
-  const results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
+  const pending=waitingModal("Preparing file options…");
+  let results;
+  try {
+    results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
+  } catch(error){modalLoadFailed(pending,error);return}
+  if(!modalPending(pending))return;
   const options=results[0],issues=results[1],repairs=results[2],charges=results[3],purchases=results[4];
   const optional=function(label,items,display){return '<option value="">'+esc(label)+'</option>'+items.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(display(x))+'</option>'}).join("")};
   const assetOptionsHtml='<option value="">None</option>'+options;
@@ -669,9 +768,7 @@ async function showFiles(){
     };
     $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
-      b.onclick=()=>selectFile(doc);
-      b.ondblclick=()=>openFile(doc);
-      b.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();void openFile(doc)}};
+      b.onclick=()=>{selectFile(doc);void openFile(doc)};
     });
     if(docs.length)selectFile(docs[0]);
   }catch(e){if(revision===state.viewRevision)fail(e)}
@@ -820,11 +917,14 @@ async function refreshVisibleView(force=false){
 window.addEventListener("focus",()=>void refreshVisibleView());
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)void refreshVisibleView()});
 async function openHouseholdSettings(){
+  const pending=waitingModal("Opening settings…");
   try{
-    const state=await api("/api/homes"),members=await api("/api/homes/members");
+    const [state,members]=await Promise.all([api("/api/homes"),api("/api/homes/members")]);
+    if(!modalPending(pending))return;
     const home=state.homes.find(h=>h.id===state.currentHomeId);
     const owner=home&&home.role==="OWNER";
-    const pending=owner?await api("/api/homes/invitations"):[];
+    const pendingInvites=owner?await api("/api/homes/invitations"):[];
+    if(!modalPending(pending))return;
     let markup='<h2>Household settings</h2><p class="row-meta">'+esc($("#account-email").textContent)+'</p>';
     markup+='<div class="detail-section"><h3>Your homes</h3><div class="rows">'+state.homes.map(h=>
       row(h.name,h.role,h.id===state.currentHomeId?'<span class="badge">Current</span>':'<button type="button" class="button" data-switch="'+esc(h.id)+'">Open home</button>')
@@ -832,7 +932,7 @@ async function openHouseholdSettings(){
     if(owner){
       markup+='<div class="detail-section"><h3>Home name</h3><form class="form" id="rename-home-form"><div class="field"><label>Household</label><input name="homeName" maxlength="100" value="'+esc(home.name)+'" required></div><div class="form-actions"><button class="button" type="submit">Save name</button></div></form></div>';
       markup+='<div class="detail-section"><h3>Invite a member</h3><form class="form" id="invite-home-form"><div class="field"><label>Google email address</label><input name="email" type="email" required></div><div class="field"><label>Access</label><select name="role"><option value="MEMBER">Member — edit records</option><option value="VIEWER">Viewer — read only</option></select></div><div class="form-actions"><button class="button" type="submit">Create invite link</button></div></form><div id="invite-result"></div></div>';
-      markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+(pending.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")||'<div class="empty">None</div>')+'</div></div>';
+      markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+(pendingInvites.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")||'<div class="empty">None</div>')+'</div></div>';
     }
     if(owner)markup+='<div class="detail-section"><h3>Download your data</h3><div class="form-actions"><a class="button" href="/api/account/export" download="homely-backup.tar">Export household</a></div></div>';
         markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
@@ -880,7 +980,7 @@ async function openHouseholdSettings(){
       try{await api("/api/homes/members/"+encodeURIComponent(button.dataset.remove),{method:"DELETE"});closeModal();await openHouseholdSettings()}
       catch(error){notify(error.message)}
     });
-  }catch(error){notify(error.message)}
+  }catch(error){modalLoadFailed(pending,error)}
 }
 function offerPendingInvitation(){
   const q=new URLSearchParams(location.search);
