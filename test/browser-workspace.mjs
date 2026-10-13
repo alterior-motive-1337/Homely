@@ -15,7 +15,7 @@ const noOverflow = async () => assert.equal(await page.evaluate(() => document.d
 try {
   await page.goto(base);
   await page.locator("#page-title").filter({ hasText: "14 Hawthorn Residence" }).waitFor({state:"attached"});
-  assert.equal(await page.locator(".topbar").isVisible(),false,"tab labels replace duplicate page headings");
+  assert.ok(await page.locator(".topbar").evaluate(el=>{const r=el.getBoundingClientRect();return r.width<=1&&r.height<=1}),"tab labels replace visible page headings");
   assert.equal(await page.locator("#refresh-view").count(),0,"manual refresh must not remain");
   assert.equal(await page.locator("#runtime-status").count(),0,"status ornament must not remain");
   assert.equal(await page.locator(".chat-head strong").count(),0,"assistant must not display a second header");
@@ -363,10 +363,10 @@ try {
   await markdown.locator("#chat-input").press("Enter");
   await markdown.locator(".markdown-body h3").filter({hasText:"New reply"}).waitFor();
   assert.equal(await markdown.locator("#chat-input").inputValue(),"","Enter submits without leaving extra text");
-  await markdown.keyboard.press("Control+j");
-  assert.equal(await markdown.locator("#chat-rail").getAttribute("aria-hidden"),"true","Ctrl+J toggles chat closed from input");
-  await markdown.keyboard.press("Control+j");
-  assert.equal(await markdown.locator("#chat-rail").getAttribute("aria-hidden"),"false","Ctrl+J reopens chat");
+  await markdown.keyboard.press("Control+Shift+Space");
+  assert.equal(await markdown.locator("#chat-rail").getAttribute("aria-hidden"),"true","Ctrl+Shift+Space toggles chat closed from input");
+  await markdown.keyboard.press("Control+Shift+Space");
+  assert.equal(await markdown.locator("#chat-rail").getAttribute("aria-hidden"),"false","Ctrl+Shift+Space reopens chat");
   assert.equal(await markdown.locator("#chat-input").evaluate(el=>document.activeElement===el),true,"keyboard shortcut focuses composer");
   assert.equal(await markdown.locator('[data-approve="markdown-proposal"]').count(),1,"Markdown must preserve proposal controls");
   for(const width of [390,320]){
