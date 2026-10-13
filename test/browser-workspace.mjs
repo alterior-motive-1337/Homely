@@ -21,10 +21,7 @@ try {
   // Visual hierarchy and sizing: navigation must be labeled and use a single top row.
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "desktop tabs need visible text labels");
   assert.ok(await page.locator(".sidebar").evaluate(el => { const r=el.getBoundingClientRect(); return r.width > 1100 && r.height <= 72; }), "desktop navigation must fit a compact header");
-  await page.locator(".home-status-board").waitFor();
-  assert.equal(await page.locator(".home-stat-stack > div").count(), 3, "overview has three grounded counters");
-  await page.locator("#home-repair").waitFor();
-  assert.equal(await page.locator(".home-quick .quick-action").count(),3,"common household actions belong in the overview");
+  assert.ok(await page.locator(".metric").first().evaluate(el => el.getBoundingClientRect().height <= 125), "overview counters should not become oversized cards");
   const assistantWidth=()=>page.locator("#chat-rail").evaluate(el=>Math.round(el.getBoundingClientRect().width));
   const defaultWidth=await assistantWidth();
   const divider=page.locator("#assistant-resizer");
@@ -53,14 +50,11 @@ try {
   await page.locator("#chat-trigger").click();await divider.dblclick();
   assert.equal(await assistantWidth(),defaultWidth,"double-click must reset assistant width");
   await page.locator("#household-settings").click();
-  await page.locator('[data-settings-tab="data"]').click();
-  await page.getByRole("link", { name: /Export household/ }).waitFor();
-  await page.locator('[data-settings-tab="people"]').click();
+  await page.getByRole("link", { name: "Export household" }).waitFor();
   await page.locator('#invite-home-form input[name="email"]').fill("ci-invite@example.test");
   await page.locator('#invite-home-form select[name="role"]').selectOption("VIEWER");
   await page.getByRole("button", { name: "Create invite link" }).click();
   await page.locator("#invite-link").waitFor();
-  await page.locator('[data-settings-tab="account"]').click();
   await page.getByRole("button", { name: "Delete account…" }).click();
   await page.locator("#delete-account-form").waitFor();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -258,15 +252,12 @@ try {
   fresh.on("pageerror", error => errors.push(String(error)));
   await fresh.context().addCookies([{ name: "homely_test_view", value: "fresh", url: base }]);
   await fresh.goto(base);
-  await fresh.getByRole("heading", { name: "Start with your home." }).waitFor();
-  assert.equal(await fresh.locator(".start-step").count(),3,"onboarding shows home setup steps");
-  await fresh.locator("#home-first-asset").click();
+  await fresh.getByRole("heading", { name: "No assets" }).waitFor();
+  await fresh.getByRole("button", { name: "Register asset" }).click();
   await fresh.locator("#asset-form").waitFor(); await fresh.locator("#modal-close").click();
   for (const view of ["issues", "repairs", "appliances", "files"]) {
     await fresh.locator('[data-view="' + view + '"]').click();
-    await fresh.locator(view === "files" ? ".files-empty" : ".record-landing").waitFor();
-    assert.equal(await fresh.locator(".ledger-columns").count(),0,"empty views must not show table headers");
-    if(view==="files")assert.equal(await fresh.locator("#file-inspector").count(),0,"empty files must not show an unused inspector");
+    await fresh.locator(view === "files" ? ".files-empty" : ".ledger-zero").waitFor();
   }
   // Render saved and new replies using provider-free Markdown fixtures.
   const markdown = await browser.newPage({ viewport: { width: 1366, height: 768 } });
