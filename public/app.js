@@ -196,7 +196,7 @@ let modalGeneration=0;
 function openModal(html){
   modalGeneration++;
   modalBody.innerHTML=html;
-  $(".field",modalBody).forEach(function(field,index){
+  modalBody.querySelectorAll(".field").forEach(function(field,index){
     const label=$("label",field),input=$("input,select,textarea",field);
     if(label&&input){input.id=input.id||"record-field-"+index;label.htmlFor=input.id}
   });
