@@ -10,8 +10,11 @@ import { migrate, type HomelyDatabase } from "../src/db.js";
 import { hasHome, seedDemo } from "../src/seed.js";
 import { commitTransaction, proposeTransaction, undoTransaction } from "../src/domain/transactions.js";
 import { startUpload, appendUploadChunk, finishUpload, readStoredFile } from "../src/evidence/storage.js";
+import { writeHomeArchive } from "../src/domain/exportHome.js";
+import { restoreHomeArchive } from "../src/domain/restoreHome.js";
+import { runInHome } from "../src/security/homeScope.js";
 
-test("HTTP driver migrations, seeding and approval/undo retain atomic transactions", { timeout: 30_000 }, async () => {
+test("HTTP driver migrations, seeding and approval/undo retain atomic transactions", { timeout: 30_000 }, async () => runInHome("home-hawthorn",async () => {
   const child = fork(new URL("./hrana-server.ts", import.meta.url), [], { execArgv: ["--import", "tsx"], stdio: ["ignore", "ignore", "pipe", "ipc"] });
   let db: HomelyDatabase | undefined;
   const dir = fs.mkdtempSync(path.join(tmpdir(), "homely-remote-migration-"));
@@ -22,7 +25,7 @@ test("HTTP driver migrations, seeding and approval/undo retain atomic transactio
     db.exec("CREATE TABLE schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL);");
     migrate(db);
     migrate(db); // Restarting must skip applied migrations without changing records.
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count, 11);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get()?.count, 12);
     seedDemo(db);
     assert.ok(hasHome(db));
     const proposal = proposeTransaction(db, { actionType: "COMPLETE_MAINTENANCE", reason: "HTTP transaction check",
@@ -43,6 +46,13 @@ test("HTTP driver migrations, seeding and approval/undo retain atomic transactio
     commitTransaction(db,String(evidence.transaction?.id));
     const documentId=String(db.prepare("SELECT document_id FROM file_uploads WHERE id=?").get(upload.id)?.document_id);
     assert.deepEqual(readStoredFile(db,documentId,300_000),sample);
+    const now=new Date().toISOString();
+    db.prepare("INSERT INTO auth_users(id,google_subject,email,display_name,created_at,last_login_at) VALUES('remote-owner','remote-subject','remote@example.test','Remote',?,?)").run(now,now);
+    const archive=path.join(dir,"backup.tar"),stream=fs.createWriteStream(archive),finished=once(stream,"finish");
+    await writeHomeArchive(db,"home-hawthorn",stream);await finished;
+    const restored=restoreHomeArchive(db,archive,"remote-owner");
+    const recovered=db.prepare("SELECT id FROM documents WHERE home_id=? AND title='Test clip'").get(restored.homeId)!;
+    assert.deepEqual(runInHome(restored.homeId,()=>readStoredFile(db!,String(recovered.id),300_000)),sample);
 
     fs.writeFileSync(path.join(dir, "007_broken.sql"), "CREATE TABLE rolled_back(id TEXT); INSERT INTO missing_table VALUES (1);");
     assert.throws(() => migrate(db!, dir), /007_broken.sql/);
@@ -54,4 +64,4 @@ test("HTTP driver migrations, seeding and approval/undo retain atomic transactio
     const exited = once(child, "exit"); child.kill("SIGTERM"); await exited;
     fs.rmSync(dir, { recursive: true, force: true });
   }
-});
+}));

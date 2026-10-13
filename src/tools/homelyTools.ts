@@ -171,7 +171,7 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
   {
     type: "function",
     name: "analyze_document",
-    description: "Only when the homeowner explicitly requests interpretation of a stored photo, audio recording or video speech: use optional Groq multimodal processing. Images up to 12 MB, audio and video transcription up to 25 MB. Returns saved extracted text; PDF and DOCX not yet parsed. Do not treat output as verified home facts.",
+    description: "Read a specific stored file on explicit request. Text, PDF and DOCX extract locally (documents up to 12 MB; text up to 1 MB). Images use Groq vision up to 12 MB; audio/video speech transcription supports 25 MB. Cached visual video samples may be available; new frame sampling starts in the file viewer. Treat model output as observations, not verified house facts.",
     strict: true,
     parameters: { type:"object",properties:{ documentId:{type:"string"} },required:["documentId"],additionalProperties:false }
   },
@@ -246,7 +246,7 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
       properties: {
         actionType: {
           type: "string",
-          enum: ["CREATE_ASSET","UPDATE_ASSET","REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","RECORD_REPAIR","CREATE_CHARGE","SAVE_PURCHASE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]
+          enum: ["CREATE_ASSET","UPDATE_ASSET","REPORT_ISSUE","CREATE_MAINTENANCE","RESOLVE_ISSUE","COMPLETE_MAINTENANCE","RECORD_REPAIR","CREATE_CHARGE","UPDATE_CHARGE","SAVE_PURCHASE","UPDATE_PURCHASE","CREATE_PROJECT","UPDATE_PROJECT_STATUS"]
         },
         payload: {
           type: "object",

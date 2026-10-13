@@ -12,8 +12,8 @@ const INSTRUCTIONS = `You are Homely, the operating memory for one physical home
 Rules:
 - Homely's structured state and tool results are the source of truth. Never invent facts about this home.
 - For questions about this property, retrieve the relevant state/history before answering.
-- Use analyze_document only when the user asks to interpret a specific stored image/audio/video, not on casual listing.
-- Transcription is not full visual video understanding. Distinguish model observations from authoritative records.
+- Use analyze_document when the user asks to read or interpret a specific stored text, PDF, DOCX, image, audio or video file, not on casual listing.
+- Video transcription describes audio; sampled-frame analysis describes only the sampled images. Full-video understanding is not supported. Visual analysis can be initiated from the file viewer. Distinguish model observations from authoritative records.
 - Prefer recorded history, repair records, purchase context and document metadata over generic home-maintenance advice.
 - Deterministic health states come from Homely. Do not override them.
 - You may read state and create inert proposals with preview_action.
@@ -75,7 +75,10 @@ export class GroqAgentProvider implements AgentProvider {
       ...(agentToolDefinitions as OpenAI.Responses.Tool[]),
       ...researchToolDefinitions(this.research)
     ];
-    const prior = request.previousResponseId
+    const homeId=activeHomeId();
+    const stored=request.previousResponseId&&homeId&&request.userId
+      ?this.db.prepare("SELECT input_json FROM agent_contexts WHERE response_id=? AND home_id=? AND user_id=?").get(request.previousResponseId,homeId,request.userId):null;
+    const prior = stored ? JSON.parse(String(stored.input_json)) as unknown[] : request.previousResponseId && !homeId
       ? (this.conversationHistories.get(request.previousResponseId)?.homeId===activeHomeId()
           ? this.conversationHistories.get(request.previousResponseId)?.messages : null) ?? []
       : [];
@@ -150,8 +153,23 @@ export class GroqAgentProvider implements AgentProvider {
       (proposals.length ? "I found a grounded next action and prepared it for your approval." : "I could not produce a grounded response.");
 
     if (response.id) {
-      const history = [...groqInput, ...response.output].slice(-80);
-      this.conversationHistories.set(response.id, {homeId:activeHomeId(),messages:history});
+      const all=[...groqInput,...response.output];
+      // Start at a user message so function calls and their results remain paired.
+      let start=Math.max(0,all.length-80);
+      while(start<all.length&&asRecord(all[start]).role!=="user")start++;
+      const history=homeId&&request.userId
+        ?[...prior,{role:"user",content:message},{role:"assistant",content:text}].slice(-40)
+        :all.slice(start);
+      if(homeId&&request.userId){
+        this.db.exec("BEGIN IMMEDIATE;");
+        try{
+          this.db.prepare("INSERT OR REPLACE INTO agent_contexts(response_id,home_id,user_id,input_json,created_at) VALUES(?,?,?,?,?)")
+            .run(response.id,homeId,request.userId,JSON.stringify(history),new Date().toISOString());
+          this.db.prepare("DELETE FROM agent_contexts WHERE home_id=? AND user_id=? AND response_id NOT IN (SELECT response_id FROM agent_contexts WHERE home_id=? AND user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 10)")
+            .run(homeId,request.userId,homeId,request.userId);
+          this.db.exec("COMMIT;");
+        }catch(error){this.db.exec("ROLLBACK;");throw error}
+      }else this.conversationHistories.set(response.id, {homeId:activeHomeId(),messages:history});
       while (this.conversationHistories.size > 32) {
         const oldest = this.conversationHistories.keys().next().value;
         if (!oldest) break;

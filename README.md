@@ -42,7 +42,11 @@ Charges, saved purchases and history open from Home. Issues and repairs open the
 
 One Node/TypeScript server serves the existing HTML/CSS/JavaScript frontend and the household API. Groq is enabled when its key is present and uses the fixed `openai/gpt-oss-120b` model. The `openai` package is the compatible transport to Groq. Exa provides search and page content; local-service searches require a location supplied by the user.
 
-Voice input uses the browser and needs no service key. Stop listening ends capture; dictation does not submit automatically.
+Voice input uses the browser and needs no service key. Stop listening ends capture; dictation does not submit automatically. Personal chat history is stored in Turso per user and home (latest 100 turns), with a Clear chat action. Reasoning context retains the latest 20 turns and survives service restarts; clearing chat does not delete household records or committed audit history.
+
+High/critical unresolved issues and maintenance overdue or due within seven days produce in-app alerts on startup, after changes, and every minute while the app is visible. Acknowledgement belongs to the individual user and does not resolve the underlying record. A new due date or changed issue generates a fresh alert. Desktop notifications require an explicit user opt-in and operate while the app is running; background push when the app is closed is not implemented.
+
+Charges can be edited or deactivated, and purchases can be edited, shortlisted, marked purchased or dismissed. Updates use the same preview/approval/audit/undo boundary as other reversible records. An update refuses to commit if the record changed after its preview.
 
 There is **no Google Drive integration**. Google is used only for authentication (scopes: `openid email profile`). **Self-registration is enabled**: every new Google identity receives its own private home, initialized with empty household systems. Turso stores hashed server-side sessions and membership records; the backend restricts API reads, mutations, audit history, files, staged uploads and agent tools to the authenticated home. Existing demo/home data can be claimed only by its existing owner or the email explicitly configured with optional `GOOGLE_ALLOWED_EMAIL` if the home is unowned. No Google Drive scope or refresh tokens are used.
 
@@ -54,7 +58,7 @@ There are no external MCP, Firecrawl or Google Drive integrations to configure. 
 - The browser sends ordered 1 MB chunks; the server persists them in the database, checks declared length, and only permits linking after completion and explicit transaction approval. Neither Render's local filesystem nor another storage provider is required.
 - Browser media playback uses HTTP byte ranges, allowing audio/video seeking without downloading the entire file. Turso's actual per-account quotas and remote sync performance still apply; large-video behavior requires a live Turso test.
 - Previously visited tabs retain their DOM and data for two minutes, preserving filters and avoiding repeated loads. Changes through Homely invalidate the cache; use the header refresh action to pull external changes.
-- Optional **Analyze** on stored evidence uses Groq Qwen 3.8 27B for supported images up to 12 MB and Whisper Turbo for speech in MP3/WAV/WebM/MP4 up to 25 MB. Video visual frames and PDF/DOCX parsing are not implemented yet. The 50 MB storage limit is separate from AI processing limits.
+- Optional **Analyze** extracts PDF/DOCX text locally up to 12 MB (first 100 PDF pages, up to 20,000 characters). Extraction runs in a worker with a timeout and memory limit; DOCX archive expansion is bounded. Scanned pages need OCR, which is not implemented. Groq Qwen 3.8 27B interprets images up to 12 MB; Whisper Turbo transcribes speech up to 25 MB. Video analysis in the viewer sends three JPEG samples from near the start, middle and end to vision, with timestamps; it does not inspect every frame or include audio. The agent can use cached frame results or request audio transcription. The 50 MB storage limit is separate from processing limits.
 - Analysis is on demand, cached in Turso, and never changes the authoritative record. Text files can be read without using Groq.
 - **Security:** Google authentication, server-enforced per-home authorization, rate limits and storage quotas are in place. Before a public launch, configure off-database backup/recovery, account-abuse controls across instances, privacy/legal requirements, live provider testing, and a security review.
 
@@ -87,6 +91,15 @@ For local testing, also register `http://localhost:4173/auth/google/callback`. G
 - Every new Google account receives its own private home. Household settings let owners rename their home, manage members and create time-limited, single-use invitation links. Invitations are bound to the recipient's verified Google email. Copy and send the link directly: Homely does **not** send mail.
 - Invited **Members** can read and edit the shared home; **Viewers** can only read. Members can switch between their personal home and any home they joined. Memberships are checked server-side, including downloads and agent tools.
 - The owner can download a complete **TAR archive** from Household settings. It contains a `homely.json` manifest of records and audit history, plus original uploaded media in `files/`. This is a user-initiated export, not a scheduled offsite backup.
+
+Archive recovery is available through the operational commands below. Newly exported archives include SHA-256 checksums for uploaded media. Restore validates archive structure, household references and file quotas, then atomically creates a **new** home owned by an existing user. It remaps IDs and links, preserves historical records and original files, and never replaces the current home. Personal chat and account/session data are excluded from the shared household archive.
+
+```bash
+npm run backup -- HOME_ID /secure/path/backup.tar
+npm run restore -- /secure/path/backup.tar EXISTING_OWNER_USER_ID
+```
+
+These commands use the same Turso credentials as the server. The backup command refuses to overwrite an existing file and can be used by an external scheduler with a unique output filename. An offsite destination and automatic scheduling have not been provisioned; Render's temporary filesystem is not an offsite backup.
 - Account deletion is available with an explicit `DELETE MY ACCOUNT` confirmation and a Google sign-in within the last 15 minutes. Users who own a home must first remove other members to avoid erasing someone else's household. This irreversibly deletes the owner's home data and uploaded files.
 
 ## Operational controls

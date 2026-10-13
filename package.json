@@ -12,6 +12,8 @@
     "start": "node --env-file-if-exists=.env dist/src/server.js",
     "db:migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate.ts",
     "db:seed": "node --env-file-if-exists=.env --import tsx scripts/seed.ts",
+    "backup": "node --env-file-if-exists=.env --import tsx scripts/backup.ts",
+    "restore": "node --env-file-if-exists=.env --import tsx scripts/restore.ts",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "devDependencies": {
@@ -22,6 +24,8 @@
   "dependencies": {
     "exa-js": "^2.25.0",
     "libsql": "^0.5.29",
-    "openai": "7.23.0"
+    "mammoth": "1.13.0",
+    "openai": "7.23.0",
+    "pdfjs-dist": "6.4.299"
   }
 }

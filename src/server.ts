@@ -26,6 +26,8 @@ import { enterHome } from "./security/homeScope.js";
 import { RequestLimiter } from "./security/traffic.js";
 import { streamHomeArchive } from "./domain/exportHome.js";
 import { deleteAccount } from "./domain/deleteAccount.js";
+import { listAlerts, acknowledgeAlert } from "./domain/alerts.js";
+import { chatHistory, clearChat, saveChatTurn } from "./domain/chat.js";
 import { acceptInvite, inviteMember, listHouseholds, listInvitations, listMembers, removeMember, renameHome, revokeInvite } from "./domain/households.js";
 
 function securityHeaders(res: http.ServerResponse): void {
@@ -201,7 +203,7 @@ export async function startServer(
           else if(url.pathname.includes("/chunks/"))limits.enforce("chunks:"+key,240,60_000);
           else limits.enforce("write:"+key,90,60_000);
         }
-        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept"||url.pathname==="/api/account/delete";
+        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept"||url.pathname==="/api/account/delete"||url.pathname==="/api/alerts/acknowledge"||url.pathname==="/api/agent/history";
         if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET") && !selfServe)
           throw new DomainError("Your household membership is read-only.",403);
       }
@@ -280,6 +282,10 @@ export async function startServer(
       }
 
       if (req.method === "GET" && url.pathname === "/api/overview") return sendJson(res, 200, getOverview(db));
+      if(req.method==="GET"&&url.pathname==="/api/alerts")return sendJson(res,200,{alerts:listAlerts(db,auth.requireUser(req))},{"cache-control":"no-store"});
+      if(req.method==="POST"&&url.pathname==="/api/alerts/acknowledge")return sendJson(res,200,acknowledgeAlert(db,auth.requireUser(req),(await readJson(req)).key));
+      if(req.method==="GET"&&url.pathname==="/api/agent/history")return sendJson(res,200,chatHistory(db,auth.requireUser(req)),{"cache-control":"no-store"});
+      if(req.method==="DELETE"&&url.pathname==="/api/agent/history")return sendJson(res,200,clearChat(db,auth.requireUser(req)));
       if (req.method === "GET" && url.pathname === "/api/systems") return sendJson(res, 200, listSystems(db));
       if (req.method === "GET" && url.pathname === "/api/assets") return sendJson(res, 200, listAssets(db));
       if (req.method === "GET" && url.pathname.startsWith("/api/assets/")) {
@@ -297,7 +303,11 @@ export async function startServer(
       if(req.method==="POST" && analysisPath.length===5 && analysisPath[1]==="api" &&
         analysisPath[2]==="documents" && analysisPath[4]==="analyze" &&
         /^[a-zA-Z0-9-]+$/.test(analysisPath[3]??"")){
-        try { return sendJson(res,200,await analyzeDocument(db,analysisPath[3]!)); }
+        try {
+          const body=await readJson(req);
+          if(body.visualFrames!==undefined&&!Array.isArray(body.visualFrames))throw new DomainError("Invalid video frames.");
+          return sendJson(res,200,await analyzeDocument(db,analysisPath[3]!,undefined,body.visualFrames as Array<{image:string;timeSeconds:number}>|undefined));
+        }
         catch(error){
           if(error instanceof DomainError) throw error;
           console.error("Multimedia processing unavailable:",error);
@@ -334,10 +344,12 @@ export async function startServer(
         try {
           const response = await agentRuntime.provider.respond({
             message,
+            userId:auth.requireUser(req).id,
             previousResponseId: body.previousResponseId === null || body.previousResponseId === undefined
               ? null
               : String(body.previousResponseId)
           });
+          saveChatTurn(db,auth.requireUser(req),message,response);
           return sendJson(res, 200, response);
         } catch (error) {
           console.error("Homely agent provider failed:", error);

@@ -20,6 +20,8 @@ db.prepare("INSERT INTO systems(id,home_id,name,category,description,position,cr
   .run("sys-ci-appliances","home-ci-empty","Appliances","APPLIANCES",1,now,now);
 const demoUser={id:"ci-user",email:"test@example.invalid",name:"CI",homeId:"home-hawthorn",role:"OWNER" as const};
 const freshUser={id:"ci-fresh",email:"fresh@example.invalid",name:"Fresh",homeId:"home-ci-empty",role:"OWNER" as const};
+const {saveChatTurn}=await import("../src/domain/chat.js");
+saveChatTurn(db,demoUser,"Seeded chat question",{text:"Saved household chat",responseId:null,proposals:[],toolsUsed:[]});
 function userFor(req:{headers:{cookie?:string}}){return String(req.headers.cookie??"").includes("homely_test_view=fresh")?freshUser:demoUser}
 
 await startServer(db,{

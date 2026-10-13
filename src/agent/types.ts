@@ -1,6 +1,7 @@
 export interface AgentRequest {
   message: string;
   previousResponseId?: string | null;
+  userId?: string;
 }
 
 export interface AgentProposal {

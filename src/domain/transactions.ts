@@ -13,7 +13,9 @@ export type ActionType =
   | "ATTACH_DOCUMENT"
   | "RECORD_REPAIR"
   | "CREATE_CHARGE"
+  | "UPDATE_CHARGE"
   | "SAVE_PURCHASE"
+  | "UPDATE_PURCHASE"
   | "CREATE_PROJECT"
   | "UPDATE_PROJECT_STATUS";
 
@@ -325,7 +327,11 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
     };
   }
 
-  if (actionType === "CREATE_CHARGE") {
+  if (actionType === "CREATE_CHARGE"||actionType === "UPDATE_CHARGE") {
+    const chargeId=actionType==="UPDATE_CHARGE"?requireText(raw.chargeId,"Charge",120):null;
+    const existing=chargeId?getCharge(db,chargeId):null;
+    const active=raw.active===undefined?(existing?Number(existing.active):1):Number(raw.active);
+    if(![0,1].includes(active))throw new DomainError("Invalid charge activity.");
     const amountCents = Number(raw.amountCents);
     if (!Number.isInteger(amountCents) || amountCents < 0 || amountCents > 100_000_000_000) {
       throw new DomainError("Charge amount must be a non-negative whole number of cents.");
@@ -342,6 +348,7 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
       }
     }
     return {
+      ...(chargeId?{chargeId,expectedState:raw.expectedState??existing}:{}),active,
       name: requireText(raw.name, "Charge name", 180),
       category: requireText(raw.category, "Charge category", 80).toUpperCase(),
       amountCents,
@@ -352,7 +359,9 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
     };
   }
 
-  if (actionType === "SAVE_PURCHASE") {
+  if (actionType === "SAVE_PURCHASE"||actionType === "UPDATE_PURCHASE") {
+    const purchaseCandidateId=actionType==="UPDATE_PURCHASE"?requireText(raw.purchaseCandidateId,"Purchase",120):null;
+    const existing=purchaseCandidateId?getPurchaseCandidate(db,purchaseCandidateId):null;
     const assetId = raw.assetId ? requireText(raw.assetId, "Asset", 120) : null;
     if (assetId) getAsset(db, assetId);
 
@@ -366,11 +375,12 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
     };
 
     const status = raw.status ? requireText(raw.status, "Purchase status", 20).toUpperCase() : "SAVED";
-    if (!["SAVED","SHORTLISTED"].includes(status)) {
+    if (!(existing?["SAVED","SHORTLISTED","PURCHASED","DISMISSED"]:["SAVED","SHORTLISTED"]).includes(status)) {
       throw new DomainError("New purchase candidates must be SAVED or SHORTLISTED.");
     }
 
     return {
+      ...(purchaseCandidateId?{purchaseCandidateId,expectedState:raw.expectedState??existing}:{}),
       assetId,
       title: requireText(raw.title, "Purchase title", 220),
       category: requireText(raw.category, "Purchase category", 80).toUpperCase(),
@@ -443,6 +453,11 @@ function addDays(date: string, days: number): string {
 }
 
 function previewFor(db: HomelyDatabase, actionType: ActionType, payload: JsonRecord) {
+  if(actionType==="UPDATE_CHARGE"||actionType==="UPDATE_PURCHASE")return {
+    title:actionType==="UPDATE_CHARGE"?`Update charge: ${payload.name}`:`Update purchase: ${payload.title}`,
+    summary:actionType==="UPDATE_CHARGE"?`${payload.billingCycle} · ${Number(payload.active)?"Active":"Inactive"}`:String(payload.status),
+    effects:["Update the existing record","Preserve previous values for undo","Add a timeline event"]
+  };
   if (actionType === "UPDATE_ASSET") {
     return {
       title: `Update asset: ${payload.name}`,
@@ -523,7 +538,7 @@ function previewFor(db: HomelyDatabase, actionType: ActionType, payload: JsonRec
   if (actionType === "CREATE_CHARGE") {
     return {
       title: `Add recurring charge: ${payload.name}`,
-      summary: `${payload.billingCycle} household charge`,
+      summary: `${payload.billingCycle} · ${Number(payload.active)?"Active":"Inactive"}`,
       effects: ["Create a household charge record", "Expose it to Homely memory", "Add a house timeline event"]
     };
   }
@@ -700,6 +715,19 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
     // Recheck referenced assets, systems, evidence and other associations at approval time.
     // A valid preview never grants authority over another home after ownership changes.
     if (activeHomeId()) validatePayload(db,actionType,payload);
+    if(actionType==="UPDATE_CHARGE"||actionType==="UPDATE_PURCHASE"){
+      const charge=actionType==="UPDATE_CHARGE",table=charge?"charges":"purchase_candidates",entityType=charge?"charge":"purchase_candidate";
+      const id=String(charge?payload.chargeId:payload.purchaseCandidateId);
+      const before=charge?getCharge(db,id):getPurchaseCandidate(db,id);
+      if(!sameRow(before,payload.expectedState as JsonRecord))throw new DomainError("Record changed. Refresh and preview again.",409);
+      if(charge)db.prepare("UPDATE charges SET name=?,category=?,amount_cents=?,billing_cycle=?,due_day=?,provider=?,notes=?,active=?,updated_at=? WHERE id=?")
+        .run(String(payload.name),String(payload.category),Number(payload.amountCents),String(payload.billingCycle),payload.dueDay as number|null,payload.provider as string|null,payload.notes as string|null,Number(payload.active),createdAt,id);
+      else db.prepare("UPDATE purchase_candidates SET asset_id=?,title=?,category=?,status=?,budget_cents=?,expected_cost_cents=?,source_url=?,source_name=?,rationale=?,updated_at=? WHERE id=?")
+        .run(payload.assetId as string|null,String(payload.title),String(payload.category),String(payload.status),payload.budgetCents as number|null,payload.expectedCostCents as number|null,payload.sourceUrl as string|null,payload.sourceName as string|null,payload.rationale as string|null,createdAt,id);
+      const after=db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(id);
+      recordChange(db,transactionId,entityType,id,"UPDATE",before,after,createdAt);
+      createTimelineEvent(db,transactionId,{eventType:charge?"CHARGE_UPDATED":"PURCHASE_UPDATED",title:`Updated: ${charge?payload.name:payload.title}`,summary:charge?String(payload.billingCycle):String(payload.status),occurredAt:createdAt,...(charge?{chargeId:id}:{purchaseCandidateId:id})},createdAt);
+    }
     if (actionType === "UPDATE_ASSET") {
       const assetId = String(payload.assetId);
       const before = db.prepare("SELECT * FROM assets WHERE id = ?").get(assetId) as JsonRecord | undefined;
@@ -827,7 +855,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
       db.prepare(`
         INSERT INTO charges(
           id,home_id,name,category,amount_cents,billing_cycle,due_day,provider,notes,active,created_at,updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(
         chargeId,
         String(home.id),
@@ -838,6 +866,7 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
         payload.dueDay === null || payload.dueDay === undefined ? null : Number(payload.dueDay),
         payload.provider === null || payload.provider === undefined ? null : String(payload.provider),
         payload.notes === null || payload.notes === undefined ? null : String(payload.notes),
+        Number(payload.active),
         createdAt,
         createdAt
       );
@@ -1151,6 +1180,15 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
 
   if (operation === "UPDATE") {
     if (!before || !after) throw new DomainError("Transaction history is incomplete.", 409);
+    if(entityType==="charge"||entityType==="purchase_candidate"){
+      const table=entityType==="charge"?"charges":"purchase_candidates";
+      const current=db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(entityId);
+      if(!sameRow(current,after))throw new DomainError("Record changed after this update.",409);
+      const columns=entityType==="charge"?["name","category","amount_cents","billing_cycle","due_day","provider","notes","active","updated_at"]:["asset_id","title","category","status","budget_cents","expected_cost_cents","source_url","source_name","rationale","updated_at"];
+      db.prepare(`UPDATE ${table} SET ${columns.map(c=>c+"=?").join(",")} WHERE id=?`).run(...columns.map(c=>before[c] as string|number|null),entityId);
+      recordChange(db,undoId,entityType,entityId,"UPDATE",after,db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(entityId),changedAt);
+      return;
+    }
     if (entityType === "asset") {
       const current = db.prepare("SELECT * FROM assets WHERE id = ?").get(entityId);
       if (!sameRow(current, after)) throw new DomainError("Asset has changed since this update.", 409);
