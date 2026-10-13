@@ -78,6 +78,12 @@ try {
   await page.locator("#record-search").fill("");
 
   await go("files");
+  await page.locator("#upload-file").click();
+  await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
+  await page.locator("#modal-close").click();
+  await page.locator("#save-link").click();
+  await page.locator('#link-evidence-form input[name="sourceUrl"]').waitFor();
+  await page.locator("#modal-close").click();
   await page.locator(".file-card").first().click();
   await page.locator("#inspect-open").waitFor();
   await page.locator("#file-search").fill("no-such-file-xyz");
@@ -133,8 +139,8 @@ try {
   fresh.on("pageerror", error => errors.push(String(error)));
   await fresh.context().addCookies([{ name: "homely_test_view", value: "fresh", url: base }]);
   await fresh.goto(base);
-  await fresh.getByRole("heading", { name: "Start with what you own." }).waitFor();
-  await fresh.getByRole("button", { name: "Register first asset" }).click();
+  await fresh.getByRole("heading", { name: "No assets" }).waitFor();
+  await fresh.getByRole("button", { name: "Register asset" }).click();
   await fresh.locator("#asset-form").waitFor(); await fresh.locator("#modal-close").click();
   for (const view of ["issues", "repairs", "appliances", "files"]) {
     await fresh.locator('[data-view="' + view + '"]').click();

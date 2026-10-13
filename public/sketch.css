@@ -290,6 +290,7 @@ th{font-size:10px;color:#a9a9a9}
 td{font-size:12px}
 /* Keep dialogs and authentication fully functional but visually consistent. */
 .auth-card,.modal,.viewer{border:1px solid #444;background:#141414;border-radius:6px}
+.auth-card p:empty{display:none}
 .modal,.viewer{box-shadow:0 25px 100px #0009}
 .viewer{width:min(94vw,1300px);max-height:92dvh}
 .viewer-head{border-bottom:1px solid #303030}

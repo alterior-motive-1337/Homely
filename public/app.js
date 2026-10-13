@@ -27,23 +27,22 @@ async function api(path,options){
   return data
 }
 function notify(message){toast.textContent=message;toast.classList.add("show");setTimeout(function(){toast.classList.remove("show")},2400)}
-function loading(label){content.innerHTML='<div class="loading">'+esc(label||"Loading home memory…")+"</div>"}
+function loading(label){content.innerHTML='<div class="loading">'+esc(label||"Loading…")+"</div>"}
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
 function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(v||"UNKNOWN")+"</span>"}
 function row(title,meta,right,note){return '<div class="row"><div><div class="row-title">'+esc(title)+'</div><div class="row-meta">'+esc(meta||"")+'</div>'+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
 
-function emptyState(title,description,buttons,compact=false){
+function emptyState(title,buttons,compact=false){
   return '<section class="empty-state'+(compact?' compact':'')+'"><div class="empty-symbol" aria-hidden="true">▤</div><h2>'+esc(title)+'</h2>'
-    +(description?'<p>'+esc(description)+'</p>':'')
     +(buttons?'<div class="hero-actions">'+buttons+'</div>':'')+'</section>';
 }
-function ledger(title,count,action,body,emptyMessage,columns){
+function ledger(title,count,action,body,columns){
   return '<section class="ledger" aria-label="'+esc(title)+'">'
    +'<header class="ledger-toolbar"><div class="ledger-identity"><span class="ledger-overline">'+esc(title)+'</span><span class="ledger-count">'+count+' '+(count===1?'entry':'entries')+'</span></div>'
    +'<div class="ledger-controls">'+(action||'')+'</div></header>'
    +'<div class="ledger-columns"><span>'+esc(columns||'Record')+'</span><span>Details</span><span>Related</span></div>'
-   +'<div class="ledger-rows">'+(body||'<div class="ledger-zero"><span class="ledger-zero-mark" aria-hidden="true">—</span><div><strong>No records yet</strong><p>'+esc(emptyMessage||'Nothing has been recorded.')+'</p></div></div>')+'</div></section>';
+   +'<div class="ledger-rows">'+(body||'<div class="ledger-zero"><span class="ledger-zero-mark" aria-hidden="true">—</span><strong>No records</strong></div>')+'</div></section>';
 }
 function linkedFilesButton(label,id){
   return '<button type="button" class="ledger-file-link" data-'+label+'="'+esc(id)+'" title="Open record and related files" aria-label="Open record and related files">▤ <span>Files</span></button>';
@@ -58,7 +57,7 @@ function bindRegisterSearch(items,textFor,isOpen){
   const search=$("#record-search"),entries=$$(".ledger-entry",content);
   let status="all";
   const empty=document.createElement("div");empty.className="search-empty";empty.hidden=true;
-  empty.innerHTML='<strong>No matching records</strong><span>Try another search or filter.</span>';
+  empty.innerHTML='<strong>No matching records</strong>';
   $(".ledger-rows",content).appendChild(empty);
   function update(){
     const query=search.value.trim().toLowerCase();let count=0;
@@ -77,7 +76,7 @@ function setRuntime(x){
   agentState.textContent=ai&&ai.available?"Ready":"Chat unavailable";
   chatInput.disabled=!(ai&&ai.available);chatForm.querySelector('button[type="submit"]').disabled=!(ai&&ai.available);
   voiceButton.disabled=!(ai&&ai.available);
-  chatInput.placeholder=ai&&ai.available?"Ask Homely…":"Chat is not connected yet";
+  chatInput.placeholder=ai&&ai.available?"Ask Homely…":"Chat unavailable";
 
 }
 async function refreshStatus(){try{setRuntime(await api("/api/integrations/status"))}catch(_){runtime.classList.add("bad");runtimeText.textContent="Status unavailable"}}
@@ -96,18 +95,18 @@ async function previewAction(actionType,payload,reason,requestText){
   const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
   const p=result.preview,t=result.transaction;
   openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div class="preview"><strong>'+esc(p.summary)+'</strong><ul>'+p.effects.map(function(x){return "<li>"+esc(x)+"</li>"}).join("")+'</ul></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
-  $("#reject-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected. No state changed.")};
-  $("#commit-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});closeModal();notify(actionType==="RECORD_REPAIR"?"Repair permanently recorded.":"Home memory updated.");await selectView(state.view)}
+  $("#reject-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected.")};
+  $("#commit-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});closeModal();notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");await selectView(state.view)}
 }
 
 async function openIssueForm(){
   const options=await assetOptions("");
-  openModal('<p class="eyebrow">New issue</p><h2>Report a problem</h2><form class="form" id="issue-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>Title</label><input name="title" maxlength="160" required></div><div class="field"><label>Severity</label><select name="severity"><option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div><div class="field"><label>Detected</label><input type="date" name="detectedAt" value="'+today()+'" required></div><div class="field full"><label>Description</label><textarea name="description"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>Report a problem</h2><form class="form" id="issue-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>Title</label><input name="title" maxlength="160" required></div><div class="field"><label>Severity</label><select name="severity"><option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div><div class="field"><label>Detected</label><input type="date" name="detectedAt" value="'+today()+'" required></div><div class="field full"><label>Description</label><textarea name="description"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#issue-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget);await previewAction("REPORT_ISSUE",{assetId:d.get("assetId"),title:d.get("title"),severity:d.get("severity"),description:d.get("description"),detectedAt:d.get("detectedAt")},"Homeowner reported an issue through Homely.")}
 }
 function openResolveForm(issue){
-  openModal('<p class="eyebrow">Resolve issue</p><h2>'+esc(issue.title)+'</h2><form class="form" id="resolve-form"><div class="form-grid"><div class="field"><label>Resolved</label><input type="date" name="resolvedAt" value="'+today()+'" required></div><div class="field full"><label>Resolution</label><textarea name="resolution" required placeholder="What fixed it?"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<p class="eyebrow">Resolve issue</p><h2>'+esc(issue.title)+'</h2><form class="form" id="resolve-form"><div class="form-grid"><div class="field"><label>Resolved</label><input type="date" name="resolvedAt" value="'+today()+'" required></div><div class="field full"><label>Resolution</label><textarea name="resolution" required></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#resolve-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget);await previewAction("RESOLVE_ISSUE",{issueId:issue.id,resolvedAt:d.get("resolvedAt"),resolution:d.get("resolution")},"Homeowner marked the issue resolved.")}
 }
@@ -115,15 +114,15 @@ async function openRepairForm(prefill){
   prefill=prefill||{};
   const options=await assetOptions(prefill.asset_id||"");
   const issues=await api("/api/issues");
-  const issueOpts=['<option value="">No linked issue</option>'].concat(issues.map(function(i){return '<option value="'+esc(i.id)+'" '+(i.id===prefill.id?"selected":"")+">"+esc(i.title)+" · "+esc(i.asset_name)+"</option>"})).join("");
+  const issueOpts=['<option value="">None</option>'].concat(issues.map(function(i){return '<option value="'+esc(i.id)+'" '+(i.id===prefill.id?"selected":"")+">"+esc(i.title)+" · "+esc(i.asset_name)+"</option>"})).join("");
   const title=prefill.title?"Repair: "+prefill.title:"";
-  openModal('<p class="eyebrow">Permanent repair history</p><h2>Record a repair</h2><form class="form" id="repair-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field full"><label>Linked issue</label><select name="issueId">'+issueOpts+'</select></div><div class="field full"><label>Repair title</label><input name="title" maxlength="180" required value="'+esc(title)+'"></div><div class="field"><label>Date</label><input type="date" name="repairDate" value="'+today()+'" required></div><div class="field"><label>Cost (ZAR)</label><input type="number" name="cost" min="0" step=".01" placeholder="0.00"></div><div class="field full"><label>Contractor / person</label><input name="contractor" maxlength="240"></div><div class="field full"><label>Work performed</label><textarea name="description"></textarea></div><div class="field full"><label>Outcome</label><textarea name="outcome" placeholder="What changed after the repair?"></textarea></div></div><div class="row-note">Repair records are permanent. Corrections are added as new history instead of deleting the original record.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>Record a repair</h2><form class="form" id="repair-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field full"><label>Linked issue</label><select name="issueId">'+issueOpts+'</select></div><div class="field full"><label>Repair title</label><input name="title" maxlength="180" required value="'+esc(title)+'"></div><div class="field"><label>Date</label><input type="date" name="repairDate" value="'+today()+'" required></div><div class="field"><label>Cost (ZAR)</label><input type="number" name="cost" min="0" step=".01" placeholder="0.00"></div><div class="field full"><label>Contractor / person</label><input name="contractor" maxlength="240"></div><div class="field full"><label>Work performed</label><textarea name="description"></textarea></div><div class="field full"><label>Outcome</label><textarea name="outcome"></textarea></div></div><div class="row-note">Permanent record.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#repair-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("cost")||"").trim();await previewAction("RECORD_REPAIR",{assetId:d.get("assetId"),issueId:d.get("issueId")||null,title:d.get("title"),repairDate:d.get("repairDate"),costCents:cost?Math.round(Number(cost)*100):null,contractor:d.get("contractor"),description:d.get("description"),outcome:d.get("outcome")},"Homeowner recorded completed repair work.")}
 }
 
 function openChargeForm(){
-  openModal('<p class="eyebrow">Household costs</p><h2>Add recurring charge</h2><form class="form" id="charge-form"><div class="form-grid"><div class="field full"><label>Name</label><input name="name" maxlength="180" required placeholder="Home internet"></div><div class="field"><label>Category</label><input name="category" maxlength="80" required placeholder="UTILITIES"></div><div class="field"><label>Amount (ZAR)</label><input type="number" name="amount" min="0" step=".01" required></div><div class="field"><label>Billing cycle</label><select name="billingCycle"><option selected>MONTHLY</option><option>QUARTERLY</option><option>ANNUAL</option><option>OTHER</option></select></div><div class="field"><label>Due day</label><input type="number" name="dueDay" min="1" max="31" placeholder="15"></div><div class="field full"><label>Provider</label><input name="provider" maxlength="240"></div><div class="field full"><label>Notes</label><textarea name="notes"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>Add recurring charge</h2><form class="form" id="charge-form"><div class="form-grid"><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>Amount (ZAR)</label><input type="number" name="amount" min="0" step=".01" required></div><div class="field"><label>Billing cycle</label><select name="billingCycle"><option selected>MONTHLY</option><option>QUARTERLY</option><option>ANNUAL</option><option>OTHER</option></select></div><div class="field"><label>Due day</label><input type="number" name="dueDay" min="1" max="31"></div><div class="field full"><label>Provider</label><input name="provider" maxlength="240"></div><div class="field full"><label>Notes</label><textarea name="notes"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#charge-form").onsubmit=async function(e){
     e.preventDefault();const d=new FormData(e.currentTarget),amount=String(d.get("amount")||"").trim(),due=String(d.get("dueDay")||"").trim();
@@ -133,8 +132,8 @@ function openChargeForm(){
 
 async function openPurchaseForm(){
   const options=await assetOptions("");
-  const optionalAssets='<option value="">Not tied to an existing asset</option>'+options;
-  openModal('<p class="eyebrow">Purchase memory</p><h2>Save potential purchase</h2><form class="form" id="purchase-form"><div class="form-grid"><div class="field full"><label>Title</label><input name="title" maxlength="220" required placeholder="Replacement washing machine"></div><div class="field"><label>Category</label><input name="category" maxlength="80" required placeholder="APPLIANCE"></div><div class="field"><label>Status</label><select name="status"><option selected>SAVED</option><option>SHORTLISTED</option></select></div><div class="field full"><label>Related asset</label><select name="assetId">'+optionalAssets+'</select></div><div class="field"><label>Budget (ZAR)</label><input type="number" name="budget" min="0" step=".01"></div><div class="field"><label>Expected cost (ZAR)</label><input type="number" name="expected" min="0" step=".01"></div><div class="field full"><label>Source name</label><input name="sourceName" maxlength="240" placeholder="Store or website"></div><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…"></div><div class="field full"><label>Why save it?</label><textarea name="rationale"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  const optionalAssets='<option value="">None</option>'+options;
+  openModal('<h2>Save potential purchase</h2><form class="form" id="purchase-form"><div class="form-grid"><div class="field full"><label>Title</label><input name="title" maxlength="220" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>Status</label><select name="status"><option selected>SAVED</option><option>SHORTLISTED</option></select></div><div class="field full"><label>Related asset</label><select name="assetId">'+optionalAssets+'</select></div><div class="field"><label>Budget (ZAR)</label><input type="number" name="budget" min="0" step=".01"></div><div class="field"><label>Expected cost (ZAR)</label><input type="number" name="expected" min="0" step=".01"></div><div class="field full"><label>Source name</label><input name="sourceName" maxlength="240"></div><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…"></div><div class="field full"><label>Reason</label><textarea name="rationale"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#purchase-form").onsubmit=async function(e){
     e.preventDefault();const d=new FormData(e.currentTarget),budget=String(d.get("budget")||"").trim(),expected=String(d.get("expected")||"").trim();
@@ -155,9 +154,8 @@ async function showHome(){
     pageTitle.textContent=homeName;
     document.title=homeName+" · Homely";
     if(!assets.length&&!repairs.length&&!charges.length&&!purchases.length&&!d.recent.length){
-      content.innerHTML=emptyState("Start with what you own.",
-        "Add an appliance, fixture, or piece of furniture. Homely will keep its issues, repairs, documents, and history connected.",
-        '<button class="primary-button" id="home-first-asset">Register first asset</button><button class="button" id="home-first-file">Upload a file</button>');
+      content.innerHTML=emptyState("No assets",
+        '<button class="primary-button" id="home-first-asset">Register asset</button><button class="button" id="home-first-file">Upload file</button>');
       $("#home-first-asset").onclick=()=>openAssetForm();
       $("#home-first-file").onclick=()=>openUploadEvidenceForm();
       return;
@@ -169,7 +167,7 @@ async function showHome(){
       if(attention.length)html+='<section class="card"><div class="card-head"><h2>Needs attention</h2><button class="ghost-link" data-go="issues">All issues</button></div><div class="card-body rows">'+attention.slice(0,4).join("")+'</div></section>';
       if(d.upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+d.upcoming.slice(0,4).map(m=>row(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>')).join("")+'</div></section>';
       html+='</div>';
-    }else html+='<p class="quiet-status">No outstanding issues or upcoming maintenance.</p>';
+    }
     if(repairs.length||charges.length||purchases.length){
       html+='<div class="home-memory">';
       if(repairs.length)html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">All</button></div><div class="card-body rows">'+repairs.slice(0,3).map(r=>row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>')).join("")+'</div></section>';
@@ -191,16 +189,16 @@ async function showHome(){
 }
 
 async function showCharges(){
-  try{const items=await api("/api/charges");openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">+ Charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+'</span>',c.notes||"")}).join("")||'<div class="empty">No charges recorded.</div>')+'</div>');$("#add-charge").onclick=openChargeForm}catch(e){notify(e.message)}
+  try{const items=await api("/api/charges");openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">+ Charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+'</span>',c.notes||"")}).join("")||'<div class="empty">No charges.</div>')+'</div>');$("#add-charge").onclick=openChargeForm}catch(e){notify(e.message)}
 }
 async function showPurchases(){
-  try{const items=await api("/api/purchases");openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">+ Save</button></div><div class="rows">'+(items.map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>',p.rationale||"")}).join("")||'<div class="empty">No purchases saved.</div>')+'</div>');$("#add-purchase").onclick=function(){openPurchaseForm()}}catch(e){notify(e.message)}
+  try{const items=await api("/api/purchases");openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">+ Save</button></div><div class="rows">'+(items.map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=function(){openPurchaseForm()}}catch(e){notify(e.message)}
 }
 async function showHistory(){
   try{
     const results=await Promise.all([api("/api/timeline"),api("/api/transactions")]);
     const permanent=["REPORT_ISSUE","RESOLVE_ISSUE","RECORD_REPAIR"];
-    openModal('<h2>Home history</h2><div class="rows">'+results[0].map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div><div class="detail-section"><h3>Changes</h3><div class="rows">'+(results[1].map(function(t){return row(t.action_type.replaceAll("_"," "),fmtDate(t.created_at),badge(t.status)+(t.status==="COMMITTED"&&!permanent.includes(t.action_type)?'<button class="button" data-undo="'+esc(t.id)+'">Undo</button>':""),t.reason)}).join("")||'<div class="empty">No changes recorded.</div>')+'</div></div>');
+    openModal('<h2>Home history</h2><div class="rows">'+results[0].map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div><div class="detail-section"><h3>Changes</h3><div class="rows">'+(results[1].map(function(t){return row(t.action_type.replaceAll("_"," "),fmtDate(t.created_at),badge(t.status)+(t.status==="COMMITTED"&&!permanent.includes(t.action_type)?'<button class="button" data-undo="'+esc(t.id)+'">Undo</button>':""),t.reason)}).join("")||'<div class="empty">No changes.</div>')+'</div></div>');
     $$("[data-undo]",modalBody).forEach(function(b){b.onclick=async function(){b.disabled=true;try{await api("/api/transactions/"+encodeURIComponent(b.dataset.undo)+"/undo",{method:"POST"});closeModal();notify("Change undone.");await selectView(state.view)}catch(e){b.disabled=false;notify(e.message)}}});
   }catch(e){notify(e.message)}
 }
@@ -217,13 +215,13 @@ async function showIssues(){
        : '<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
     const body=items.map((item,index)=>{
       const active=!["RESOLVED","CLOSED"].includes(item.status);
-      return '<div class="ledger-entry"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+(item.description?' · '+esc(item.description):'')+'</small></span></button>'
+      return '<div class="ledger-entry"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
         +'<div class="ledger-details"><span>'+fmtDate(item.detected_at)+'</span>'+badge(item.status)+badge(item.severity)+'</div>'
         +'<div class="ledger-actions">'+linkedFilesButton("issue-files",item.id)
         +(active?'<button class="ledger-quiet-action" type="button" data-repair="'+esc(item.id)+'">Repair</button><button class="ledger-quiet-action" type="button" data-resolve="'+esc(item.id)+'">Resolve</button>':'')
         +'</div></div>';
     }).join("");
-    content.innerHTML=registerTools("issues",true)+ledger("Issues",items.length,action,body,assets.length?"Report an issue to create a dated record and keep its files together.":"Register the first household asset to begin logging issues.","Issue");
+    content.innerHTML=registerTools("issues",true)+ledger("Issues",items.length,action,body,"Issue");
     bindRegisterSearch(items,i=>[i.title,i.asset_name,i.description,i.status,i.severity].filter(Boolean).join(" "),i=>!["RESOLVED","CLOSED"].includes(i.status));
     const add=$("#new-issue");if(add)add.onclick=openIssueForm;
     const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
@@ -242,8 +240,8 @@ async function showRepairs(){
     if(revision!==state.viewRevision)return;
     state.assets=assets;
     const action=assets.length?'<button class="primary-button" id="new-repair" type="button">+ Record repair</button>':'<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
-    const body=items.map((r,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+(r.outcome||r.description?' · '+esc(r.outcome||r.description):'')+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
-    content.innerHTML=registerTools("repairs")+ledger("Repairs",items.length,action,body,assets.length?"Repairs and their costs will appear here.":"Register a household asset to begin recording repairs.","Repair");
+    const body=items.map((r,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
+    content.innerHTML=registerTools("repairs")+ledger("Repairs",items.length,action,body,"Repair");
     bindRegisterSearch(items,r=>[r.title,r.asset_name,r.contractor,r.description,r.outcome].filter(Boolean).join(" "));
     const add=$("#new-repair");if(add)add.onclick=()=>openRepairForm();
     const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
@@ -252,19 +250,19 @@ async function showRepairs(){
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
-function evidenceMarkup(docs){return '<div class="detail-section"><h3>Files</h3><div class="rows">'+(docs.map(function(d){return row(d.title,d.type+" · "+fmtDate(d.occurred_at||d.created_at),'<button class="button" data-evidence="'+esc(d.id)+'">Open</button>',d.evidence_reason||"")}).join("")||'<div class="empty">No evidence attached.</div>')+'</div></div>'}
+function evidenceMarkup(docs){return '<div class="detail-section"><h3>Files</h3><div class="rows">'+(docs.map(function(d){return row(d.title,d.type+" · "+fmtDate(d.occurred_at||d.created_at),'<button class="button" data-evidence="'+esc(d.id)+'">Open</button>',d.evidence_reason||"")}).join("")||'<div class="empty">No files.</div>')+'</div></div>'}
 function bindEvidence(docs){$$("[data-evidence]",modalBody).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.evidence}))}})}
 async function openIssue(issue){
   if(!issue)return;
   try{const results=await Promise.all([api("/api/documents"),api("/api/assets/"+encodeURIComponent(issue.asset_id))]),docs=results[0].filter(function(d){return d.issue_id===issue.id}),history=(results[1].history||[]).filter(function(e){return e.issue_id===issue.id});
-    openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issue.status)+badge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"No description recorded.")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-attach">Attach file</button><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
+    openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issue.status)+badge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"—")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-attach">Attach file</button><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
     bindEvidence(docs);$("#issue-attach").onclick=function(){openUploadEvidenceForm({assetId:issue.asset_id,issueId:issue.id})};$("#issue-asset").onclick=function(){openAsset(issue.asset_id)};if($("#issue-repair"))$("#issue-repair").onclick=function(){openRepairForm(issue)};if($("#issue-resolve"))$("#issue-resolve").onclick=function(){openResolveForm(issue)};
   }catch(e){notify(e.message)}
 }
 async function openRepair(repair){
   if(!repair)return;
   try{const docs=(await api("/api/documents")).filter(function(d){return d.repair_id===repair.id});
-    openModal('<p class="eyebrow">Repair · '+esc(repair.asset_name)+'</p><h2>'+esc(repair.title)+'</h2><div class="detail-grid">'+[["Date",fmtDate(repair.repair_date)],["Cost",money(repair.cost_cents)],["Contractor",repair.contractor||"—"]].map(function(pair){return '<div class="detail"><span>'+esc(pair[0])+'</span><strong>'+esc(pair[1])+'</strong></div>'}).join("")+'</div><div class="detail-section"><h3>Work performed</h3><p>'+esc(repair.description||"No description recorded.")+'</p></div><div class="detail-section"><h3>Outcome</h3><p>'+esc(repair.outcome||"No outcome recorded.")+'</p></div>'+(repair.issue_title?'<div class="row-meta">Issue: '+esc(repair.issue_title)+'</div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="repair-attach">Attach file</button><button class="button" id="repair-asset">View asset</button></div>');bindEvidence(docs);$("#repair-attach").onclick=function(){openUploadEvidenceForm({assetId:repair.asset_id,repairId:repair.id})};$("#repair-asset").onclick=function(){openAsset(repair.asset_id)};
+    openModal('<p class="eyebrow">Repair · '+esc(repair.asset_name)+'</p><h2>'+esc(repair.title)+'</h2><div class="detail-grid">'+[["Date",fmtDate(repair.repair_date)],["Cost",money(repair.cost_cents)],["Contractor",repair.contractor||"—"]].map(function(pair){return '<div class="detail"><span>'+esc(pair[0])+'</span><strong>'+esc(pair[1])+'</strong></div>'}).join("")+'</div><div class="detail-section"><h3>Work performed</h3><p>'+esc(repair.description||"—")+'</p></div><div class="detail-section"><h3>Outcome</h3><p>'+esc(repair.outcome||"—")+'</p></div>'+(repair.issue_title?'<div class="row-meta">Issue: '+esc(repair.issue_title)+'</div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="repair-attach">Attach file</button><button class="button" id="repair-asset">View asset</button></div>');bindEvidence(docs);$("#repair-attach").onclick=function(){openUploadEvidenceForm({assetId:repair.asset_id,repairId:repair.id})};$("#repair-asset").onclick=function(){openAsset(repair.asset_id)};
   }catch(e){notify(e.message)}
 }
 
@@ -273,7 +271,7 @@ async function openAssetForm(existing){
   const systems=await api("/api/systems");
   const options=systems.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'}).join("");
   if(!options){notify("No home systems available.");return}
-  openModal('<p class="eyebrow">Asset register</p><h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" placeholder="APPLIANCE / FURNITURE" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Condition</label><select name="condition"><option>UNKNOWN</option><option>NEW</option><option>GOOD</option><option>FAIR</option><option>POOR</option><option>FAILED</option></select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>Purchase price (ZAR)</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Condition</label><select name="condition"><option>UNKNOWN</option><option>NEW</option><option>GOOD</option><option>FAIR</option><option>POOR</option><option>FAILED</option></select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>Purchase price (ZAR)</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   if(existing){
     const form=$("#asset-form");
     const values={systemId:existing.system_id,name:existing.name,category:existing.category,
@@ -298,9 +296,8 @@ async function openAssetForm(existing){
 function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
-  const filtered=state.assets.length>0;
   const body=items.map((a,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+'<span>'+money(a.purchase_cost_cents)+'</span></div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">▤ <span>Files</span></button></div></div>').join("");
-  target.innerHTML=ledger("Appliances & furniture",items.length,'<button type="button" class="primary-button" id="new-asset">+ Register asset</button>',body,filtered?"No assets match your search.":"Your appliances, furniture and fixtures will appear here.","Asset");
+  target.innerHTML=ledger("Appliances & furniture",items.length,'<button type="button" class="primary-button" id="new-asset">+ Register asset</button>',body,"Asset");
   $("#new-asset").onclick=()=>openAssetForm();
   $$("[data-asset]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.asset));
   $$("[data-asset-file]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.assetFile));
@@ -380,8 +377,8 @@ async function openLinkEvidenceForm(){
   const results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
   const options=results[0],issues=results[1],repairs=results[2],charges=results[3],purchases=results[4];
   const optional=function(label,items,display){return '<option value="">'+esc(label)+'</option>'+items.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(display(x))+'</option>'}).join("")};
-  const assetOptionsHtml='<option value="">No direct asset link</option>'+options;
-  openModal('<p class="eyebrow">Link evidence</p><h2>Save a source link</h2><form class="form" id="link-evidence-form"><div class="form-grid"><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…" required></div><div class="field full"><label>Title</label><input name="title" maxlength="240" required placeholder="Product page, manual, receipt or reference"></div><div class="field"><label>Type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>VIDEO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Evidence date</label><input type="date" name="occurredAt" value="'+today()+'" required></div><div class="field"><label>Status</label><select name="evidenceStatus"><option selected>ACTIVE</option><option>REFERENCE</option><option>ARCHIVED</option></select></div><div class="field full"><label>Asset</label><select name="assetId">'+assetOptionsHtml+'</select></div><div class="field full"><label>Issue</label><select name="issueId">'+optional("No linked issue",issues,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field full"><label>Repair</label><select name="repairId">'+optional("No linked repair",repairs,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field full"><label>Recurring charge</label><select name="chargeId">'+optional("No linked charge",charges,function(x){return x.name+" · "+x.billing_cycle})+'</select></div><div class="field full"><label>Potential purchase</label><select name="purchaseCandidateId">'+optional("No linked purchase",purchases,function(x){return x.title+" · "+x.status})+'</select></div><div class="field full"><label>Provenance</label><input name="provenance" maxlength="1000" value="Saved directly by homeowner in Homely."></div><div class="field full"><label>Why keep this evidence?</label><textarea name="evidenceReason" maxlength="2000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview evidence</button></div></form>');
+  const assetOptionsHtml='<option value="">None</option>'+options;
+  openModal('<h2>Save a source link</h2><form class="form" id="link-evidence-form"><div class="form-grid"><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…" required></div><div class="field full"><label>Title</label><input name="title" maxlength="240" required></div><div class="field"><label>Type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>VIDEO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Evidence date</label><input type="date" name="occurredAt" value="'+today()+'" required></div><div class="field"><label>Status</label><select name="evidenceStatus"><option selected>ACTIVE</option><option>REFERENCE</option><option>ARCHIVED</option></select></div><div class="field full"><label>Asset</label><select name="assetId">'+assetOptionsHtml+'</select></div><div class="field full"><label>Issue</label><select name="issueId">'+optional("None",issues,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field full"><label>Repair</label><select name="repairId">'+optional("None",repairs,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field full"><label>Recurring charge</label><select name="chargeId">'+optional("None",charges,function(x){return x.name+" · "+x.billing_cycle})+'</select></div><div class="field full"><label>Potential purchase</label><select name="purchaseCandidateId">'+optional("None",purchases,function(x){return x.title+" · "+x.status})+'</select></div><div class="field full"><label>Provenance</label><input name="provenance" maxlength="1000" value="Saved by homeowner."></div><div class="field full"><label>Reason</label><textarea name="evidenceReason" maxlength="2000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview evidence</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#link-evidence-form").onsubmit=async function(e){
     e.preventDefault();const d=new FormData(e.currentTarget),url=String(d.get("sourceUrl")||"").trim();
@@ -413,7 +410,6 @@ async function openUploadEvidenceForm(defaults){
   if(!form)return;
   const source=$('input[name="sourceUrl"]',form);
   source.closest(".field").innerHTML='<label>File (maximum 50 MB)</label><input type="file" name="attachment" required accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.zip">';
-  $(".eyebrow",modalBody).textContent="Upload evidence";
   $("h2",modalBody).textContent="Attach a file";
   $(".primary-button",form).textContent="Preview attachment";
   const d=defaults||{};
@@ -472,11 +468,11 @@ async function showFiles(){
     const buttons='<button class="button" id="save-link" type="button">+ Save link</button><button class="primary-button" id="upload-file" type="button">+ Upload file</button>';
     let cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
-      return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false"><span class="file-glyph" aria-hidden="true">▤</span><span class="file-type">'+esc(d.type||"FILE")+'</span><strong>'+esc(d.title)+'</strong><small>'+esc((links.join(" · ")||"Household file"))+'</small></button>';
+      return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false"><span class="file-glyph" aria-hidden="true">▤</span><span class="file-type">'+esc(d.type||"FILE")+'</span><strong>'+esc(d.title)+'</strong><small>'+esc(links.join(" · "))+'</small></button>';
     }).join("");
-    if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">▤</span><strong>No files yet</strong><p>Receipts, manuals, photos and documents will appear here.</p></div>';
+    if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">▤</span><strong>No files</strong></div>';
     content.innerHTML='<section class="file-browser"><div class="ledger-toolbar"><div class="ledger-identity"><span class="ledger-overline">Files</span><span class="ledger-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span></div><div class="ledger-controls">'+buttons+'</div></div>'
-      +'<div class="file-browser-body"><div class="file-browser-main"><div class="file-browser-search"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">▤</span><p>Select a file to see its details.</p></div></aside></div></section>';
+      +'<div class="file-browser-body"><div class="file-browser-main"><div class="file-browser-search"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">▤</span></div></aside></div></section>';
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
     const inspector=$("#file-inspector");
@@ -491,14 +487,14 @@ async function showFiles(){
       $("#inspect-open").onclick=()=>openFile(doc);
     }
     const search=$("#file-search");
-    const noMatches=document.createElement("div");noMatches.className="search-empty";noMatches.hidden=true;noMatches.innerHTML='<strong>No matching files</strong><span>Try another name or linked record.</span>';$(".file-grid",content).appendChild(noMatches);
+    const noMatches=document.createElement("div");noMatches.className="search-empty";noMatches.hidden=true;noMatches.innerHTML='<strong>No matching files</strong>';$(".file-grid",content).appendChild(noMatches);
     search.oninput=e=>{
       const q=e.target.value.toLowerCase().trim();let count=0;
       $$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q);if(!card.hidden)count++});
       noMatches.hidden=!docs.length||count>0;
       if(!$("[data-file][aria-pressed=true]:not([hidden])",content)){
         $$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed","false"));
-        inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">▤</span><p>Select a file to see its details.</p></div>';
+        inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">▤</span></div>';
       }
     };
     $$("[data-file]",content).forEach(b=>{
@@ -514,7 +510,7 @@ function messageMarkup(m){
   return '<article class="message '+m.role+'"><div class="message-role">'+(m.role==="user"?"You":"Homely")+'</div><p>'+esc(m.text)+'</p>'+(m.proposals||[]).map(function(p){return '<div class="proposal"><strong>'+esc(p.preview.title)+'</strong><div class="row-meta">'+esc(p.preview.summary)+'</div><div class="row-note">'+esc(p.reason)+'</div>'+(p.status==="PROPOSED"?'<div class="proposal-actions"><button class="button" data-reject="'+esc(p.transactionId)+'">Reject</button><button class="primary-button" data-approve="'+esc(p.transactionId)+'">Approve</button></div>':'<div class="row-meta">'+esc(p.status)+"</div>")+"</div>"}).join("")+"</article>"
 }
 function renderChat(){
-  chatBody.innerHTML=state.agentMessages.length?state.agentMessages.map(messageMarkup).join(""):'<div class="chat-empty">Ask about your home.</div>';
+  chatBody.innerHTML=state.agentMessages.length?state.agentMessages.map(messageMarkup).join(""):"";
   $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
   $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
   chatBody.scrollTop=chatBody.scrollHeight
@@ -618,18 +614,18 @@ async function openHouseholdSettings(){
     const home=state.homes.find(h=>h.id===state.currentHomeId);
     const owner=home&&home.role==="OWNER";
     const pending=owner?await api("/api/homes/invitations"):[];
-    let markup='<p class="eyebrow">Account</p><h2>Household settings</h2><p class="row-meta">'+esc($("#account-email").textContent)+'</p>';
+    let markup='<h2>Household settings</h2><p class="row-meta">'+esc($("#account-email").textContent)+'</p>';
     markup+='<div class="detail-section"><h3>Your homes</h3><div class="rows">'+state.homes.map(h=>
       row(h.name,h.role,h.id===state.currentHomeId?'<span class="badge">Current</span>':'<button type="button" class="button" data-switch="'+esc(h.id)+'">Open home</button>')
     ).join("")+'</div></div>';
     if(owner){
       markup+='<div class="detail-section"><h3>Home name</h3><form class="form" id="rename-home-form"><div class="field"><label>Household</label><input name="homeName" maxlength="100" value="'+esc(home.name)+'" required></div><div class="form-actions"><button class="button" type="submit">Save name</button></div></form></div>';
-      markup+='<div class="detail-section"><h3>Invite a member</h3><form class="form" id="invite-home-form"><div class="field"><label>Google email address</label><input name="email" type="email" required placeholder="person@example.com"></div><div class="field"><label>Access</label><select name="role"><option value="MEMBER">Member — edit records</option><option value="VIEWER">Viewer — read only</option></select></div><div class="form-actions"><button class="button" type="submit">Create invite link</button></div></form><div id="invite-result"></div></div>';
-      markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+(pending.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")||'<div class="empty">No pending invitations.</div>')+'</div></div>';
+      markup+='<div class="detail-section"><h3>Invite a member</h3><form class="form" id="invite-home-form"><div class="field"><label>Google email address</label><input name="email" type="email" required></div><div class="field"><label>Access</label><select name="role"><option value="MEMBER">Member — edit records</option><option value="VIEWER">Viewer — read only</option></select></div><div class="form-actions"><button class="button" type="submit">Create invite link</button></div></form><div id="invite-result"></div></div>';
+      markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+(pending.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")||'<div class="empty">None</div>')+'</div></div>';
     }
-    if(owner)markup+='<div class="detail-section"><h3>Download your data</h3><p class="row-meta">Includes household records, audit history, and original uploaded files.</p><div class="form-actions"><a class="button" href="/api/account/export" download="homely-backup.tar">Export household</a></div></div>';
+    if(owner)markup+='<div class="detail-section"><h3>Download your data</h3><div class="form-actions"><a class="button" href="/api/account/export" download="homely-backup.tar">Export household</a></div></div>';
         markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
-    markup+='<div class="detail-section"><h3>Delete account</h3><p class="row-meta">Irreversible. Export your home first. If you own a shared household, remove its members before deleting the account.</p><div class="form-actions"><button type="button" class="button" id="delete-account">Delete account…</button></div></div>';
+    markup+='<div class="detail-section"><h3>Delete account</h3><div class="form-actions"><button type="button" class="button" id="delete-account">Delete account…</button></div></div>';
     openModal(markup);
     $("#delete-account").onclick=function(){
       closeModal();
@@ -682,7 +678,7 @@ function offerPendingInvitation(){
   sessionStorage.setItem("homely_pending_invite",candidate);
   const cleanUrl=new URL(location.href);cleanUrl.searchParams.delete("invite");
   history.replaceState({}, "",cleanUrl.pathname+cleanUrl.search);
-  openModal('<p class="eyebrow">Household invitation</p><h2>Join a home</h2><p>Accept this invitation to open the shared household with the role chosen by its owner.</p><div class="form-actions"><button class="button" id="dismiss-invite">Later</button><button class="primary-button" id="accept-invite">Accept invitation</button></div>');
+  openModal('<h2>Join a home</h2><div class="form-actions"><button class="button" id="dismiss-invite">Later</button><button class="primary-button" id="accept-invite">Accept invitation</button></div>');
   $("#dismiss-invite").onclick=closeModal;
   $("#accept-invite").onclick=async()=>{
     try{
@@ -704,8 +700,8 @@ async function bootstrap(){
       $("#google-signin").setAttribute("aria-disabled",auth.enabled?"false":"true");
       const message=location.search.includes("auth_error=")
         ? "Google sign-in was unsuccessful. Check your account and try again."
-        : auth.enabled ? "Sign in with Google to access your private home."
-        : "Google Sign-In is not configured yet. Add the OAuth credentials in Render.";
+        : auth.enabled ? ""
+        : "Sign-in unavailable.";
       $("#auth-message").textContent=message;
       return;
     }
