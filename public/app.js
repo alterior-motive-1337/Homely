@@ -889,7 +889,7 @@ async function bootstrap(){
 void bootstrap();
 window.addEventListener("keydown",function(e){
   if(modal.open||viewer.open)return;
-  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="j"){
+  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.code==="Space"){
     e.preventDefault();
     const docked=window.matchMedia("(min-width: 960px)").matches;
     const opened=docked?!workspaceLayout.assistant.collapsed:chatRail.classList.contains("open");
