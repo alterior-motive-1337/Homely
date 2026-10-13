@@ -29,6 +29,7 @@ import { deleteAccount } from "./domain/deleteAccount.js";
 import { listAlerts, acknowledgeAlert } from "./domain/alerts.js";
 import { chatHistory, clearChat, saveChatTurn } from "./domain/chat.js";
 import { acceptInvite, inviteMember, listHouseholds, listInvitations, listMembers, removeMember, renameHome, revokeInvite } from "./domain/households.js";
+import { openSampleHome } from "./domain/sampleHome.js";
 
 function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-content-type-options", "nosniff");
@@ -230,6 +231,13 @@ export async function startServer(
         const user=auth.switchHome(req,String((await readJson(req)).homeId??""));
         enterHome(user.homeId);
         return sendJson(res,200,{homeId:user.homeId,role:user.role});
+      }
+      if(req.method==="POST" && url.pathname==="/api/homes/sample") {
+        if(!auth.switchHome)throw new DomainError("Home switching is not available.",503);
+        const sample=openSampleHome(db,auth.requireUser(req));
+        const user=auth.switchHome(req,sample.homeId);
+        enterHome(user.homeId);
+        return sendJson(res,200,sample,{"cache-control":"no-store"});
       }
       if(req.method==="GET" && url.pathname==="/api/homes/members") {
         return sendJson(res,200,listMembers(db,auth.requireUser(req)));
@@ -443,4 +451,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     process.exit(1);
   });
 }
+
 

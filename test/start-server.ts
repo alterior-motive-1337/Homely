@@ -22,14 +22,20 @@ const demoUser={id:"ci-user",email:"test@example.invalid",name:"CI",homeId:"home
 const freshUser={id:"ci-fresh",email:"fresh@example.invalid",name:"Fresh",homeId:"home-ci-empty",role:"OWNER" as const};
 const {saveChatTurn}=await import("../src/domain/chat.js");
 saveChatTurn(db,demoUser,"Seeded chat question",{text:"Saved household chat",responseId:null,proposals:[],toolsUsed:[]});
-function userFor(req:{headers:{cookie?:string}}){return String(req.headers.cookie??"").includes("homely_test_view=fresh")?freshUser:demoUser}
+let activeDemoHome=demoUser.homeId;
+function userFor(req:{headers:{cookie?:string}}){return String(req.headers.cookie??"").includes("homely_test_view=fresh")?freshUser:{...demoUser,homeId:activeDemoHome}}
 
 await startServer(db,{
   status(req){return {enabled:false,authenticated:true,provider:"google" as const,setupRequired:false,user:userFor(req)}},
   requireUser(req){return userFor(req)},
-  switchHome(_req,homeId){return {id:"ci-user",email:"test@example.invalid",name:"CI",homeId,role:"OWNER" as const}},
+  switchHome(req,homeId){
+    const user=userFor(req);
+    if(!db.prepare("SELECT 1 FROM home_memberships WHERE home_id=? AND user_id=?").get(homeId,user.id))throw new Error("Not a member");
+    activeDemoHome=homeId;return {...user,homeId};
+  },
   recentlyAuthenticated(){return true},
   beginLogin(){throw new Error("Google login is disabled in CI")},
   async finishLogin(){throw new Error("Google login is disabled in CI")},
   logout(_req,res){res.setHeader("set-cookie","homely_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax")}
 });
+

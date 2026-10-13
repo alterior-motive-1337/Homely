@@ -190,6 +190,8 @@ test("HTTP routes never expose household records, files, or upload endpoints wit
       body:JSON.stringify({name:"clip.mp4",mimeType:"video/mp4",size:100})
     });
     assert.equal(upload.status,401);
+    const sample=await fetch(origin+"/api/homes/sample",{method:"POST"});
+    assert.equal(sample.status,401,"sample creation must require Google sign-in");
   }finally{await new Promise<void>((done)=>server.close(()=>done()));db.close()}
 });
 
@@ -222,3 +224,4 @@ test("active household switching requires membership and revocation falls back t
     assert.equal(auth.requireUser(request(session)).role,"OWNER");
   }finally{db.close()}
 });
+

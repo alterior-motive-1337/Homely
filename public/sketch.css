@@ -1496,6 +1496,27 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);
   mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);
 }
+/* Selection is a fine boundary, with no filled highlight. */
+.file-card{touch-action:manipulation}
+.file-card[aria-pressed="true"]{background:transparent!important;border-color:#b5b5bb!important;outline:none!important}
+.file-card:focus-visible{outline:1px solid #d0d0d5!important;outline-offset:2px!important}
+.ledger-entry:focus-within{border-color:#b5b5bb!important}
+/* Text labels remain readable alongside semantic state colours. */
+.badge:is(.GOOD,.NEW,.HEALTHY,.RESOLVED,.CLOSED,.COMPLETED,.COMMITTED,.ACTIVE,.PURCHASED){
+  color:#a1e3b8!important;background:#173323!important;border-color:#396a49!important;
+}
+.badge:is(.FAIR,.ATTENTION,.DEGRADED,.MEDIUM,.MONITORING){
+  color:#f0cd85!important;background:#382e1b!important;border-color:#766039!important;
+}
+.badge:is(.POOR,.FAILED,.CRITICAL,.HIGH,.OVERDUE){
+  color:#f0a4a4!important;background:#3b2225!important;border-color:#824b50!important;
+}
+.badge:is(.OPEN,.IN_PROGRESS,.PLANNED,.SAVED,.SHORTLISTED,.PROPOSED,.REFERENCE){
+  color:#a8c9f7!important;background:#202f45!important;border-color:#44658d!important;
+}
+.badge:is(.UNKNOWN,.INACTIVE,.DISMISSED,.REJECTED,.CANCELLED,.LOW,.ARCHIVED){
+  color:#c2c2cb!important;background:#28282e!important;border-color:#50505b!important;
+}
 @media(max-width:700px){
   .viewer-body .viewer-text{padding:16px;font-size:11px}
   .viewer-body embed[type="application/pdf"]{min-height:270px;height:65vh}

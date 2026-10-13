@@ -556,6 +556,8 @@ async function sampleVideoFrames(video){
   }finally{video.currentTime=previous;if(playing)void video.play().catch(()=>{})}
 }
 async function openFile(doc){
+  if(viewer.open&&state.viewerDocumentId===doc.id)return;
+  state.viewerDocumentId=doc.id;
   const revision=state.viewerRevision=(state.viewerRevision||0)+1;
   if(state.stopVoice)state.stopVoice();
   const href=fileHref(doc),mime=String(doc.mime_type||"");
@@ -778,7 +780,18 @@ async function showFiles(){
     };
     $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
-      b.onclick=()=>{selectFile(doc);void openFile(doc)};
+      b.title="Double-click or double-tap to open";
+      b.onclick=()=>selectFile(doc);
+      b.ondblclick=()=>{selectFile(doc);void openFile(doc)};
+      b.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();selectFile(doc);void openFile(doc)}};
+      let tap=null;
+      b.onpointerup=e=>{
+        if(e.pointerType!=="touch")return;
+        const next={at:performance.now(),x:e.clientX,y:e.clientY};
+        if(tap&&next.at-tap.at<450&&Math.hypot(next.x-tap.x,next.y-tap.y)<24){
+          tap=null;selectFile(doc);void openFile(doc);
+        }else tap=next;
+      };
     });
     if(docs.length)selectFile(docs[0]);
   }catch(e){if(revision===state.viewRevision)fail(e)}
@@ -953,7 +966,7 @@ async function openHouseholdSettings(){
     let markup='<h2>Household settings</h2><p class="row-meta">'+esc($("#account-email").textContent)+'</p>';
     markup+='<div class="detail-section"><h3>Your homes</h3><div class="rows">'+state.homes.map(h=>
       row(h.name,h.role,h.id===state.currentHomeId?'<span class="badge">Current</span>':'<button type="button" class="button" data-switch="'+esc(h.id)+'">Open home</button>')
-    ).join("")+'</div></div>';
+    ).join("")+'</div>'+(owner?'<div class="form-actions"><button type="button" class="button" id="open-sample-home">Open sample home</button></div>':'')+'</div>';
     if(owner){
       markup+='<div class="detail-section"><h3>Home name</h3><form class="form" id="rename-home-form"><div class="field"><label>Household</label><input name="homeName" maxlength="100" value="'+esc(home.name)+'" required></div><div class="form-actions"><button class="button" type="submit">Save name</button></div></form></div>';
       markup+='<div class="detail-section"><h3>Invite a member</h3><form class="form" id="invite-home-form"><div class="field"><label>Google email address</label><input name="email" type="email" required></div><div class="field"><label>Access</label><select name="role"><option value="MEMBER">Member — edit records</option><option value="VIEWER">Viewer — read only</option></select></div><div class="form-actions"><button class="button" type="submit">Create invite link</button></div></form><div id="invite-result"></div></div>';
@@ -963,6 +976,12 @@ async function openHouseholdSettings(){
         markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
     markup+='<div class="detail-section"><h3>Delete account</h3><div class="form-actions"><button type="button" class="button" id="delete-account">Delete account…</button></div></div>';
     openModal('<div class="settings-content">'+markup+'</div>');
+    const sampleButton=$("#open-sample-home");
+    if(sampleButton)sampleButton.onclick=async()=>{
+      sampleButton.disabled=true;sampleButton.textContent="Opening…";
+      try{await api("/api/homes/sample",{method:"POST"});window.location.assign("/")}
+      catch(error){notify(error.message);sampleButton.disabled=false;sampleButton.textContent="Open sample home"}
+    };
     $("#delete-account").onclick=function(){
       closeModal();
       openModal('<p class="eyebrow">Permanent deletion</p><h2>Delete account and owned home</h2><p class="row-note">Your account, sessions, household records, original files and audit history will be deleted. This cannot be undone. Sign out and sign in again if your session is older than 15 minutes.</p><form id="delete-account-form" class="form"><div class="field"><label>Type DELETE MY ACCOUNT to confirm</label><input name="confirmation" autocomplete="off" required></div><div class="form-actions"><button type="button" class="button" id="cancel-delete">Cancel</button><button class="button" type="submit">Permanently delete</button></div></form>');
@@ -1026,6 +1045,7 @@ function offerPendingInvitation(){
 
 async function bootstrap(){
   try{
+    if(new URLSearchParams(location.search).get("sample")==="1")sessionStorage.setItem("homely_pending_sample","1");
     const response=await fetch("/api/auth/status",{cache:"no-store"});
     if(!response.ok)throw new Error("Authentication status unavailable.");
     const auth=await response.json();
@@ -1044,6 +1064,13 @@ async function bootstrap(){
     $("#auth-screen").hidden=true;$("#app-shell").hidden=false;
     $("#account-email").textContent=auth.user&&auth.user.email?auth.user.email:"Signed in";
     $("#household-settings").onclick=openHouseholdSettings;
+    if(sessionStorage.getItem("homely_pending_sample")==="1"){
+      try{
+        await api("/api/homes/sample",{method:"POST"});
+        sessionStorage.removeItem("homely_pending_sample");
+        const url=new URL(location.href);url.searchParams.delete("sample");history.replaceState(null,"",url);
+      }catch(error){sessionStorage.removeItem("homely_pending_sample");notify(error.message)}
+    }
     offerPendingInvitation();
     $("#sign-out").onclick=async function(){
       try{

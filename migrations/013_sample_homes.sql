@@ -1,0 +1,4 @@
+CREATE TABLE sample_homes (
+  user_id TEXT PRIMARY KEY REFERENCES auth_users(id) ON DELETE CASCADE,
+  home_id TEXT NOT NULL UNIQUE REFERENCES homes(id) ON DELETE CASCADE
+);

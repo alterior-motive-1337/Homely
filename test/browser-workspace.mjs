@@ -206,11 +206,14 @@ try {
   await page.locator("#save-link").click();
   await page.locator('#link-evidence-form input[name="sourceUrl"]').waitFor();
   await page.locator("#modal-close").click();
-  // Opening is single-click and the viewer is visible before a delayed file response.
+  // One click selects; a double click opens the viewer before a delayed response.
   let releaseText;
   const heldText=new Promise(resolve=>{releaseText=resolve});
   await page.route("**/demo-documents/inverter-warranty.txt",async route=>{await heldText;await route.continue()});
   await page.locator(".file-card").filter({hasText:"Sunsynk 8 kW inverter warranty"}).click();
+  assert.equal(await page.locator("#viewer").isVisible(),false,"single click selects without opening");
+  assert.equal(await page.locator(".file-card").filter({hasText:"Sunsynk 8 kW inverter warranty"}).getAttribute("aria-pressed"),"true");
+  await page.locator(".file-card").filter({hasText:"Sunsynk 8 kW inverter warranty"}).dblclick();
   await page.locator("#viewer").waitFor({state:"visible"});
   await page.getByText("Opening file…",{exact:true}).waitFor();
   releaseText();
@@ -292,7 +295,7 @@ try {
     Date.now=original;
   });
   await page.locator(".file-card").filter({hasText:"Video frame QA"}).waitFor();
-  await page.locator(".file-card").filter({hasText:"Video frame QA"}).click();
+  await page.locator(".file-card").filter({hasText:"Video frame QA"}).dblclick();
   await page.locator("#viewer").waitFor({state:"visible"});
   await page.locator("#viewer-body video").waitFor();
   let analysisRequests=0,releaseAnalysis;
@@ -431,7 +434,7 @@ try {
       const title=el.querySelector(".fade-title").getBoundingClientRect(),type=el.querySelector(".file-type").getBoundingClientRect();
       return title.right<=type.left&&el.getBoundingClientRect().height<90;
     }),true,"long names leave file metadata in its own column");
-    await names.locator(".file-card").first().click();
+    await names.locator(".file-card").first().dblclick();
     await names.locator("#viewer-title.is-overflowing").waitFor();
     assert.equal(await names.locator(".viewer-head").evaluate(el=>{
       const title=el.querySelector("#viewer-title").getBoundingClientRect(),buttons=el.querySelector(".viewer-controls").getBoundingClientRect(),box=el.getBoundingClientRect();
@@ -529,6 +532,53 @@ try {
     assert.equal(await markdown.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false,"Markdown must not overflow on mobile");
     assert.equal(await markdown.locator("#chat-rail").evaluate(el=>el.scrollWidth>el.clientWidth+2),false,"Code and tables must scroll within the panel");
   }
+  // The test link creates and opens a persistent private sample home.
+  const sampleContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+  const sample=await sampleContext.newPage();
+  sample.on("pageerror",error=>errors.push(String(error)));
+  await sample.goto(base+"/?sample=1");
+  await sample.locator("#page-title").filter({hasText:"Sample home"}).waitFor({state:"attached"});
+  assert.equal(new URL(sample.url()).searchParams.has("sample"),false,"sample intent is consumed");
+  const sampleHome=await sample.evaluate(async()=>await(await fetch("/api/homes")).json());
+  assert.equal(sampleHome.homes.length,2,"existing home is retained");
+  const sampleAssets=await sample.evaluate(async()=>await(await fetch("/api/assets")).json());
+  assert.equal(sampleAssets.length,9);
+  await sample.locator('[data-view="appliances"]').click();
+  await sample.locator(".badge.GOOD").first().waitFor();
+  const stateColours=await sample.locator(".badge:is(.GOOD,.FAIR,.FAILED,.UNKNOWN)").evaluateAll(nodes=>Object.fromEntries(nodes.map(el=>[el.textContent,getComputedStyle(el).color])));
+  assert.equal(new Set(Object.values(stateColours)).size,4,"state colours must be distinct");
+  if(process.env.TEST_SCREENSHOT_DIR)await sample.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/sample-states-mobile.png"});
+  await sample.locator('[data-view="files"]').click();
+  const touchFile=sample.locator(".file-card").filter({hasText:"Washing machine warranty.txt"});
+  await touchFile.waitFor();
+  await touchFile.tap();
+  assert.equal(await sample.locator("#viewer").isVisible(),false,"single tap selects only");
+  assert.equal(await touchFile.getAttribute("aria-pressed"),"true");
+  await sample.waitForFunction(()=>getComputedStyle(document.querySelector('.file-card[aria-pressed="true"]')).borderTopColor==="rgb(181, 181, 187)");
+  const selection=await touchFile.evaluate(el=>{const s=getComputedStyle(el);return {border:s.borderTopWidth,fill:s.backgroundColor,colour:s.borderTopColor}});
+  assert.equal(selection.border,"1px");assert.equal(selection.fill,"rgba(0, 0, 0, 0)");
+  assert.equal(selection.colour,"rgb(181, 181, 187)");
+  await sample.waitForTimeout(500); // Start a fresh pair after the selection inspection.
+  await touchFile.tap();await touchFile.tap();
+  await sample.locator("#viewer-body .viewer-text").waitFor();
+  assert.match(await sample.locator("#viewer-body").textContent(),/SAMPLE WARRANTY/);
+  await sample.locator("#analyze-file").click();
+  await sample.locator("#viewer-insight .message.assistant:not(.chat-pending)").waitFor();
+  assert.match(await sample.locator("#viewer-insight").textContent(),/SAMPLE-WASHER/,"sample file analysis reads stored bytes");
+  await sample.locator("#viewer-close").click();
+  const sampleDocs=await sample.evaluate(async()=>await(await fetch("/api/documents")).json());
+  assert.equal(sampleDocs.length,6);
+  const videoDoc=sampleDocs.find(d=>d.mime_type==="video/webm");
+  const sampleRange=await sample.request.get(base+videoDoc.local_path,{headers:{Range:"bytes=0-3"}});
+  assert.equal(sampleRange.status(),206);assert.equal((await sampleRange.body()).toString("hex"),"1a45dfa3");
+  if(process.env.TEST_SCREENSHOT_DIR)await sample.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/sample-files-mobile.png"});
+  await sample.goto(base+"/?sample=1");
+  await sample.locator("#page-title").filter({hasText:"Sample home"}).waitFor({state:"attached"});
+  assert.equal(await sample.evaluate(async()=> (await(await fetch("/api/assets")).json()).length),9,"reopening does not duplicate samples");
+  await sample.locator("#household-settings").click();
+  await sample.locator('[data-switch="home-hawthorn"]').click();
+  await sample.locator("#page-title").filter({hasText:"14 Hawthorn Residence"}).waitFor({state:"attached"});
+  await sampleContext.close();
   assert.deepEqual(errors, [], "browser errors");
   console.log("Workspace browser checks passed: safe Markdown/history/replies/code copy, panel resizing/collapse/persistence, record commits, search/cache, related files, keyboard viewer, desktop/mobile, fresh home and voice.");
 } finally { await browser.close(); }
