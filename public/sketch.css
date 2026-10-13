@@ -1276,3 +1276,115 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   .quick-search .search{width:min(280px,calc(100vw - 38px))!important}
 }
 
+
+/* Records are lists, not labelled tables or file tiles. */
+.ledger-columns,.ledger-overline{display:none!important}
+.ledger-rows{display:flex;flex-direction:column;gap:2px}
+.ledger-entry{
+  grid-template-columns:minmax(0,1.5fr) minmax(120px,.8fr) auto;
+  min-height:59px!important;
+  padding:10px 12px!important;
+  border:0!important;
+  border-radius:7px!important;
+  gap:12px;
+}
+.ledger-main{gap:0!important}
+.ledger-index{display:none!important}
+.ledger-entry-content{gap:4px}
+.ledger-entry-content strong{font-size:13px;font-weight:560}
+.ledger-entry-content small{font-size:11px;color:#8f8f96}
+.ledger-details{gap:6px 9px;justify-content:flex-start}
+.ledger-file-link,.ledger-quiet-action{
+  min-height:30px;
+  padding:6px 8px;
+  border:0!important;
+  background:transparent!important;
+}
+.ledger-file-link:hover,.ledger-quiet-action:hover{background:#252528!important}
+.page-controls .search-count{display:none}
+.page-controls .search-count.is-filtered{
+  display:inline-flex;align-items:center;
+  font-size:11px;color:#8e8e94;
+}
+.file-browser-main{padding:4px 0!important}
+.file-grid{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch;
+  gap:2px!important;
+}
+.file-card,.file-card:hover,.file-card[aria-pressed="true"]{
+  display:grid!important;
+  grid-template-columns:27px minmax(0,1fr) auto!important;
+  grid-template-rows:1fr!important;
+  align-items:center!important;
+  align-content:center!important;
+  column-gap:13px!important;
+  width:100%!important;
+  min-height:62px!important;
+  height:auto!important;
+  padding:10px 12px!important;
+  border:0!important;
+  border-radius:7px!important;
+  box-shadow:none!important;
+  transform:none!important;
+  text-align:left;
+}
+.file-card{background:transparent!important}
+.file-card:hover{background:#1b1b1e!important}
+.file-card[aria-pressed="true"]{
+  outline:none!important;
+  background:#242427!important;
+}
+.file-card .file-glyph{
+  grid-column:1!important;grid-row:1!important;
+  width:27px!important;height:30px!important;
+  min-width:27px!important;
+  display:grid;place-items:center;
+  border:0!important;background:transparent!important;
+}
+.file-card .file-glyph .ui-icon{width:18px;height:18px}
+.file-card .file-entry-copy{
+  display:flex!important;flex-direction:column;
+  gap:3px;min-width:0;
+  grid-column:2!important;grid-row:1!important;
+}
+.file-card .file-entry-copy strong{
+  display:block!important;grid-column:auto!important;grid-row:auto!important;
+  font-size:13px!important;font-weight:555!important;
+  margin:0!important;overflow:hidden!important;
+  text-overflow:ellipsis;white-space:nowrap;
+  color:#ededf0;
+}
+.file-card .file-entry-copy small{
+  display:block!important;grid-column:auto!important;grid-row:auto!important;
+  margin:0!important;
+  font-size:11px!important;color:#929299!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis;
+}
+.file-card .file-type{
+  display:block!important;
+  grid-column:3!important;grid-row:1!important;
+  margin:0!important;text-align:right!important;
+  font-size:10px!important;font-weight:450!important;
+  letter-spacing:0!important;color:#7e7e86!important;
+  background:transparent!important;
+}
+.file-inspector{padding-top:21px!important}
+.file-inspector>.ledger-overline{display:none!important}
+.home-recent-tail{display:flex;justify-content:flex-end;margin:5px 0 0}
+.home-recent-tail .ghost-link{font-size:11px;color:#92929a}
+@media(max-width:700px){
+  .ledger-entry{
+    grid-template-columns:minmax(0,1fr) auto!important;
+    column-gap:8px!important;
+    row-gap:8px!important;
+    padding:12px 5px!important;
+  }
+  .ledger-main{grid-column:1/-1!important}
+  .ledger-details{grid-column:1!important}
+  .ledger-actions{grid-column:2!important}
+  .file-card{min-height:60px!important}
+  .file-card .file-type{max-width:70px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
+

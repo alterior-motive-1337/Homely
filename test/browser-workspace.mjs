@@ -30,6 +30,7 @@ try {
   assert.equal(await page.locator(".metric").first().locator("strong").textContent(), "16", "home must show registered assets rather than unrelated empty counts");
   assert.equal(await page.locator("#home-repair,#home-issue").count(),0,"home must not duplicate issue/repair actions already in their own tabs");
   assert.equal(await page.locator(".home-recent").count(),1,"overview should expose household records");
+  assert.equal(await page.locator(".home-recent-title").count(),0,"do not label an obvious recent-record list");
   assert.equal(await page.locator(".metrics").evaluate(el=>{
     const view=document.querySelector(".workspace").getBoundingClientRect(),box=el.getBoundingClientRect();
     return Math.abs((box.left+box.right)/2-(view.left+view.right)/2)<12;
@@ -103,7 +104,8 @@ try {
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#record-search").isVisible(),false,"Escape hides local search");
   await page.locator(".search-toggle").click();
-  assert.equal(await page.locator(".ledger-toolbar").count(),0,"records must not have a second toolbar band");
+  assert.equal(await page.locator(".ledger-toolbar,.ledger-columns,.ledger-index").count(),0,"records must not have table headings, indexes or second toolbars");
+  assert.equal(await page.locator(".ledger-rows [role=listitem]").count(),await page.locator(".ledger-entry").count(),"records should be represented as a simple list");
   const total = await page.locator(".ledger-entry").count();
   assert.equal(await page.locator(".ledger").evaluate(el => getComputedStyle(el).borderTopWidth),"0px","registers should not be boxed in");
   await page.locator('[data-status="resolved"]').click();
@@ -161,7 +163,11 @@ try {
 
   await go("files");
   assert.equal(await placement(".file-controls .search-toggle","#upload-file"),true,"file search icon and upload must share a row");
-  assert.equal(await page.locator(".file-browser .ledger-toolbar").count(),0,"file browser must not contain a duplicate toolbar");
+  assert.equal(await page.locator(".file-browser .ledger-toolbar,.file-inspector>.ledger-overline").count(),0,"file browser needs no secondary labels");
+  assert.equal(await page.locator(".file-grid").evaluate(el=>getComputedStyle(el).flexDirection),"column","files should use a vertical list rather than tiles");
+  assert.ok(await page.locator(".file-card").first().evaluate(el=>el.getBoundingClientRect().height<90),"file rows must be compact");
+  const fileRowBoxes=await page.locator(".file-card").evaluateAll(rows=>rows.slice(0,2).map(el=>el.getBoundingClientRect().toJSON()));
+  if(fileRowBoxes.length>1)assert.ok(fileRowBoxes[1].y>=fileRowBoxes[0].bottom,"file entries must stack vertically");
   assert.equal(await page.locator(".file-controls #save-link").count(),1,"save link stays beside file upload");
   const infoDivider=page.locator("#file-info-resizer");
   const infoWidth=()=>page.locator("#file-inspector").evaluate(el=>Math.round(el.getBoundingClientRect().width));
