@@ -11,12 +11,14 @@ const viewPanels=new Map();
 const VIEW_CACHE_MS=45000;
 const ACTIVE_REFRESH_MS=45000;
 const LAYOUT_KEY="homely_workspace_layout_v1";
-const workspaceLayout={assistant:{width:null,collapsed:false},files:{width:null,collapsed:false}};
+const workspaceLayout={assistant:{width:null,collapsed:false},files:{width:null,collapsed:false,mobileCollapsed:true}};
+const compactFiles=window.matchMedia("(max-width: 700px)");
+compactFiles.addEventListener("change",()=>state.syncFileInfo?.());
 try{
   const saved=JSON.parse(localStorage.getItem(LAYOUT_KEY)||"null");
   for(const name of Object.keys(workspaceLayout)){
     const pane=saved?.[name];
-    if(pane){workspaceLayout[name].collapsed=pane.collapsed===true;if(Number.isFinite(pane.width))workspaceLayout[name].width=Math.max(180,Math.min(640,pane.width))}
+    if(pane){workspaceLayout[name].collapsed=pane.collapsed===true;if(name==="files")workspaceLayout.files.mobileCollapsed=pane.mobileCollapsed!==false;if(Number.isFinite(pane.width))workspaceLayout[name].width=Math.max(180,Math.min(640,pane.width))}
   }
 }catch(_){/* Layout remains usable when browser storage is unavailable. */}
 function saveWorkspaceLayout(){try{localStorage.setItem(LAYOUT_KEY,JSON.stringify(workspaceLayout))}catch(_){}}
@@ -315,7 +317,7 @@ async function showHome(){
     pageTitle.textContent=homeName;
     document.title=homeName+" · Homely";
     if(!assets.length&&!repairs.length&&!charges.length&&!purchases.length&&!recent.length){
-      content.innerHTML='<section class="home-empty"><h2>No assets</h2><p>Your home record is empty.</p>'
+      content.innerHTML='<section class="home-empty"><h2>No assets</h2>'
         +'<div class="home-empty-actions"><button class="primary-button" id="home-first-asset">Register asset</button><button class="button" id="home-first-file">Upload file</button></div></section>';
       $("#home-first-asset").onclick=()=>openAssetForm();
       $("#home-first-file").onclick=()=>openUploadEvidenceForm();
@@ -486,7 +488,7 @@ async function openAssetForm(existing){
 function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
-  const body=items.map((a,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong>'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+'<span>'+money(a.purchase_cost_cents)+'</span></div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">▤ <span>Files</span></button></div></div>').join("");
+  const body=items.map((a,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong>'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+'<span>'+money(a.purchase_cost_cents)+'</span></div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">'+fileIcon()+'<span>Files</span></button></div></div>').join("");
   target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
   const count=$("#asset-count");
   if(count)count.textContent=items.length+" "+(items.length===1?"entry":"entries");
@@ -738,8 +740,9 @@ async function showFiles(){
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
     const browser=$(".file-browser"),infoPanel=$("#file-inspector"),infoToggle=$("#file-info-toggle");
-    function syncInfo(){const collapsed=workspaceLayout.files.collapsed;browser.classList.toggle("inspector-collapsed",collapsed);infoPanel.inert=collapsed;infoPanel.setAttribute("aria-hidden",String(collapsed));infoToggle.setAttribute("aria-expanded",String(!collapsed));infoToggle.setAttribute("aria-label",collapsed?"Show file information":"Hide file information");infoToggle.title=collapsed?"Show file information":"Hide file information"}
-    infoToggle.onclick=()=>{workspaceLayout.files.collapsed=!workspaceLayout.files.collapsed;syncInfo();saveWorkspaceLayout()};
+    function syncInfo(){const collapsed=compactFiles.matches?workspaceLayout.files.mobileCollapsed:workspaceLayout.files.collapsed;browser.classList.toggle("inspector-collapsed",collapsed);infoPanel.inert=collapsed;infoPanel.setAttribute("aria-hidden",String(collapsed));infoToggle.setAttribute("aria-expanded",String(!collapsed));infoToggle.setAttribute("aria-label",collapsed?"Show file information":"Hide file information");infoToggle.title=collapsed?"Show file information":"Hide file information"}
+    state.syncFileInfo=syncInfo;
+    infoToggle.onclick=()=>{const key=compactFiles.matches?"mobileCollapsed":"collapsed";workspaceLayout.files[key]=!workspaceLayout.files[key];syncInfo();saveWorkspaceLayout()};
     syncInfo();
     bindPanelResize({name:"files",container:browser,panel:infoPanel,handle:$("#file-info-resizer"),variable:"--info-width",min:180,max:360,mainMin:280,breakpoint:701});
     const inspector=$("#file-inspector-content");
@@ -1066,4 +1069,5 @@ window.addEventListener("keydown",function(e){
     }
   }
 });
+
 
