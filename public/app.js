@@ -114,8 +114,6 @@ async function showAlerts(){
 $("#alerts-trigger").onclick=()=>void showAlerts();
 function ledger(title,count,action,body,columns){
   return '<section class="ledger" aria-label="'+esc(title)+'">'
-   +'<header class="ledger-toolbar"><div class="ledger-identity"><span class="ledger-overline">'+esc(title)+'</span><span class="ledger-count">'+count+' '+(count===1?'entry':'entries')+'</span></div>'
-   +'<div class="ledger-controls">'+(action||'')+'</div></header>'
    +'<div class="ledger-columns"><span>'+esc(columns||'Record')+'</span><span>Details</span><span>Related</span></div>'
    +'<div class="ledger-rows">'+(body||'<div class="ledger-zero"><span class="ledger-zero-mark" aria-hidden="true">—</span><strong>No records</strong></div>')+'</div></section>';
 }
@@ -129,10 +127,11 @@ function fileIcon(doc={}){
   return '<svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+paths+'</svg>';
 }
 
-function registerTools(label,status=false){
-  return '<div class="register-tools"><input class="search" id="record-search" type="search" placeholder="Search '+esc(label)+'" aria-label="Search '+esc(label)+'">'
+function registerTools(label,status=false,action="",count=0){
+  return '<div class="register-tools page-controls"><div class="controls-leading"><input class="search" id="record-search" type="search" placeholder="Search '+esc(label)+'" aria-label="Search '+esc(label)+'">'
     +(status?'<div class="register-filters" aria-label="Issue status"><button type="button" data-status="all" aria-pressed="true">All</button><button type="button" data-status="open" aria-pressed="false">Open</button><button type="button" data-status="resolved" aria-pressed="false">Resolved</button></div>':'')
-    +'<span class="search-count" id="search-count" role="status"></span></div>';
+    +'</div><span class="search-count" id="search-count" role="status">'+count+' '+(count===1?'entry':'entries')+'</span>'
+    +'<div class="controls-actions">'+action+'</div></div>';
 }
 function bindRegisterSearch(items,textFor,isOpen){
   const search=$("#record-search"),entries=$$(".ledger-entry",content);
@@ -144,7 +143,7 @@ function bindRegisterSearch(items,textFor,isOpen){
     const query=search.value.trim().toLowerCase();let count=0;
     entries.forEach((entry,index)=>{const item=items[index];const matches=textFor(item).toLowerCase().includes(query)&&(!isOpen||status==="all"||(status==="open"?isOpen(item):!isOpen(item)));entry.hidden=!matches;if(matches)count++});
     empty.hidden=!items.length||count>0;
-    $("#search-count").textContent=query||status!=="all"?count+" of "+items.length:"";
+    $("#search-count").textContent=query||status!=="all"?count+" of "+items.length:items.length+" "+(items.length===1?"entry":"entries");
   }
   search.oninput=update;
   $$("[data-status]",content).forEach(button=>button.onclick=()=>{status=button.dataset.status;$$("[data-status]",content).forEach(b=>b.setAttribute("aria-pressed",String(b===button)));update()});
@@ -306,7 +305,7 @@ async function showIssues(){
         +(active?'<button class="ledger-quiet-action" type="button" data-repair="'+esc(item.id)+'">Repair</button><button class="ledger-quiet-action" type="button" data-resolve="'+esc(item.id)+'">Resolve</button>':'')
         +'</div></div>';
     }).join("");
-    content.innerHTML=registerTools("issues",true)+ledger("Issues",items.length,action,body,"Issue");
+    content.innerHTML=registerTools("issues",true,action,items.length)+ledger("Issues",items.length,"",body,"Issue");
     bindRegisterSearch(items,i=>[i.title,i.asset_name,i.description,i.status,i.severity].filter(Boolean).join(" "),i=>!["RESOLVED","CLOSED"].includes(i.status));
     const add=$("#new-issue");if(add)add.onclick=openIssueForm;
     const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
@@ -326,7 +325,7 @@ async function showRepairs(){
     state.assets=assets;
     const action=assets.length?'<button class="primary-button" id="new-repair" type="button">+ Record repair</button>':'<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
     const body=items.map((r,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
-    content.innerHTML=registerTools("repairs")+ledger("Repairs",items.length,action,body,"Repair");
+    content.innerHTML=registerTools("repairs",false,action,items.length)+ledger("Repairs",items.length,"",body,"Repair");
     bindRegisterSearch(items,r=>[r.title,r.asset_name,r.contractor,r.description,r.outcome].filter(Boolean).join(" "));
     const add=$("#new-repair");if(add)add.onclick=()=>openRepairForm();
     const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
@@ -382,8 +381,9 @@ function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
   const body=items.map((a,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+'<span>'+money(a.purchase_cost_cents)+'</span></div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">▤ <span>Files</span></button></div></div>').join("");
-  target.innerHTML=ledger("Appliances & furniture",items.length,'<button type="button" class="primary-button" id="new-asset">+ Register asset</button>',body,"Asset");
-  $("#new-asset").onclick=()=>openAssetForm();
+  target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
+  const count=$("#asset-count");
+  if(count)count.textContent=items.length+" "+(items.length===1?"entry":"entries");
   $$("[data-asset]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.asset));
   $$("[data-asset-file]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.assetFile));
 }
@@ -392,7 +392,8 @@ async function showAppliances(){
   try{
     state.assets=await api("/api/assets");
     if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="toolbar register-search"><input class="search" id="asset-search" type="search" placeholder="Search appliances & furniture" aria-label="Search assets"></div><div id="asset-results"></div>';
+    content.innerHTML='<div class="register-search page-controls"><div class="controls-leading"><input class="search" id="asset-search" type="search" placeholder="Search appliances & furniture" aria-label="Search assets"></div><span class="search-count" id="asset-count"></span><div class="controls-actions"><button type="button" class="primary-button" id="new-asset">+ Register asset</button></div></div><div id="asset-results"></div>';
+    $("#new-asset").onclick=()=>openAssetForm();
     renderAssets(state.assets);
     $("#asset-search").oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))))};
   }catch(e){if(revision===state.viewRevision)fail(e)}
@@ -577,14 +578,14 @@ async function showFiles(){
   try{
     const docs=await api("/api/documents");
     if(revision!==state.viewRevision)return;
-    const buttons='<button class="button" id="save-link" type="button">+ Save link</button><button class="primary-button" id="upload-file" type="button">+ Upload file</button><button class="icon-button" id="file-info-toggle" type="button" aria-controls="file-inspector" aria-label="Hide file information" title="Hide file information"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>';
+    const buttons='<button class="button" id="save-link" type="button">+ Save link</button><button class="primary-button" id="upload-file" type="button">+ Upload file</button><button class="icon-button" id="file-info-toggle" type="button" '+(docs.length?'':'hidden ')+'aria-controls="file-inspector" aria-label="Hide file information" title="Hide file information"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>';
     let cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
       return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false"><span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-type">'+esc(d.type||"FILE")+'</span><strong>'+esc(d.title)+'</strong><small>'+esc(links.join(" · "))+'</small></button>';
     }).join("");
     if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
-    content.innerHTML='<section class="file-browser"><div class="ledger-toolbar"><div class="ledger-identity"><span class="ledger-overline">Files</span><span class="ledger-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span></div><div class="ledger-controls">'+buttons+'</div></div>'
-      +'<div class="file-browser-body"><div class="file-browser-main"><div class="file-browser-search"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><div class="panel-resizer" id="file-info-resizer" role="separator" tabindex="0" aria-label="Resize file information" aria-orientation="vertical" aria-controls="file-inspector" title="Drag or use arrow keys to resize. Double-click to reset."></div><span class="ledger-overline">Information</span><div id="file-inspector-content"><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></div></aside></div></section>';
+    content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+buttons+'</div></div>'
+      +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><div class="panel-resizer" id="file-info-resizer" role="separator" tabindex="0" aria-label="Resize file information" aria-orientation="vertical" aria-controls="file-inspector" title="Drag or use arrow keys to resize. Double-click to reset."></div><span class="ledger-overline">Information</span><div id="file-inspector-content"><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></div></aside></div></section>';
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
     const browser=$(".file-browser"),infoPanel=$("#file-inspector"),infoToggle=$("#file-info-toggle");
@@ -751,7 +752,7 @@ async function openHouseholdSettings(){
     if(owner)markup+='<div class="detail-section"><h3>Download your data</h3><div class="form-actions"><a class="button" href="/api/account/export" download="homely-backup.tar">Export household</a></div></div>';
         markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
     markup+='<div class="detail-section"><h3>Delete account</h3><div class="form-actions"><button type="button" class="button" id="delete-account">Delete account…</button></div></div>';
-    openModal(markup);
+    openModal('<div class="settings-content">'+markup+'</div>');
     $("#delete-account").onclick=function(){
       closeModal();
       openModal('<p class="eyebrow">Permanent deletion</p><h2>Delete account and owned home</h2><p class="row-note">Your account, sessions, household records, original files and audit history will be deleted. This cannot be undone. Sign out and sign in again if your session is older than 15 minutes.</p><form id="delete-account-form" class="form"><div class="field"><label>Type DELETE MY ACCOUNT to confirm</label><input name="confirmation" autocomplete="off" required></div><div class="form-actions"><button type="button" class="button" id="cancel-delete">Cancel</button><button class="button" type="submit">Permanently delete</button></div></form>');
