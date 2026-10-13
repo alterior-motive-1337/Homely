@@ -52,7 +52,7 @@ export async function analyzeDocument(
     if(visualFrames){
       const visionModel="qwen/qwen3.8-27b";model=visionModel+":video-frames";
       const result=await api.chat.completions.create({model:visionModel,messages:[{role:"user",content:[
-        {type:"text",text:"Interpret these three sampled household video frames. Frame times in seconds: "+visualFrames.map(f=>f.timeSeconds).join(", ")+". Describe visible equipment, material text or damage in up to four short Markdown bullets. Lead with the main finding, retain relevant identifiers and uncertainty, and avoid generic advice, repeated observations, introductions or conclusions. These are samples, not full-video understanding. Do not infer unseen events, motion or audio. Do not use raw HTML."},
+        {type:"text",text:"Interpret these three sampled household video frames. Frame times in seconds: "+visualFrames.map(f=>f.timeSeconds).join(", ")+". Give a useful Markdown explanation of visible equipment, legible text, relevant identifiers and damage, with as much detail as the evidence supports. Explain the significance of observations when supported and clearly separate visible facts from possible interpretations. Lead with the main finding, retain uncertainty and avoid repetition or generic advice. These are samples, not full-video understanding. Do not infer unseen events, motion or audio. Do not use raw HTML."},
         ...visualFrames.map(frame=>({type:"image_url" as const,image_url:{url:frame.image}}))
       ]}],max_completion_tokens:1200});
       const text=result.choices[0]?.message.content?.trim()??"";
@@ -65,7 +65,7 @@ export async function analyzeDocument(
       const result=await api.chat.completions.create({
         model,
         messages:[{role:"user",content:[
-          {type:"text",text:"Describe this household evidence accurately in up to four short Markdown bullets. Lead with the main finding and include relevant equipment, legible model or serial numbers, material text and visible damage. Retain uncertainty, but avoid generic advice, introductions, conclusions and repeated observations. Do not invent details, assert facts not visible, or use raw HTML."},
+          {type:"text",text:"Interpret this household evidence accurately in a useful Markdown explanation, with as much detail as the evidence supports. Lead with the main finding and include relevant equipment, legible model or serial numbers, material text and visible damage. Explain the significance of observations when supported and clearly separate visible facts from possible interpretations. Retain uncertainty and avoid repetition or generic advice. Do not invent details, assert facts not visible, or use raw HTML."},
           {type:"image_url",image_url:{url:`data:${mime};base64,${data}`}}
         ]}],
         max_completion_tokens:1200
