@@ -18,6 +18,10 @@ try {
   assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"), "false", "desktop assistant must be docked");
   await page.getByText("Saved household chat",{exact:true}).waitFor();
   await noOverflow();
+  // Visual hierarchy and sizing: navigation must be labeled and use a single top row.
+  assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "desktop tabs need visible text labels");
+  assert.ok(await page.locator(".sidebar").evaluate(el => { const r=el.getBoundingClientRect(); return r.width > 1100 && r.height <= 72; }), "desktop navigation must fit a compact header");
+  assert.ok(await page.locator(".metric").first().evaluate(el => el.getBoundingClientRect().height <= 125), "overview counters should not become oversized cards");
   const assistantWidth=()=>page.locator("#chat-rail").evaluate(el=>Math.round(el.getBoundingClientRect().width));
   const defaultWidth=await assistantWidth();
   const divider=page.locator("#assistant-resizer");
@@ -37,6 +41,8 @@ try {
   await page.reload();await page.locator("#home-repair").waitFor();
   assert.equal(await page.locator("#chat-rail").isVisible(),false,"collapsed layout must survive reload");
   await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "mobile tabs retain labels");
+  await noOverflow();
   await page.locator("#chat-open").click();
   assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"),"false","mobile drawer must open even with desktop chat collapsed");
   await page.locator("#chat-close").click();
@@ -107,6 +113,7 @@ try {
   const infoDivider=page.locator("#file-info-resizer");
   const infoWidth=()=>page.locator("#file-inspector").evaluate(el=>Math.round(el.getBoundingClientRect().width));
   const originalInfoWidth=await infoWidth();
+  assert.ok(await page.locator(".file-card").first().evaluate(el => el.getBoundingClientRect().height <= 115), "file items should be compact rather than oversized tiles");
   await infoDivider.focus();await page.keyboard.press("ArrowLeft");
   assert.equal(await infoWidth(),originalInfoWidth+20,"file information must resize independently");
   await page.locator("#file-info-toggle").click();
