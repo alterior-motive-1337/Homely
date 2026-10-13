@@ -789,25 +789,50 @@ $("#assistant-collapse").onclick=closeChat;
 bindPanelResize({name:"assistant",container:$("#app-shell"),panel:chatRail,handle:$("#assistant-resizer"),variable:"--assistant-width",min:280,max:640,mainMin:480,breakpoint:960});
 $("#chat-backdrop").onclick=closeChat;
 $("#refresh-view").onclick=function(){viewPanels.clear();state.needsReload=true;void selectView(state.view)};
-async function openHouseholdSettings(){
+async function openHouseholdSettings(initialPane="general"){
   try{
     const state=await api("/api/homes"),members=await api("/api/homes/members");
     const home=state.homes.find(h=>h.id===state.currentHomeId);
     const owner=home&&home.role==="OWNER";
     const pending=owner?await api("/api/homes/invitations"):[];
-    let markup='<h2>Household settings</h2><p class="row-meta">'+esc($("#account-email").textContent)+'</p>';
-    markup+='<div class="detail-section"><h3>Your homes</h3><div class="rows">'+state.homes.map(h=>
-      row(h.name,h.role,h.id===state.currentHomeId?'<span class="badge">Current</span>':'<button type="button" class="button" data-switch="'+esc(h.id)+'">Open home</button>')
-    ).join("")+'</div></div>';
+    let markup='<div class="settings-shell"><aside class="settings-sidebar"><div class="settings-monogram" aria-hidden="true">H.</div><div class="settings-title">Settings</div>'
+      +'<nav class="settings-tabs" aria-label="Settings sections" role="tablist">'
+      +'<button type="button" role="tab" data-settings-tab="general" aria-controls="settings-general">General</button>'
+      +'<button type="button" role="tab" data-settings-tab="people" aria-controls="settings-people">People</button>'
+      +'<button type="button" role="tab" data-settings-tab="data" aria-controls="settings-data">Data & export</button>'
+      +'<button type="button" role="tab" data-settings-tab="account" aria-controls="settings-account">Account</button>'
+      +'</nav><div class="settings-sidebar-foot">HOMELY / HOUSEHOLD</div></aside><div class="settings-main">'
+      +'<section class="settings-pane" id="settings-general" data-settings-pane="general" role="tabpanel"><h2>General</h2><p class="settings-subtitle">'+esc($("#account-email").textContent)+'</p>'
+      +'<div class="settings-group"><h3>Your homes</h3><div class="rows">'+state.homes.map(h=>
+        row(h.name,h.role,h.id===state.currentHomeId?'<span class="badge">Current</span>':'<button type="button" class="button" data-switch="'+esc(h.id)+'">Open home</button>')
+      ).join('')+'</div></div>';
     if(owner){
-      markup+='<div class="detail-section"><h3>Home name</h3><form class="form" id="rename-home-form"><div class="field"><label>Household</label><input name="homeName" maxlength="100" value="'+esc(home.name)+'" required></div><div class="form-actions"><button class="button" type="submit">Save name</button></div></form></div>';
-      markup+='<div class="detail-section"><h3>Invite a member</h3><form class="form" id="invite-home-form"><div class="field"><label>Google email address</label><input name="email" type="email" required></div><div class="field"><label>Access</label><select name="role"><option value="MEMBER">Member — edit records</option><option value="VIEWER">Viewer — read only</option></select></div><div class="form-actions"><button class="button" type="submit">Create invite link</button></div></form><div id="invite-result"></div></div>';
-      markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+(pending.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")||'<div class="empty">None</div>')+'</div></div>';
+      markup+='<div class="settings-group"><h3>Home name</h3><form class="form" id="rename-home-form"><div class="field"><label>Household</label><input name="homeName" maxlength="100" value="'+esc(home.name)+'" required></div><div class="form-actions"><button class="button" type="submit">Save name</button></div></form></div>';
     }
-    if(owner)markup+='<div class="detail-section"><h3>Download your data</h3><div class="form-actions"><a class="button" href="/api/account/export" download="homely-backup.tar">Export household</a></div></div>';
-        markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
-    markup+='<div class="detail-section"><h3>Delete account</h3><div class="form-actions"><button type="button" class="button" id="delete-account">Delete account…</button></div></div>';
+    markup+='</section><section class="settings-pane" id="settings-people" data-settings-pane="people" role="tabpanel" hidden><h2>People</h2><p class="settings-subtitle">Access to this household.</p>';
+    if(owner){
+      markup+='<div class="settings-group"><h3>Invite a member</h3><form class="form" id="invite-home-form"><div class="field"><label>Google email address</label><input name="email" type="email" required></div><div class="field"><label>Access</label><select name="role"><option value="MEMBER">Member — edit records</option><option value="VIEWER">Viewer — read only</option></select></div><div class="form-actions"><button class="button" type="submit">Create invite link</button></div></form><div id="invite-result"></div></div>';
+      markup+='<div class="settings-group"><h3>Pending invitations</h3><div class="rows">'+(pending.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join('')||'<div class="settings-quiet">No pending invitations</div>')+'</div></div>';
+    }
+    markup+='<div class="settings-group"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join('')+'</div></div></section>';
+    markup+='<section class="settings-pane" id="settings-data" data-settings-pane="data" role="tabpanel" hidden><h2>Data & export</h2><p class="settings-subtitle">Keep a copy of your household records.</p>';
+    if(owner)markup+='<div class="settings-group settings-feature"><div><h3>Household archive</h3><p>Includes original files, records and history.</p></div><a class="primary-button" href="/api/account/export" download="homely-backup.tar">Export household ↗</a></div>';
+    else markup+='<p class="settings-quiet">Only the household owner can export a full archive.</p>';
+    markup+='</section><section class="settings-pane" id="settings-account" data-settings-pane="account" role="tabpanel" hidden><h2>Account</h2><p class="settings-subtitle">'+esc($("#account-email").textContent)+'</p>'
+      +'<div class="settings-group settings-danger"><div><h3>Delete account</h3><p>This permanently deletes your account and any home you own.</p></div><button type="button" class="button" id="delete-account">Delete account…</button></div></section></div></div>';
     openModal(markup);
+    const activateSettings=pane=>{
+      const selected=['general','people','data','account'].includes(pane)?pane:'general';
+      $$('[data-settings-tab]',modalBody).forEach(button=>{
+        const active=button.dataset.settingsTab===selected;
+        button.setAttribute("aria-selected",String(active));
+        button.tabIndex=active?0:-1;
+      });
+      $$('[data-settings-pane]',modalBody).forEach(section=>section.hidden=section.dataset.settingsPane!==selected);
+      const main=$('.settings-main',modalBody);if(main)main.scrollTop=0;
+    };
+    $$('[data-settings-tab]',modalBody).forEach(button=>button.onclick=()=>activateSettings(button.dataset.settingsTab));
+    activateSettings(initialPane);
     $("#delete-account").onclick=function(){
       closeModal();
       openModal('<p class="eyebrow">Permanent deletion</p><h2>Delete account and owned home</h2><p class="row-note">Your account, sessions, household records, original files and audit history will be deleted. This cannot be undone. Sign out and sign in again if your session is older than 15 minutes.</p><form id="delete-account-form" class="form"><div class="field"><label>Type DELETE MY ACCOUNT to confirm</label><input name="confirmation" autocomplete="off" required></div><div class="form-actions"><button type="button" class="button" id="cancel-delete">Cancel</button><button class="button" type="submit">Permanently delete</button></div></form>');
@@ -842,7 +867,7 @@ async function openHouseholdSettings(){
       }catch(error){notify(error.message)}
     };
     $$("[data-revoke]",modalBody).forEach(button=>button.onclick=async()=>{
-      try{await api("/api/homes/invitations/"+encodeURIComponent(button.dataset.revoke),{method:"DELETE"});closeModal();await openHouseholdSettings()}
+      try{await api("/api/homes/invitations/"+encodeURIComponent(button.dataset.revoke),{method:"DELETE"});closeModal();await openHouseholdSettings('people')}
       catch(error){notify(error.message)}
     });
     $$("[data-remove]",modalBody).forEach(button=>button.onclick=async()=>{
