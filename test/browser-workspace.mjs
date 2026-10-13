@@ -27,6 +27,13 @@ try {
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "desktop tabs need visible text labels");
   assert.ok(await page.locator(".sidebar").evaluate(el => { const r=el.getBoundingClientRect(); return r.width > 1100 && r.height <= 72; }), "desktop navigation must fit a compact header");
   assert.ok(await page.locator(".metric").first().evaluate(el => el.getBoundingClientRect().height <= 125), "overview counters should not become oversized cards");
+  assert.equal(await page.locator(".metric").first().locator("strong").textContent(), "16", "home must show registered assets rather than unrelated empty counts");
+  assert.equal(await page.locator("#home-repair,#home-issue").count(),0,"home must not duplicate issue/repair actions already in their own tabs");
+  assert.equal(await page.locator(".home-recent").count(),1,"overview should expose household records");
+  assert.equal(await page.locator(".metrics").evaluate(el=>{
+    const view=document.querySelector(".workspace").getBoundingClientRect(),box=el.getBoundingClientRect();
+    return Math.abs((box.left+box.right)/2-(view.left+view.right)/2)<12;
+  }),true,"overview metrics must be centered in the workspace");
   assert.equal(await page.locator(".metrics").evaluate(el => getComputedStyle(el).borderTopWidth),"0px","overview metrics should have no enclosing border");
   assert.equal(await page.locator(".metric").first().evaluate(el => getComputedStyle(el).borderRightWidth),"0px","metrics should not be separated by visible dividers");
   assert.equal(await page.locator(".nav-item.active").evaluate(el => getComputedStyle(el).borderBottomWidth),"2px");
@@ -40,14 +47,14 @@ try {
   assert.equal(await assistantWidth(),defaultWidth+100,"drag must resize the assistant");
   await divider.focus();await page.keyboard.press("ArrowRight");
   assert.equal(await assistantWidth(),defaultWidth+80,"separator must support keyboard resizing");
-  await page.reload();await page.locator("#home-repair").waitFor();
+  await page.reload();await page.locator(".metrics").waitFor();
   assert.equal(await assistantWidth(),defaultWidth+80,"assistant width must survive reload");
   await page.locator("#assistant-collapse").click();
   assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"),"true");
   assert.equal(await page.locator("#chat-rail").evaluate(el=>el.inert),true,"collapsed chat must not receive focus");
   assert.equal(await page.locator("#chat-trigger").evaluate(el=>el===document.activeElement),true);
   assert.ok(await page.locator(".workspace").evaluate(el=>el.getBoundingClientRect().width)>1300,"collapsed assistant must release its space");
-  await page.reload();await page.locator("#home-repair").waitFor();
+  await page.reload();await page.locator(".metrics").waitFor();
   assert.equal(await page.locator("#chat-rail").isVisible(),false,"collapsed layout must survive reload");
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "mobile tabs retain labels");
@@ -253,6 +260,11 @@ try {
 
   for (const width of [1024, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
+    await go("home"); await noOverflow();
+    assert.equal(await page.locator(".metrics").evaluate(el=>{
+      const view=document.querySelector(".workspace").getBoundingClientRect(),box=el.getBoundingClientRect();
+      return Math.abs((box.left+box.right)/2-(view.left+view.right)/2)<12;
+    }),true,"home metric alignment should survive resizing");
     await go("issues"); await noOverflow();
     await go("files"); await noOverflow();
     if(process.env.TEST_SCREENSHOT_DIR)await page.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/files-"+width+".png"});
@@ -297,6 +309,10 @@ try {
   await fresh.context().addCookies([{ name: "homely_test_view", value: "fresh", url: base }]);
   await fresh.goto(base);
   await fresh.getByRole("heading", { name: "No assets" }).waitFor();
+  assert.equal(await fresh.locator(".home-empty").evaluate(el=>{
+    const r=el.getBoundingClientRect();
+    return Math.abs((r.left+r.right)/2-innerWidth/2)<12;
+  }),true,"empty Home must be centered");
   await fresh.getByRole("button", { name: "Register asset" }).click();
   await fresh.locator("#asset-form").waitFor(); await fresh.locator("#modal-close").click();
   for (const view of ["issues", "repairs", "appliances", "files"]) {
