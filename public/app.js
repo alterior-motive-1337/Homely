@@ -128,8 +128,36 @@ function fileIcon(doc={}){
   return '<svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+paths+'</svg>';
 }
 
+function quickSearch(label,id){
+  return '<div class="quick-search">'
+    +'<button type="button" class="icon-button search-toggle" title="Search '+esc(label)+'" aria-label="Search '+esc(label)+'" aria-expanded="false" aria-controls="'+id+'">'
+    +'<svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.6"/><path d="m16 16 5 5"/></svg></button>'
+    +'<input class="search" id="'+id+'" type="search" placeholder="Search '+esc(label)+'" aria-label="Search '+esc(label)+'" hidden></div>';
+}
+content.addEventListener("click",event=>{
+  const button=event.target.closest(".search-toggle");
+  if(!button)return;
+  const container=button.closest(".quick-search"),input=container?.querySelector("input");
+  if(!container||!input)return;
+  const open=button.getAttribute("aria-expanded")!=="true";
+  button.setAttribute("aria-expanded",String(open));
+  input.hidden=!open;
+  if(open)input.focus();
+  else{
+    if(input.value){input.value="";input.dispatchEvent(new Event("input",{bubbles:true}))}
+    button.focus();
+  }
+});
+content.addEventListener("keydown",event=>{
+  if(event.key!=="Escape")return;
+  const container=event.target.closest(".quick-search");
+  const button=container?.querySelector(".search-toggle");
+  if(!button||button.getAttribute("aria-expanded")!=="true")return;
+  event.preventDefault();event.stopPropagation();button.click();
+});
+
 function registerTools(label,status=false,action="",count=0){
-  return '<div class="register-tools page-controls"><div class="controls-leading"><input class="search" id="record-search" type="search" placeholder="Search '+esc(label)+'" aria-label="Search '+esc(label)+'">'
+  return '<div class="register-tools page-controls"><div class="controls-leading">'+quickSearch(label,"record-search")
     +(status?'<div class="register-filters" aria-label="Issue status"><button type="button" data-status="all" aria-pressed="true">All</button><button type="button" data-status="open" aria-pressed="false">Open</button><button type="button" data-status="resolved" aria-pressed="false">Resolved</button></div>':'')
     +'</div><span class="search-count" id="search-count" role="status">'+count+' '+(count===1?'entry':'entries')+'</span>'
     +'<div class="controls-actions">'+action+'</div></div>';
@@ -414,7 +442,7 @@ async function showAppliances(){
   try{
     state.assets=await api("/api/assets");
     if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="register-search page-controls"><div class="controls-leading"><input class="search" id="asset-search" type="search" placeholder="Search appliances & furniture" aria-label="Search assets"></div><span class="search-count" id="asset-count"></span><div class="controls-actions"><button type="button" class="primary-button" id="new-asset">+ Register asset</button></div></div><div id="asset-results"></div>';
+    content.innerHTML='<div class="register-search page-controls"><div class="controls-leading">'+quickSearch("assets","asset-search")+'</div><span class="search-count" id="asset-count"></span><div class="controls-actions"><button type="button" class="primary-button" id="new-asset">+ Register asset</button></div></div><div id="asset-results"></div>';
     $("#new-asset").onclick=()=>openAssetForm();
     renderAssets(state.assets);
     $("#asset-search").oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))))};
@@ -606,7 +634,7 @@ async function showFiles(){
       return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false"><span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-type">'+esc(d.type||"FILE")+'</span><strong>'+esc(d.title)+'</strong><small>'+esc(links.join(" · "))+'</small></button>';
     }).join("");
     if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
-    content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+buttons+'</div></div>'
+    content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading">'+quickSearch("files","file-search")+'</div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+buttons+'</div></div>'
       +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><div class="panel-resizer" id="file-info-resizer" role="separator" tabindex="0" aria-label="Resize file information" aria-orientation="vertical" aria-controls="file-inspector" title="Drag or use arrow keys to resize. Double-click to reset."></div><span class="ledger-overline">Information</span><div id="file-inspector-content"><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></div></aside></div></section>';
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
@@ -908,6 +936,16 @@ async function bootstrap(){
 void bootstrap();
 window.addEventListener("keydown",function(e){
   if(modal.open||viewer.open)return;
+  if(e.key==="/"&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.isComposing
+    &&!document.activeElement?.matches("input,textarea,select,[contenteditable=true]")){
+    const button=content.querySelector(".search-toggle");
+    if(button&&!button.closest("[hidden]")){
+      e.preventDefault();
+      if(button.getAttribute("aria-expanded")!=="true")button.click();
+      else button.closest(".quick-search")?.querySelector("input")?.focus();
+    }
+    return;
+  }
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.code==="Space"){
     e.preventDefault();
     const docked=window.matchMedia("(min-width: 960px)").matches;
