@@ -235,43 +235,62 @@ async function showHome(){
     if(revision!==state.viewRevision)return;
     state.assets=assets;
     const memory=d.memory||{},repairs=memory.repairs||[],charges=memory.charges||[],purchases=memory.purchases||[];
-    const attention=d.attention.issues.map(function(i){return row(i.title,i.asset_name,badge(i.severity))})
-      .concat(d.attention.maintenance.map(function(m){return row(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"))}));
-    const homeName=d.home&&d.home.name||"My Home";
+    const upcoming=d.upcoming||[],recent=d.recent||[],summary=d.summary||{};
+    const attention=(d.attention?.issues||[]).map(i=>row(i.title,i.asset_name,badge(i.severity)))
+      .concat((d.attention?.maintenance||[]).map(m=>row(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"))));
+    const homeName=d.home?.name||"My Home";
     pageTitle.textContent=homeName;
     document.title=homeName+" · Homely";
-    if(!assets.length&&!repairs.length&&!charges.length&&!purchases.length&&!d.recent.length){
-      content.innerHTML=emptyState("No assets",
-        '<button class="primary-button" id="home-first-asset">Register asset</button><button class="button" id="home-first-file">Upload file</button>');
+    if(!assets.length&&!repairs.length&&!charges.length&&!purchases.length&&!recent.length){
+      content.innerHTML='<section class="home-empty"><h2>No assets</h2><p>Your home record is empty.</p>'
+        +'<div class="home-empty-actions"><button class="primary-button" id="home-first-asset">Register asset</button><button class="button" id="home-first-file">Upload file</button></div></section>';
       $("#home-first-asset").onclick=()=>openAssetForm();
       $("#home-first-file").onclick=()=>openUploadEvidenceForm();
       return;
     }
-    let html='<div class="home-overview"><div class="hero"><div class="hero-actions"><button class="button" id="home-issue">Report issue</button><button class="primary-button" id="home-repair">Record repair</button></div></div>';
-    html+='<section class="metrics" aria-label="Household overview"><div class="metric"><span>Open issues</span><strong>'+d.summary.open_issues+'</strong></div><div class="metric"><span>Needs attention</span><strong>'+d.summary.systems_needing_attention+'</strong></div><div class="metric"><span>Overdue</span><strong>'+d.summary.overdue_maintenance+'</strong></div></section>';
-    if(attention.length||d.upcoming.length){
+    const quiet=!attention.length&&!upcoming.length&&!repairs.length&&!charges.length&&!purchases.length;
+    let html='<div class="home-overview'+(quiet?' home-overview-quiet':'')+'">';
+    html+='<section class="metrics" aria-label="Household overview">'
+      +'<div class="metric"><span>Registered assets</span><strong>'+assets.length+'</strong></div>'
+      +'<div class="metric"><span>Open issues</span><strong>'+Number(summary.open_issues||0)+'</strong></div>'
+      +'<div class="metric"><span>Overdue</span><strong>'+Number(summary.overdue_maintenance||0)+'</strong></div>'
+      +'</section>';
+    if(Number(summary.systems_needing_attention||0)>0&&!attention.length){
+      html+='<p class="home-attention-note">'+Number(summary.systems_needing_attention)+' systems need attention</p>';
+    }
+    if(attention.length||upcoming.length){
       html+='<div class="home-priority">';
-      if(attention.length)html+='<section class="card"><div class="card-head"><h2>Needs attention</h2><button class="ghost-link" data-go="issues">All issues</button></div><div class="card-body rows">'+attention.slice(0,4).join("")+'</div></section>';
-      if(d.upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+d.upcoming.slice(0,4).map(m=>row(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>')).join("")+'</div></section>';
+      if(attention.length)html+='<section class="card"><div class="card-head"><h2>Needs attention</h2><button class="ghost-link" data-go="issues">View issues</button></div><div class="card-body rows">'+attention.slice(0,4).join("")+'</div></section>';
+      if(upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+upcoming.slice(0,4).map(m=>row(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>')).join("")+'</div></section>';
       html+='</div>';
     }
     if(repairs.length||charges.length||purchases.length){
       html+='<div class="home-memory">';
-      if(repairs.length)html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">All</button></div><div class="card-body rows">'+repairs.slice(0,3).map(r=>row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>')).join("")+'</div></section>';
+      if(repairs.length)html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">View all</button></div><div class="card-body rows">'+repairs.slice(0,3).map(r=>row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>')).join("")+'</div></section>';
       if(charges.length)html+='<section class="card"><div class="card-head"><h2>Charges</h2><button class="ghost-link" id="view-charges">View all</button></div><div class="card-body rows">'+charges.slice(0,3).map(c=>row(c.name,c.billing_cycle,'<span class="money">'+money(c.amount_cents)+'</span>')).join("")+'</div></section>';
       if(purchases.length)html+='<section class="card"><div class="card-head"><h2>Saved purchases</h2><button class="ghost-link" id="view-purchases">View all</button></div><div class="card-body rows">'+purchases.slice(0,3).map(p=>row(p.title,p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>')).join("")+'</div></section>';
       html+='</div>';
     }
-    html+='<div class="home-utilities"><div class="utility-links"><button class="ghost-link" id="view-charges-shortcut">Charges</button><button class="ghost-link" id="view-purchases-shortcut">Purchases</button><button class="ghost-link" id="view-history">History</button></div></div></div>';
+    if(recent.length||assets.length){
+      html+='<section class="home-recent" aria-label="Latest records"><div class="home-recent-title"><span>Latest records</span>'
+        +'<button class="ghost-link" '+(recent.length?'id="home-history-link"':'data-go="appliances"')+'>'+(recent.length?'History':'View all')+'</button></div>';
+      if(recent.length){
+        html+='<div class="home-recent-list">'+recent.slice(0,3).map(e=>'<div class="home-recent-item"><span class="home-recent-name">'+esc(e.title)+'</span><span class="home-recent-detail">'+fmtDate(e.occurred_at)+'</span></div>').join("")+'</div>';
+      }else{
+        html+='<div class="home-recent-list">'+assets.slice(0,3).map(a=>'<button class="home-recent-item" type="button" data-home-asset="'+esc(a.id)+'"><span class="home-recent-name">'+esc(a.name)+'</span><span class="home-recent-detail">'+esc(a.category||"Asset")+'</span></button>').join("")+'</div>';
+      }
+      html+='</section>';
+    }
+    html+='<nav class="home-utilities" aria-label="Other home records"><div class="utility-links"><button class="ghost-link" id="view-charges-shortcut">Charges</button><button class="ghost-link" id="view-purchases-shortcut">Purchases</button><button class="ghost-link" id="view-history">History</button></div></nav></div>';
     content.innerHTML=html;
-    $("#home-issue").onclick=openIssueForm;
-    $("#home-repair").onclick=()=>openRepairForm();
     const chargesBtn=$("#view-charges");if(chargesBtn)chargesBtn.onclick=showCharges;
     const purchasesBtn=$("#view-purchases");if(purchasesBtn)purchasesBtn.onclick=showPurchases;
+    const historyBtn=$("#home-history-link");if(historyBtn)historyBtn.onclick=showHistory;
     $("#view-charges-shortcut").onclick=showCharges;
     $("#view-purchases-shortcut").onclick=showPurchases;
     $("#view-history").onclick=showHistory;
     $$("[data-go]",content).forEach(b=>b.onclick=()=>navigate(b.dataset.go));
+    $$("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 

@@ -1059,3 +1059,152 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .file-inspector{margin:0!important}
 }
 
+
+/* Home: center the overview, not its record text or the entire app chrome. */
+.home-overview{
+  width:min(100%,880px);
+  max-width:880px;
+  margin:0 auto;
+  padding:clamp(54px,10vh,104px) 0 56px;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+}
+.home-overview-quiet{padding-top:clamp(100px,19vh,170px)}
+.home-overview .metrics{
+  width:100%!important;
+  max-width:720px!important;
+  margin:0 auto 56px!important;
+  padding:0!important;
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  align-items:start;
+  justify-content:center!important;
+  gap:12px!important;
+  border:0!important;
+  background:transparent!important;
+  overflow:visible!important;
+}
+.home-overview .metric,.home-overview .metric:last-child{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-height:101px!important;
+  padding:8px 6px!important;
+  border:0!important;
+  background:transparent!important;
+  border-radius:0!important;
+  text-align:center!important;
+  box-shadow:none!important;
+}
+.home-overview .metric::before,.home-overview .metric::after{display:none!important}
+.home-overview .metric span{
+  order:2;
+  font-size:12px!important;
+  color:#98989e!important;
+  font-weight:450!important;
+  letter-spacing:0!important;
+  text-transform:none!important;
+  line-height:1.5!important;
+}
+.home-overview .metric strong{
+  order:1;
+  margin:0 0 9px!important;
+  font-size:clamp(35px,3.9vw,52px)!important;
+  line-height:1.08!important;
+  font-weight:520!important;
+  letter-spacing:-.055em!important;
+  color:#f2f2f3!important;
+  font-variant-numeric:tabular-nums;
+}
+.home-recent{
+  width:min(100%,640px);
+  margin:0 auto 26px;
+  padding:0;
+}
+.home-recent-title{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:12px;margin:0 0 13px;
+  color:#9b9ba1;font-size:12px;font-weight:530;
+}
+.home-recent-title .ghost-link{font-size:11px}
+.home-recent-list{display:flex;flex-direction:column;gap:3px}
+.home-recent-item{
+  width:100%;min-width:0;min-height:45px;
+  display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding:10px 7px!important;
+  border:0!important;
+  background:transparent!important;
+  border-radius:7px!important;
+  font:inherit;text-align:left;color:#e5e5e8!important;
+}
+button.home-recent-item{cursor:pointer}
+button.home-recent-item:hover,button.home-recent-item:focus-visible{
+  background:#1d1d20!important;
+}
+.home-recent-name{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:13px;font-weight:510;
+}
+.home-recent-detail{
+  flex:none;max-width:44%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#8f8f96;font-size:11px;
+}
+.home-overview .home-priority,.home-overview .home-memory{
+  width:100%;margin:0 auto 32px;gap:25px!important;
+}
+.home-overview .home-priority .card,.home-overview .home-memory .card{
+  padding:0;min-width:0;
+}
+.home-overview .card-head{margin:0 0 6px;padding:6px 0!important}
+.home-overview .home-attention-note{
+  text-align:center;margin:-33px 0 36px;color:#b4b4b9;font-size:12px;
+}
+.home-overview .home-utilities{
+  width:100%;margin:10px auto 0!important;
+  padding:10px 0 0!important;
+  border:0!important;
+}
+.home-overview .utility-links{
+  display:flex;justify-content:center;align-items:center;gap:29px;flex-wrap:wrap;
+}
+.home-overview .utility-links .ghost-link{
+  color:#8e8e95;font-size:12px;font-weight:480;
+}
+.home-overview .utility-links .ghost-link:hover{color:#f1f1f1}
+.home-empty{
+  width:min(100%,700px);
+  min-height:min(650px,calc(100dvh - 150px));
+  margin:0 auto;
+  padding:40px 14px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;background:transparent;border:0;
+}
+.home-empty h2{font-size:clamp(27px,3.2vw,38px);font-weight:550;letter-spacing:-.05em;margin:0 0 9px}
+.home-empty p{font-size:13px;color:#9c9ca3;margin:0 0 22px}
+.home-empty-actions{display:flex;justify-content:center;align-items:center;gap:9px;flex-wrap:wrap}
+.home-empty-actions button{min-height:37px}
+@media(max-width:700px){
+  .home-overview{padding-top:clamp(34px,9vh,68px);padding-bottom:35px}
+  .home-overview-quiet{padding-top:clamp(58px,15vh,115px)}
+  .home-overview .metrics{
+    gap:0!important;
+    width:100%!important;
+    margin-bottom:35px!important;
+  }
+  .home-overview .metric,.home-overview .metric:last-child{
+    min-height:91px!important;padding:7px 2px!important;
+  }
+  .home-overview .metric strong{font-size:35px!important;margin-bottom:7px!important}
+  .home-overview .metric span{font-size:10px!important}
+  .home-recent{margin-bottom:15px}
+  .home-recent-item{min-height:43px;padding:9px 3px!important}
+  .home-overview .utility-links{gap:22px}
+  .home-empty{min-height:calc(100dvh - 230px);padding-inline:18px}
+}
+@media(max-width:360px){
+  .home-overview .metric strong{font-size:30px!important}
+  .home-overview .metric span{font-size:9px!important}
+}
+
