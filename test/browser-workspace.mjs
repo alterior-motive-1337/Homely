@@ -95,7 +95,14 @@ try {
     const action=await page.locator(actionSelector).boundingBox();
     return Boolean(search&&action&&Math.abs((search.y+search.height/2)-(action.y+action.height/2))<22&&action.x>search.x+search.width);
   };
-  assert.equal(await placement("#record-search","#new-issue"),true,"issue search and main action must share a control row");
+  assert.equal(await placement(".register-tools .search-toggle","#new-issue"),true,"issue search control and main action must share a row");
+  assert.equal(await page.locator("#record-search").isVisible(),false,"search must remain hidden until requested");
+  await page.keyboard.press("/");
+  assert.equal(await page.locator("#record-search").isVisible(),true,"slash opens direct search");
+  assert.equal(await page.locator("#record-search").evaluate(el=>document.activeElement===el),true,"slash focuses local search");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#record-search").isVisible(),false,"Escape hides local search");
+  await page.locator(".search-toggle").click();
   assert.equal(await page.locator(".ledger-toolbar").count(),0,"records must not have a second toolbar band");
   const total = await page.locator(".ledger-entry").count();
   assert.equal(await page.locator(".ledger").evaluate(el => getComputedStyle(el).borderTopWidth),"0px","registers should not be boxed in");
@@ -106,7 +113,9 @@ try {
   assert.equal(await page.locator(".ledger-entry:visible").count(), 1);
   const fetches = issueFetches;
   await go("appliances");
-  assert.equal(await placement("#asset-search","#new-asset"),true,"asset search and main action must share a control row");
+  assert.equal(await placement(".register-search .search-toggle","#new-asset"),true,"asset search icon and action must share a row");
+  assert.equal(await page.locator("#asset-search").isVisible(),false,"asset search is collapsed by default");
+  await page.locator(".search-toggle").click();
   assert.equal(await page.locator(".ledger-toolbar").count(),0,"asset register should not repeat the action header");
   await page.locator("#asset-search").fill("inverter");
   assert.equal(await page.locator("#new-asset").count(),1,"search updates must retain the primary action");
@@ -125,7 +134,7 @@ try {
   await page.locator("#record-search").fill("no-such-record-xyz");
   await page.getByText("No matching records", { exact: true }).waitFor();
   await page.reload();
-  await page.locator("#record-search").waitFor();
+  await page.locator("#record-search").waitFor({state:"attached"});
   assert.equal(issueFetches, fetches + 1);
   await page.locator("#new-issue").click();
   await page.locator('#issue-form select[name="assetId"]').selectOption("asset-tap");
@@ -135,7 +144,7 @@ try {
   await page.locator("[data-issue-open]").filter({ hasText: "Browser transaction issue" }).waitFor();
 
   await go("repairs");
-  assert.equal(await placement("#record-search","#new-repair"),true,"repair search and action must share a control row");
+  assert.equal(await placement(".register-tools .search-toggle","#new-repair"),true,"repair search icon and action must share a row");
   await page.locator("#new-repair").click();
   await page.locator('#repair-form select[name="assetId"]').selectOption("asset-tap");
   await page.locator('#repair-form input[name="title"]').fill("Browser repair record");
@@ -145,12 +154,13 @@ try {
   await page.locator("[data-repair-open]").filter({ hasText: "Browser repair record" }).click();
   await page.getByRole("heading", { name: "Work performed", exact: true }).waitFor();
   await page.locator("#modal-close").click();
+  await page.locator(".search-toggle").click();
   await page.locator("#record-search").fill("no-such-repair-xyz");
   await page.getByText("No matching records", { exact: true }).waitFor();
   await page.locator("#record-search").fill("");
 
   await go("files");
-  assert.equal(await placement("#file-search","#upload-file"),true,"file search and upload must share a control row");
+  assert.equal(await placement(".file-controls .search-toggle","#upload-file"),true,"file search icon and upload must share a row");
   assert.equal(await page.locator(".file-browser .ledger-toolbar").count(),0,"file browser must not contain a duplicate toolbar");
   assert.equal(await page.locator(".file-controls #save-link").count(),1,"save link stays beside file upload");
   const infoDivider=page.locator("#file-info-resizer");
@@ -178,6 +188,7 @@ try {
   await page.locator("#modal-close").click();
   await page.locator(".file-card").first().click();
   await page.locator("#inspect-open").waitFor();
+  await page.locator(".search-toggle").click();
   await page.locator("#file-search").fill("no-such-file-xyz");
   await page.getByText("No matching files", { exact: true }).waitFor();
   assert.equal(await page.locator("#inspect-open").count(), 0, "hidden selection must not leave a stale inspector");
