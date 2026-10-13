@@ -49,12 +49,34 @@ function linkedFilesButton(label,id){
   return '<button type="button" class="ledger-file-link" data-'+label+'="'+esc(id)+'" title="Open record and related files" aria-label="Open record and related files">▤ <span>Files</span></button>';
 }
 
+function registerTools(label,status=false){
+  return '<div class="register-tools"><input class="search" id="record-search" type="search" placeholder="Search '+esc(label)+'" aria-label="Search '+esc(label)+'">'
+    +(status?'<div class="register-filters" aria-label="Issue status"><button type="button" data-status="all" aria-pressed="true">All</button><button type="button" data-status="open" aria-pressed="false">Open</button><button type="button" data-status="resolved" aria-pressed="false">Resolved</button></div>':'')
+    +'<span class="search-count" id="search-count" role="status"></span></div>';
+}
+function bindRegisterSearch(items,textFor,isOpen){
+  const search=$("#record-search"),entries=$$(".ledger-entry",content);
+  let status="all";
+  const empty=document.createElement("div");empty.className="search-empty";empty.hidden=true;
+  empty.innerHTML='<strong>No matching records</strong><span>Try another search or filter.</span>';
+  $(".ledger-rows",content).appendChild(empty);
+  function update(){
+    const query=search.value.trim().toLowerCase();let count=0;
+    entries.forEach((entry,index)=>{const item=items[index];const matches=textFor(item).toLowerCase().includes(query)&&(!isOpen||status==="all"||(status==="open"?isOpen(item):!isOpen(item)));entry.hidden=!matches;if(matches)count++});
+    empty.hidden=!items.length||count>0;
+    $("#search-count").textContent=query||status!=="all"?count+" of "+items.length:"";
+  }
+  search.oninput=update;
+  $$("[data-status]",content).forEach(button=>button.onclick=()=>{status=button.dataset.status;$$("[data-status]",content).forEach(b=>b.setAttribute("aria-pressed",String(b===button)));update()});
+}
+
 function setRuntime(x){
   state.integrations=x;runtime.className="runtime-status";
   const ai=x&&x.ai;
   runtime.classList.add("good");runtimeText.textContent="Home memory active";
   agentState.textContent=ai&&ai.available?"Ready":"Chat unavailable";
   chatInput.disabled=!(ai&&ai.available);chatForm.querySelector('button[type="submit"]').disabled=!(ai&&ai.available);
+  voiceButton.disabled=!(ai&&ai.available);
   chatInput.placeholder=ai&&ai.available?"Ask Homely…":"Chat is not connected yet";
 
 }
@@ -201,7 +223,8 @@ async function showIssues(){
         +(active?'<button class="ledger-quiet-action" type="button" data-repair="'+esc(item.id)+'">Repair</button><button class="ledger-quiet-action" type="button" data-resolve="'+esc(item.id)+'">Resolve</button>':'')
         +'</div></div>';
     }).join("");
-    content.innerHTML=ledger("Issues",items.length,action,body,assets.length?"Report an issue to create a dated record and keep its files together.":"Register the first household asset to begin logging issues.","Issue");
+    content.innerHTML=registerTools("issues",true)+ledger("Issues",items.length,action,body,assets.length?"Report an issue to create a dated record and keep its files together.":"Register the first household asset to begin logging issues.","Issue");
+    bindRegisterSearch(items,i=>[i.title,i.asset_name,i.description,i.status,i.severity].filter(Boolean).join(" "),i=>!["RESOLVED","CLOSED"].includes(i.status));
     const add=$("#new-issue");if(add)add.onclick=openIssueForm;
     const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
     $$("[data-resolve]",content).forEach(b=>b.onclick=()=>openResolveForm(items.find(i=>i.id===b.dataset.resolve)));
@@ -220,7 +243,8 @@ async function showRepairs(){
     state.assets=assets;
     const action=assets.length?'<button class="primary-button" id="new-repair" type="button">+ Record repair</button>':'<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
     const body=items.map((r,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+(r.outcome||r.description?' · '+esc(r.outcome||r.description):'')+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
-    content.innerHTML=ledger("Repairs",items.length,action,body,assets.length?"Repairs and their costs will appear here.":"Register a household asset to begin recording repairs.","Repair");
+    content.innerHTML=registerTools("repairs")+ledger("Repairs",items.length,action,body,assets.length?"Repairs and their costs will appear here.":"Register a household asset to begin recording repairs.","Repair");
+    bindRegisterSearch(items,r=>[r.title,r.asset_name,r.contractor,r.description,r.outcome].filter(Boolean).join(" "));
     const add=$("#new-repair");if(add)add.onclick=()=>openRepairForm();
     const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
     $$("[data-repair-open]",content).forEach(b=>b.onclick=()=>openRepair(items.find(r=>r.id===b.dataset.repairOpen)));
@@ -302,7 +326,7 @@ async function openAsset(id){
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>')}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
     html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
-    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)openFile(doc)}})
+    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$("[data-file]",modalBody).forEach(function(b){b.onclick=async function(){try{const docs=await api("/api/documents"),doc=docs.find(function(d){return d.id===b.dataset.file});if(doc)await openFile(doc)}catch(e){notify(e.message)}}})
   }catch(e){notify(e.message)}
 }
 
@@ -467,11 +491,21 @@ async function showFiles(){
       $("#inspect-open").onclick=()=>openFile(doc);
     }
     const search=$("#file-search");
-    search.oninput=e=>{const q=e.target.value.toLowerCase().trim();$$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q)})};
+    const noMatches=document.createElement("div");noMatches.className="search-empty";noMatches.hidden=true;noMatches.innerHTML='<strong>No matching files</strong><span>Try another name or linked record.</span>';$(".file-grid",content).appendChild(noMatches);
+    search.oninput=e=>{
+      const q=e.target.value.toLowerCase().trim();let count=0;
+      $$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q);if(!card.hidden)count++});
+      noMatches.hidden=!docs.length||count>0;
+      if(!$("[data-file][aria-pressed=true]:not([hidden])",content)){
+        $$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed","false"));
+        inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">▤</span><p>Select a file to see its details.</p></div>';
+      }
+    };
     $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
       b.onclick=()=>selectFile(doc);
       b.ondblclick=()=>openFile(doc);
+      b.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();void openFile(doc)}};
     });
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
@@ -525,14 +559,14 @@ async function selectView(view){
   if(state.view && content.hasChildNodes() && !stale && !content.querySelector(".loading,.error")){
     const fragment=document.createDocumentFragment();
     while(content.firstChild)fragment.appendChild(content.firstChild);
-    viewPanels.set(state.view,{fragment:fragment,time:state.viewLoadedAt||Date.now()});
+    viewPanels.set(state.view,{fragment:fragment,time:state.viewLoadedAt||Date.now(),title:pageTitle.textContent});
   }else{content.replaceChildren()}
   state.needsReload=false;state.view=next;
   pageTitle.textContent=views[next][0];document.title=views[next][0]+" · Homely";
   $$(".nav-item").forEach(function(b){b.classList.toggle("active",b.dataset.view===next);if(b.dataset.view===next)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
   const saved=viewPanels.get(next);
   if(saved && Date.now()-saved.time<VIEW_CACHE_MS){
-    viewPanels.delete(next);state.viewLoadedAt=saved.time;content.appendChild(saved.fragment);return;
+    viewPanels.delete(next);state.viewLoadedAt=saved.time;content.appendChild(saved.fragment);pageTitle.textContent=saved.title;document.title=saved.title+" · Homely";return;
   }
   viewPanels.delete(next);state.viewLoadedAt=Date.now();
   await views[next][1]();
@@ -542,27 +576,36 @@ nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.
 window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
 function syncAssistantAccessibility(){
   const docked=window.matchMedia("(min-width: 960px)").matches;
-  chatRail.setAttribute("aria-hidden",String(!(docked||chatRail.classList.contains("open"))));
+  const visible=docked||chatRail.classList.contains("open");
+  chatRail.setAttribute("aria-hidden",String(!visible));chatRail.inert=!visible;
+  const modalAssistant=!docked&&visible;
+  $(".workspace").inert=modalAssistant;$(".sidebar").inert=modalAssistant;
+  chatRail.setAttribute("role",modalAssistant?"dialog":"complementary");
+  if(modalAssistant)chatRail.setAttribute("aria-modal","true");else chatRail.removeAttribute("aria-modal");
   if(docked)$("#chat-backdrop").hidden=true;
 }
 window.addEventListener("resize",syncAssistantAccessibility);
 function openChat(){
+  state.chatReturnFocus=document.activeElement;
+  document.body.classList.add("chat-visible");
   chatRail.classList.add("open");
   chatRail.setAttribute("aria-hidden","false");
   $("#chat-backdrop").hidden=false;
   $("#chat-open").setAttribute("aria-expanded","true");
   $("#chat-trigger").setAttribute("aria-expanded","true");
   syncAssistantAccessibility();
-  chatInput.focus();
+  requestAnimationFrame(()=>{if(chatRail.classList.contains("open"))(chatInput.disabled?$("#chat-close"):chatInput).focus()});
 }
 function closeChat(){
   if(state.stopVoice)state.stopVoice();
   chatRail.classList.remove("open");
+  document.body.classList.remove("chat-visible");
   chatRail.setAttribute("aria-hidden","true");
   $("#chat-backdrop").hidden=true;
   $("#chat-open").setAttribute("aria-expanded","false");
   $("#chat-trigger").setAttribute("aria-expanded","false");
   syncAssistantAccessibility();
+  if(!window.matchMedia("(min-width: 960px)").matches)state.chatReturnFocus?.focus();
 }
 $("#chat-open").onclick=openChat;
 $("#chat-trigger").onclick=openChat;
@@ -686,5 +729,15 @@ async function bootstrap(){
   }
 }
 void bootstrap();
-window.addEventListener("keydown",function(e){if(e.key==="Escape"&&!modal.open&&!viewer.open){closeChat()}});
+window.addEventListener("keydown",function(e){
+  if(modal.open||viewer.open)return;
+  if(e.key==="Escape"){closeChat();return}
+  if(e.key==="Tab"&&chatRail.classList.contains("open")&&!window.matchMedia("(min-width: 960px)").matches){
+    const controls=$$("button:not(:disabled),textarea:not(:disabled),a[href]",chatRail).filter(el=>!el.hidden&&el.getClientRects().length);
+    if(controls.length){
+      e.preventDefault();const index=controls.indexOf(document.activeElement);
+      controls[(index+(e.shiftKey?-1:1)+controls.length)%controls.length].focus();
+    }
+  }
+});
 

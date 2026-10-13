@@ -162,6 +162,8 @@ h3{font-size:13px}
   gap:12px;padding:13px 17px;background:#131313;border-bottom:1px solid #303030
 }
 .ledger-identity{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ledger-entry-content strong{letter-spacing:-.01em}
+.ledger-entry-content small{max-width:100%}
 .ledger-overline{font-size:12px;letter-spacing:.01em;color:#e5e5e5;font-weight:610}
 .ledger-count{font-size:11px;color:#939393}
 .ledger-controls{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
@@ -207,6 +209,16 @@ h3{font-size:13px}
 .ledger-zero p{color:#a8a8a8;max-width:53ch;margin:4px 0 0;font-size:12px;line-height:1.6}
 .register-search{margin:0 0 12px;justify-content:flex-start}
 .register-search .search{width:min(360px,100%);min-height:35px;padding:8px 11px;background:#151515;border-color:#383838;font-size:12px}
+.register-tools{display:flex;align-items:center;gap:12px;margin:0 0 16px;flex-wrap:wrap}
+.register-tools .search{flex:1 1 180px;max-width:340px;min-width:0;min-height:36px;padding:8px 11px;background:#111;border:1px solid #333;border-radius:4px;font-size:12px}
+.register-filters{display:flex;gap:2px;padding:3px;background:#111;border:1px solid #303030;border-radius:5px}
+.register-filters button{min-height:28px;padding:5px 11px;background:transparent;border:0;border-radius:3px;color:#aaa;font-size:11px}
+.register-filters button:hover{color:#fff;background:#222}
+.register-filters button[aria-pressed="true"]{background:#303030;color:#fff}
+.search-count{margin-left:auto;font-size:11px;color:#aaa;font-variant-numeric:tabular-nums}
+.search-empty{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:160px;padding:24px;text-align:center}
+.search-empty strong{font-size:13px;font-weight:550;color:#ddd}
+.search-empty span{font-size:12px;color:#999}
 /* File browser with a selection inspector, rather than generic SaaS cards. */
 .file-browser-body{display:grid;grid-template-columns:minmax(0,1fr) 235px;min-height:380px}
 .file-browser-main{padding:15px;min-width:0}
@@ -295,6 +307,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .ledger-actions{gap:2px}
 }
 @media(max-width:959px){
+  body.chat-visible{overflow:hidden}
   .app-shell{display:block;max-width:100%;min-height:100dvh}
   .sidebar{position:relative;min-height:62px;height:auto;flex-wrap:wrap;gap:10px 18px;padding:11px 16px}
   .sidebar-footer{margin-left:auto}
@@ -310,7 +323,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
     grid-template-rows:67px minmax(0,1fr) auto;
     z-index:50;transform:translateX(105%);
     visibility:hidden;pointer-events:none;box-shadow:-20px 0 80px #000a;
-    transition:transform .18s ease,visibility .18s ease
+    transition:transform .18s ease
   }
   .chat-rail.open{transform:translateX(0);visibility:visible;pointer-events:auto}
   #chat-close{display:inline-grid!important;place-items:center}
@@ -325,6 +338,16 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .workspace{padding-inline:12px}
   .content{padding-top:12px}
   .ledger-toolbar{padding:12px;min-height:58px}
+  .ledger-identity{gap:6px}
+  .ledger-toolbar{flex-wrap:wrap}
+  .ledger-controls{margin-left:auto}
+  .register-tools{gap:9px;margin-bottom:12px}
+  .register-tools .search{max-width:none;flex-basis:100%;min-height:40px}
+  .register-filters button{min-height:34px;padding-inline:16px}
+  .nav-item{min-height:36px}
+  .ledger-file-link,.ledger-quiet-action{min-height:34px}
+  .file-card{min-height:150px}
+  .inspector-placeholder{min-height:95px}
   .ledger-columns{display:none}
   .ledger-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;row-gap:9px}
   .ledger-main{grid-column:1/-1}
