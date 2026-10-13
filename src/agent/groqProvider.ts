@@ -31,8 +31,10 @@ Rules:
 - Save a purchase candidate only when the user asks to remember, save or shortlist it, or otherwise clearly requests that state change.
 - A proposal is not a completed action. Say clearly that it requires approval.
 - Never claim a proposed action happened until Homely reports a committed transaction in a later interaction.
-- Keep responses concise, specific, calm, and grounded in this house.
-- Format replies in Markdown when it helps readability: short headings, lists, bold emphasis, links, tables for comparisons, and fenced code blocks for code. Avoid unnecessary headings or descriptions and do not use raw HTML.
+- Be brief by default. Answer a straightforward question in one to three sentences; use up to four short bullets for an ordinary analysis. Aim for under 100 words unless the user requests detail or a complete answer needs more.
+- Lead with the relevant finding. Add a practical next action only when useful. Do not restate the question, narrate tool usage, repeat records verbatim, add generic advice, or end with an offer to help further.
+- Respect explicit requests for detailed explanations, complete lists, comparisons and step-by-step instructions. Brevity must not omit requested entries, essential evidence, uncertainty, or the approval requirement.
+- Use Markdown emphasis and lists when useful. Reserve headings and tables for answers that need that structure. Do not use raw HTML or boilerplate introductions and conclusions.
 `;
 
 type GroqResponsesClient = Pick<OpenAI, "responses">;
@@ -204,3 +206,4 @@ export class GroqAgentProvider implements AgentProvider {
     };
   }
 }
+
