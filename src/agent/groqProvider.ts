@@ -71,6 +71,9 @@ export class GroqAgentProvider implements AgentProvider {
   async respond(request: AgentRequest): Promise<AgentResponse> {
     const message = request.message.trim();
     if (!message) throw new Error("Message is required.");
+    const startedAt=Date.now();
+    let modelMillis=0;
+    let modelRequests=0;
 
     const tools = [
       ...(agentToolDefinitions as OpenAI.Responses.Tool[]),
@@ -79,23 +82,26 @@ export class GroqAgentProvider implements AgentProvider {
     const homeId=activeHomeId();
     const stored=request.previousResponseId&&homeId&&request.userId
       ?this.db.prepare("SELECT input_json FROM agent_contexts WHERE response_id=? AND home_id=? AND user_id=?").get(request.previousResponseId,homeId,request.userId):null;
-    const prior = stored ? JSON.parse(String(stored.input_json)) as unknown[] : request.previousResponseId && !homeId
+    const prior = stored ? (JSON.parse(String(stored.input_json)) as unknown[]).slice(-16) : request.previousResponseId && !homeId
       ? (this.conversationHistories.get(request.previousResponseId)?.homeId===activeHomeId()
           ? this.conversationHistories.get(request.previousResponseId)?.messages : null) ?? []
       : [];
     let groqInput: unknown[] = [...prior, { role: "user", content: message }];
 
+    const modelStartedAt=Date.now();
     let response = await this.client.responses.create({
       model: this.model,
       instructions: INSTRUCTIONS,
       input: groqInput as OpenAI.Responses.ResponseCreateParams["input"],
       tools
     });
+    modelMillis+=Date.now()-modelStartedAt;
+    modelRequests++;
 
     const proposals: AgentProposal[] = [];
     const toolsUsed: string[] = [];
 
-    for (let round = 0; round < 8; round += 1) {
+    for (let round = 0; round < 5; round += 1) {
       const calls = response.output.filter((item) => item.type === "function_call");
       if (!calls.length) break;
 
@@ -142,12 +148,15 @@ export class GroqAgentProvider implements AgentProvider {
         ...outputs
       ];
 
+      const nextStartedAt=Date.now();
       response = await this.client.responses.create({
         model: this.model,
         instructions: INSTRUCTIONS,
         input: groqInput as OpenAI.Responses.ResponseCreateParams["input"],
         tools
       });
+      modelMillis+=Date.now()-nextStartedAt;
+      modelRequests++;
     }
 
     const text = response.output_text?.trim() ||
@@ -159,7 +168,7 @@ export class GroqAgentProvider implements AgentProvider {
       let start=Math.max(0,all.length-80);
       while(start<all.length&&asRecord(all[start]).role!=="user")start++;
       const history=homeId&&request.userId
-        ?[...prior,{role:"user",content:message},{role:"assistant",content:text}].slice(-40)
+        ?[...prior,{role:"user",content:message},{role:"assistant",content:text}].slice(-16)
         :all.slice(start);
       if(homeId&&request.userId){
         this.db.exec("BEGIN IMMEDIATE;");
@@ -178,6 +187,13 @@ export class GroqAgentProvider implements AgentProvider {
       }
     }
 
+    console.info(JSON.stringify({
+      type:"agent_performance",
+      elapsed_ms:Date.now()-startedAt,
+      model_ms:modelMillis,
+      model_requests:modelRequests,
+      tools_used:[...new Set(toolsUsed)]
+    }));
     return {
       text,
       responseId: response.id ?? null,

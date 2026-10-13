@@ -5,10 +5,11 @@ const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 const content=$("#content"), pageTitle=$("#page-title"), nav=$("#nav");
 const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewerBody=$("#viewer-body"), viewerTitle=$("#viewer-title");
 const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input"), voiceButton=$("#voice-button");
-const runtime=$("#runtime-status"), runtimeText=$("#runtime-text"), agentState=$("#agent-state");
+const agentState=$("#agent-state");
 const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false};
 const viewPanels=new Map();
-const VIEW_CACHE_MS=120000;
+const VIEW_CACHE_MS=45000;
+const ACTIVE_REFRESH_MS=45000;
 const LAYOUT_KEY="homely_workspace_layout_v1";
 const workspaceLayout={assistant:{width:null,collapsed:false},files:{width:null,collapsed:false}};
 try{
@@ -55,7 +56,7 @@ function fmtDate(v){return v?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",mont
 function assetAge(a){const value=a.acquired_at||a.purchase_date;if(!value)return"Unknown";const date=new Date(value),now=new Date();if(!Number.isFinite(date.getTime()))return"Unknown";let months=(now.getFullYear()-date.getFullYear())*12+now.getMonth()-date.getMonth();if(now.getDate()<date.getDate())months-=1;if(months<0)return"Not yet acquired";const years=Math.floor(months/12);return years?years+"y "+months%12+"m":months+"m"}
 function money(c){return c==null?"—":new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR",maximumFractionDigits:0}).format(Number(c)/100)}
 function today(){return new Date().toISOString().slice(0,10)}
-$("#today").textContent=new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date());
+
 
 async function api(path,options){
   const init=Object.assign({},options||{});
@@ -69,7 +70,7 @@ async function api(path,options){
   return data
 }
 function notify(message){toast.textContent=message;toast.classList.add("show");setTimeout(function(){toast.classList.remove("show")},2400)}
-function loading(label){content.innerHTML='<div class="loading">'+esc(label||"Loading…")+"</div>"}
+function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="loading">'+esc(label||"Loading…")+"</div>"}
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
 function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(v||"UNKNOWN")+"</span>"}
 function row(title,meta,right,note){return '<div class="row"><div><div class="row-title">'+esc(title)+'</div><div class="row-meta">'+esc(meta||"")+'</div>'+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
@@ -150,16 +151,18 @@ function bindRegisterSearch(items,textFor,isOpen){
 }
 
 function setRuntime(x){
-  state.integrations=x;runtime.className="runtime-status";
+  state.integrations=x;
   const ai=x&&x.ai;
-  runtime.classList.add("good");runtimeText.textContent="Home memory active";
   agentState.textContent=ai&&ai.available?"Ready":"Chat unavailable";
-  chatInput.disabled=!(ai&&ai.available)||state.chatLoading;chatForm.querySelector('button[type="submit"]').disabled=!(ai&&ai.available)||state.chatLoading||state.chatBusy;
+  chatInput.disabled=!(ai&&ai.available)||state.chatLoading;
+  chatForm.querySelector('button[type="submit"]').disabled=!(ai&&ai.available)||state.chatLoading||state.chatBusy;
   voiceButton.disabled=!(ai&&ai.available);
   chatInput.placeholder=ai&&ai.available?"Ask Homely…":"Chat unavailable";
-
 }
-async function refreshStatus(){try{setRuntime(await api("/api/integrations/status"))}catch(_){runtime.classList.add("bad");runtimeText.textContent="Status unavailable"}}
+async function refreshStatus(){
+  try{setRuntime(await api("/api/integrations/status"))}
+  catch(_){agentState.textContent="Chat unavailable"}
+}
 
 function openModal(html){modalBody.innerHTML=html;$$(".field",modalBody).forEach(function(field,index){const label=$("label",field),input=$("input,select,textarea",field);if(label&&input){input.id=input.id||"record-field-"+index;label.htmlFor=input.id}});modal.showModal()}
 function closeModal(){if(modal.open)modal.close();modalBody.innerHTML=""}
@@ -628,18 +631,37 @@ function messageMarkup(m){
   return '<article class="message '+(m.role==="user"?"user":"assistant")+'"><div class="message-role">'+(m.role==="user"?"You":"Homely")+'</div>'+(m.role==="user"?'<p>'+esc(m.text)+'</p>':'<div class="markdown-body"></div>')+(m.proposals||[]).map(function(p){return '<div class="proposal"><strong>'+esc(p.preview.title)+'</strong><div class="row-meta">'+esc(p.preview.summary)+'</div><div class="row-note">'+esc(p.reason)+'</div>'+(p.status==="PROPOSED"?'<div class="proposal-actions"><button class="button" data-reject="'+esc(p.transactionId)+'">Reject</button><button class="primary-button" data-approve="'+esc(p.transactionId)+'">Approve</button></div>':'<div class="row-meta">'+esc(p.status)+"</div>")+"</div>"}).join("")+"</article>"
 }
 function renderChat(){
+  $("#clear-chat").hidden=!state.agentMessages.length;
   chatBody.innerHTML=state.agentMessages.length?state.agentMessages.map(messageMarkup).join(""):"";
   const messages=$$(".message",chatBody);state.agentMessages.forEach((message,index)=>{if(message.role!=="user")$(".markdown-body",messages[index]).append(renderMarkdown(message.text))});
   $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
   $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
+  if(state.chatBusy){
+    const pending=document.createElement("p");
+    pending.className="chat-pending";
+    pending.setAttribute("role","status");
+    pending.textContent="Working…";
+    chatBody.appendChild(pending);
+  }
   chatBody.scrollTop=chatBody.scrollHeight
 }
+chatInput.addEventListener("keydown",event=>{
+  if(event.key!=="Enter"||event.isComposing||event.keyCode===229)return;
+  if(event.shiftKey&&!event.ctrlKey&&!event.metaKey)return;
+  event.preventDefault();
+  if(!chatInput.disabled&&!state.chatLoading&&!state.chatBusy&&chatInput.value.trim())chatForm.requestSubmit();
+});
 chatForm.onsubmit=async function(e){
   e.preventDefault();if(state.chatLoading||state.chatBusy)return;const message=chatInput.value.trim();if(!message)return;state.chatBusy=true;$("#clear-chat").disabled=true;
   state.agentMessages.push({role:"user",text:message,proposals:[]});chatInput.value="";renderChat();const button=chatForm.querySelector('button[type="submit"]');button.disabled=true;button.textContent="Working…";
   try{const r=await api("/api/agent/respond",{method:"POST",body:{message:message,previousResponseId:state.previousResponseId}});state.previousResponseId=r.responseId;state.agentMessages.push({role:"assistant",text:r.text,proposals:(r.proposals||[]).map(function(p){return Object.assign({},p,{status:"PROPOSED"})})})}
   catch(err){state.agentMessages.push({role:"assistant",text:err.message,proposals:[]})}
-  finally{state.chatBusy=false;$("#clear-chat").disabled=false;button.disabled=!(state.integrations&&state.integrations.ai&&state.integrations.ai.available);button.textContent="Send";renderChat()}
+  finally{
+    state.chatBusy=false;$("#clear-chat").disabled=false;
+    button.disabled=!(state.integrations&&state.integrations.ai&&state.integrations.ai.available);
+    button.textContent="Send";renderChat();
+    if(!chatRail.inert&&chatRail.contains(document.activeElement))chatInput.focus();
+  }
 };
 
 function setupVoiceInput(){
@@ -733,7 +755,20 @@ $("#chat-close").onclick=closeChat;
 $("#assistant-collapse").onclick=closeChat;
 bindPanelResize({name:"assistant",container:$("#app-shell"),panel:chatRail,handle:$("#assistant-resizer"),variable:"--assistant-width",min:280,max:640,mainMin:480,breakpoint:960});
 $("#chat-backdrop").onclick=closeChat;
-$("#refresh-view").onclick=function(){viewPanels.clear();state.needsReload=true;void selectView(state.view)};
+async function refreshVisibleView(force=false){
+  if(!state.ready||document.hidden||state.viewRefreshPending||state.chatBusy||modal.open||viewer.open)return;
+  if(!force&&Date.now()-state.viewLoadedAt<ACTIVE_REFRESH_MS)return;
+  const focused=document.activeElement;
+  if(focused&&content.contains(focused)&&focused.matches("input,select,textarea,[contenteditable],button"))return;
+  const current=state.view,revision=++state.viewRevision;
+  state.viewRefreshPending=true;state.silentRefresh=true;
+  try{
+    await views[current][1]();
+    if(state.view===current&&state.viewRevision===revision)state.viewLoadedAt=Date.now();
+  }finally{state.silentRefresh=false;state.viewRefreshPending=false}
+}
+window.addEventListener("focus",()=>void refreshVisibleView());
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)void refreshVisibleView()});
 async function openHouseholdSettings(){
   try{
     const state=await api("/api/homes"),members=await api("/api/homes/members");
@@ -843,8 +878,8 @@ async function bootstrap(){
       }catch(error){notify(error.message)}
     };
     const initial=normalizeView(new URLSearchParams(location.search).get("view")||"home");
-    syncAssistantAccessibility();void refreshStatus();void loadChatHistory();void refreshAlerts();void selectView(initial);renderChat();setupVoiceInput();
-    setInterval(()=>{if(!document.hidden)void refreshAlerts()},60_000);
+    syncAssistantAccessibility();void refreshStatus();void loadChatHistory();void refreshAlerts();await selectView(initial);state.ready=true;renderChat();setupVoiceInput();
+    setInterval(()=>{if(!document.hidden){void refreshAlerts();void refreshVisibleView()}},45_000);
   }catch(error){
     $("#app-shell").hidden=true;$("#auth-screen").hidden=false;
     $("#auth-message").textContent=error.message;
@@ -854,6 +889,14 @@ async function bootstrap(){
 void bootstrap();
 window.addEventListener("keydown",function(e){
   if(modal.open||viewer.open)return;
+  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.code==="Space"){
+    e.preventDefault();
+    const docked=window.matchMedia("(min-width: 960px)").matches;
+    const opened=docked?!workspaceLayout.assistant.collapsed:chatRail.classList.contains("open");
+    if(opened){if(document.activeElement===chatInput)closeChat();else chatInput.focus()}
+    else{openChat();if(docked&&!chatInput.disabled)chatInput.focus()}
+    return;
+  }
   if(e.key==="Escape"&&(chatRail.contains(document.activeElement)||chatRail.classList.contains("open"))){closeChat();return}
   if(e.key==="Tab"&&chatRail.classList.contains("open")&&!window.matchMedia("(min-width: 960px)").matches){
     const controls=$$("button:not(:disabled),textarea:not(:disabled),a[href],[tabindex='0']",chatRail).filter(el=>!el.hidden&&el.getClientRects().length);

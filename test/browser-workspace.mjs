@@ -14,7 +14,12 @@ const go = async view => {
 const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, "horizontal overflow");
 try {
   await page.goto(base);
-  await page.locator("#page-title").filter({ hasText: "14 Hawthorn Residence" }).waitFor();
+  await page.locator("#page-title").filter({ hasText: "14 Hawthorn Residence" }).waitFor({state:"attached"});
+  assert.ok(await page.locator(".topbar").evaluate(el=>{const r=el.getBoundingClientRect();return r.width<=1&&r.height<=1}),"tab labels replace visible page headings");
+  assert.equal(await page.locator("#refresh-view").count(),0,"manual refresh must not remain");
+  assert.equal(await page.locator("#runtime-status").count(),0,"status ornament must not remain");
+  assert.equal(await page.locator(".chat-head strong").count(),0,"assistant must not display a second header");
+  assert.equal(await page.locator(".chat-rail").evaluate(el=>getComputedStyle(el).borderLeftWidth),"0px","assistant should not have a decorative divider");
   assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"), "false", "desktop assistant must be docked");
   await page.getByText("Saved household chat",{exact:true}).waitFor();
   await noOverflow();
@@ -112,7 +117,7 @@ try {
   assert.equal(issueFetches, fetches, "cached tab must not refetch");
   await page.locator("#record-search").fill("no-such-record-xyz");
   await page.getByText("No matching records", { exact: true }).waitFor();
-  await page.locator("#refresh-view").click();
+  await page.reload();
   await page.locator("#record-search").waitFor();
   assert.equal(issueFetches, fetches + 1);
   await page.locator("#new-issue").click();
@@ -151,7 +156,7 @@ try {
   assert.equal(await page.locator("#file-inspector").isVisible(),false);
   await go("home");await go("files");
   assert.equal(await page.locator("#file-inspector").isVisible(),false,"cached tabs must retain collapse state");
-  await page.locator("#refresh-view").click();await page.locator("#file-info-toggle").waitFor();
+  await page.reload();await page.locator("#file-info-toggle").waitFor();
   assert.equal(await page.locator("#file-inspector").isVisible(),false,"rebuilt tabs must retain collapse state");
   await page.locator("#file-info-toggle").click();
   assert.equal(await infoWidth(),originalInfoWidth+20,"rebuilt file pane must retain width");
@@ -226,7 +231,15 @@ try {
   assert.ok((await page.request.post(base+"/api/uploads/"+upload.id+"/finish")).ok());
   const proposal=await (await page.request.post(base+"/api/transactions/preview",{data:{actionType:"ATTACH_DOCUMENT",reason:"Browser video QA",payload:{title:"Video frame QA",documentType:"VIDEO",provider:"LOCAL",uploadId:upload.id}}})).json();
   assert.ok((await page.request.post(base+"/api/transactions/"+proposal.transaction.id+"/commit")).ok());
-  await go("files");await page.locator("#refresh-view").click();
+  await go("files");
+  // Simulate returning to a tab after the automatic revalidation interval.
+  await page.evaluate(()=>{
+    const original=Date.now;
+    Date.now=()=>original()+60000;
+    window.dispatchEvent(new Event("focus"));
+    Date.now=original;
+  });
+  await page.locator(".file-card").filter({hasText:"Video frame QA"}).waitFor();
   await page.locator(".file-card").filter({hasText:"Video frame QA"}).click();
   await page.locator("#inspect-open").click();
   await page.route("**/api/documents/*/analyze",async route=>{
@@ -344,8 +357,17 @@ try {
   assert.equal(await markdown.evaluate(()=>window.__markdownExecuted),undefined);
   await markdown.locator("#assistant-resizer").focus();await markdown.keyboard.press("Home");
   assert.equal(await markdown.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false,"Markdown must fit narrow desktop pane");
-  await markdown.locator("#chat-input").fill("Format this reply");await markdown.getByRole("button",{name:"Send",exact:true}).click();
+  await markdown.locator("#chat-input").fill("Format this reply");
+  await markdown.locator("#chat-input").press("Shift+Enter");
+  assert.equal(await markdown.locator("#chat-input").inputValue(),"Format this reply\n","Shift+Enter inserts a newline");
+  await markdown.locator("#chat-input").press("Enter");
   await markdown.locator(".markdown-body h3").filter({hasText:"New reply"}).waitFor();
+  assert.equal(await markdown.locator("#chat-input").inputValue(),"","Enter submits without leaving extra text");
+  await markdown.keyboard.press("Control+Shift+Space");
+  assert.equal(await markdown.locator("#chat-rail").getAttribute("aria-hidden"),"true","Ctrl+Shift+Space toggles chat closed from input");
+  await markdown.keyboard.press("Control+Shift+Space");
+  assert.equal(await markdown.locator("#chat-rail").getAttribute("aria-hidden"),"false","Ctrl+Shift+Space reopens chat");
+  assert.equal(await markdown.locator("#chat-input").evaluate(el=>document.activeElement===el),true,"keyboard shortcut focuses composer");
   assert.equal(await markdown.locator('[data-approve="markdown-proposal"]').count(),1,"Markdown must preserve proposal controls");
   for(const width of [390,320]){
     await markdown.setViewportSize({width,height:844});
