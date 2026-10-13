@@ -223,11 +223,29 @@ async function assetOptions(selected){
 }
 
 async function previewAction(actionType,payload,reason,requestText){
-  const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
-  const p=result.preview,t=result.transaction;
-  openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div class="preview"><strong>'+esc(p.summary)+'</strong><ul>'+p.effects.map(function(x){return "<li>"+esc(x)+"</li>"}).join("")+'</ul></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
-  $("#reject-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected.")};
-  $("#commit-preview").onclick=async function(){await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});closeModal();notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");await selectView(state.view)}
+  const submit=modal.open?$("form button[type='submit'],form button.primary-button",modalBody):null;
+  if(submit?.disabled)return;
+  const original=submit?.textContent;
+  if(submit){submit.disabled=true;submit.textContent="Preparing…"}
+  try{
+    const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
+    const p=result.preview,t=result.transaction;
+    openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div class="preview"><strong>'+esc(p.summary)+'</strong><ul>'+p.effects.map(function(x){return "<li>"+esc(x)+"</li>"}).join("")+'</ul></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
+    $("#reject-preview").onclick=async function(){
+      const button=$("#reject-preview");button.disabled=true;button.textContent="Rejecting…";
+      try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected.")}
+      catch(error){button.disabled=false;button.textContent="Reject";notify(error.message)}
+    };
+    $("#commit-preview").onclick=async function(){
+      const button=$("#commit-preview");button.disabled=true;button.textContent="Saving…";
+      try{
+        await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});
+        closeModal();notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");
+        await selectView(state.view);
+      }catch(error){if(button.isConnected){button.disabled=false;button.textContent="Approve & commit"}notify(error.message)}
+    };
+  }catch(error){notify(error instanceof Error?error.message:"Could not prepare action.")}
+  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent=original}}
 }
 
 async function openIssueForm(){
