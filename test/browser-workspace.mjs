@@ -66,7 +66,14 @@ try {
   await page.setViewportSize({width:1366,height:768});
   await page.locator("#chat-trigger").click();await divider.dblclick();
   assert.equal(await assistantWidth(),defaultWidth,"double-click must reset assistant width");
+  let releaseHomes;
+  const heldHomes=new Promise(resolve=>{releaseHomes=resolve});
+  await page.route("**/api/homes",async route=>{await heldHomes;await route.continue()});
   await page.locator("#household-settings").click();
+  await page.locator("#modal").waitFor({state:"visible"});
+  assert.match(await page.locator("#modal-body").textContent(),/Opening settings/,"slow settings must acknowledge the click immediately");
+  releaseHomes();
+  await page.unroute("**/api/homes");
   await page.getByRole("link", { name: "Export household" }).waitFor();
   const inlineSettings=await page.locator("#rename-home-form").evaluate(form=>{
     const input=form.querySelector("input").getBoundingClientRect();
@@ -186,7 +193,14 @@ try {
   await infoDivider.focus();await page.keyboard.press("Enter");
   assert.equal(await infoWidth(),originalInfoWidth);
   await noOverflow();
+  let releaseRepairOptions;
+  const repairOptions=new Promise(resolve=>{releaseRepairOptions=resolve});
+  await page.route("**/api/repairs",async route=>{await repairOptions;await route.continue()});
   await page.locator("#upload-file").click();
+  await page.locator("#modal").waitFor({state:"visible"});
+  assert.match(await page.locator("#modal-body").textContent(),/Preparing file options/,"upload action must respond before metadata loads");
+  releaseRepairOptions();
+  await page.unroute("**/api/repairs");
   await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
   await page.locator("#modal-close").click();
   await page.locator("#save-link").click();
