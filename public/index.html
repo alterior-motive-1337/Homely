@@ -22,7 +22,7 @@
 <div class="app-shell" id="app-shell" hidden>
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="Homely home"><img class="brand-mark" src="/house.svg" width="32" height="32" alt=""><span><strong>Homely</strong></span></a>
-    <nav id="nav" class="nav">
+    <nav id="nav" class="nav" aria-label="Main navigation">
       <button class="nav-item active" data-view="home">Home</button>
       <button class="nav-item" data-view="issues">Issues</button>
       <button class="nav-item" data-view="repairs">Repairs</button>
@@ -35,19 +35,19 @@
     </div>
   </aside>
   <main class="workspace">
-    <header class="topbar"><h1 id="page-title">Home</h1><div class="topbar-actions"><div id="today" hidden></div><button class="button" id="alerts-trigger" type="button" hidden>Alerts</button><button class="icon-button" id="refresh-view" type="button" title="Refresh records" aria-label="Refresh records">↻</button><button class="button chat-trigger" id="chat-trigger" type="button" aria-expanded="false" aria-controls="chat-rail">Ask Homely</button></div></header>
+    <header class="topbar"><h1 id="page-title">Home</h1><div class="topbar-actions"><div id="today" hidden></div><button class="button" id="alerts-trigger" type="button" hidden>Alerts</button><button class="icon-button" id="refresh-view" type="button" title="Refresh records" aria-label="Refresh records"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9"/></svg></button><button class="button chat-trigger" id="chat-trigger" type="button" aria-expanded="false" aria-controls="chat-rail">Ask Homely</button></div></header>
     <section id="content" class="content"></section>
   </main>
   <aside class="chat-rail" id="chat-rail" aria-hidden="true" aria-label="Homely assistant">
-    <header class="chat-head"><div><strong>Ask Homely</strong><small id="agent-state"></small></div><button class="icon-button" id="clear-chat" type="button" aria-label="Clear chat" title="Clear chat">↺</button><button class="icon-button" id="chat-close" type="button" aria-label="Close chat">×</button></header>
+    <header class="chat-head"><div><strong>Ask Homely</strong><small id="agent-state"></small></div><button class="icon-button" id="clear-chat" type="button" aria-label="Clear chat" title="Clear chat"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h5M4 10V5M4 10a8 8 0 1 1 1 8"/></svg></button><button class="icon-button" id="chat-close" type="button" aria-label="Close chat"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
     <div class="chat-body" id="chat-body"></div>
     <form class="chat-form" id="chat-form"><textarea id="chat-input" aria-label="Message Homely" maxlength="4000" rows="3" placeholder="Ask Homely…" required></textarea><div class="chat-actions"><button class="button voice-button" id="voice-button" type="button">Voice</button><button class="primary-button" type="submit">Send</button></div></form>
   </aside>
 </div>
 <button class="chat-backdrop" id="chat-backdrop" type="button" aria-label="Close assistant" hidden></button>
 <button class="chat-fab" id="chat-open" type="button" aria-expanded="false" aria-controls="chat-rail">Ask Homely</button>
-<dialog class="modal" id="modal" aria-label="Home record"><button class="modal-close" id="modal-close" aria-label="Close record">×</button><div id="modal-body"></div></dialog>
-<dialog class="viewer" id="viewer" aria-labelledby="viewer-title"><header class="viewer-head"><div><strong id="viewer-title">File</strong></div><div class="viewer-controls"><button class="button" id="analyze-file" type="button" hidden>Analyze</button><button class="icon-button" id="viewer-close" aria-label="Close file">×</button></div></header><div class="viewer-body" id="viewer-body"></div><div id="viewer-insight" class="viewer-insight" hidden></div></dialog>
+<dialog class="modal" id="modal" aria-label="Home record"><button class="modal-close" id="modal-close" aria-label="Close record"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m6 6 12 12M18 6 6 18"/></svg></button><div id="modal-body"></div></dialog>
+<dialog class="viewer" id="viewer" aria-labelledby="viewer-title"><header class="viewer-head"><div><strong id="viewer-title">File</strong></div><div class="viewer-controls"><button class="button" id="analyze-file" type="button" hidden>Analyze</button><button class="icon-button" id="viewer-close" aria-label="Close file"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div></header><div class="viewer-body" id="viewer-body"></div><div id="viewer-insight" class="viewer-insight" hidden></div></dialog>
 <div class="toast" id="toast" role="status"></div>
 <script type="module" src="/app.js"></script>
 </body>

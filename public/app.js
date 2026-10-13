@@ -34,7 +34,7 @@ function row(title,meta,right,note){return '<div class="row"><div><div class="ro
 
 
 function emptyState(title,buttons,compact=false){
-  return '<section class="empty-state'+(compact?' compact':'')+'"><div class="empty-symbol" aria-hidden="true">▤</div><h2>'+esc(title)+'</h2>'
+  return '<section class="empty-state'+(compact?' compact':'')+'"><div class="empty-symbol" aria-hidden="true">'+fileIcon()+'</div><h2>'+esc(title)+'</h2>'
     +(buttons?'<div class="hero-actions">'+buttons+'</div>':'')+'</section>';
 }
 function fillForm(form,values){Object.entries(values).forEach(([name,value])=>{const input=form.elements.namedItem(name);if(input)input.value=value==null?"":String(value)})}
@@ -78,7 +78,13 @@ function ledger(title,count,action,body,columns){
    +'<div class="ledger-rows">'+(body||'<div class="ledger-zero"><span class="ledger-zero-mark" aria-hidden="true">—</span><strong>No records</strong></div>')+'</div></section>';
 }
 function linkedFilesButton(label,id){
-  return '<button type="button" class="ledger-file-link" data-'+label+'="'+esc(id)+'" title="Open record and related files" aria-label="Open record and related files">▤ <span>Files</span></button>';
+  return '<button type="button" class="ledger-file-link" data-'+label+'="'+esc(id)+'" title="Open record and related files" aria-label="Open record and related files">'+fileIcon()+'<span>Files</span></button>';
+}
+
+function fileIcon(doc={}){
+  const mime=String(doc.mime_type||doc.mimeType||'').toLowerCase();
+  const paths=mime.startsWith('image/')?'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/>':mime.startsWith('video/')?'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4z"/>':mime.startsWith('audio/')?'<path d="M9 18V5l11-2v13M9 5l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="17" cy="16" rx="3" ry="2"/>':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>';
+  return '<svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+paths+'</svg>';
 }
 
 function registerTools(label,status=false){
@@ -442,7 +448,7 @@ async function openLinkEvidenceForm(){
   const options=results[0],issues=results[1],repairs=results[2],charges=results[3],purchases=results[4];
   const optional=function(label,items,display){return '<option value="">'+esc(label)+'</option>'+items.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(display(x))+'</option>'}).join("")};
   const assetOptionsHtml='<option value="">None</option>'+options;
-  openModal('<h2>Save a source link</h2><form class="form" id="link-evidence-form"><div class="form-grid"><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…" required></div><div class="field full"><label>Title</label><input name="title" maxlength="240" required></div><div class="field"><label>Type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>VIDEO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Evidence date</label><input type="date" name="occurredAt" value="'+today()+'" required></div><div class="field"><label>Status</label><select name="evidenceStatus"><option selected>ACTIVE</option><option>REFERENCE</option><option>ARCHIVED</option></select></div><div class="field full"><label>Asset</label><select name="assetId">'+assetOptionsHtml+'</select></div><div class="field full"><label>Issue</label><select name="issueId">'+optional("None",issues,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field full"><label>Repair</label><select name="repairId">'+optional("None",repairs,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field full"><label>Recurring charge</label><select name="chargeId">'+optional("None",charges,function(x){return x.name+" · "+x.billing_cycle})+'</select></div><div class="field full"><label>Potential purchase</label><select name="purchaseCandidateId">'+optional("None",purchases,function(x){return x.title+" · "+x.status})+'</select></div><div class="field full"><label>Provenance</label><input name="provenance" maxlength="1000" value="Saved by homeowner."></div><div class="field full"><label>Reason</label><textarea name="evidenceReason" maxlength="2000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview evidence</button></div></form>');
+  openModal('<h2>Save a source link</h2><form class="form" id="link-evidence-form"><div class="form-grid"><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…" required></div><div class="field full"><label>Title</label><input name="title" maxlength="240" required></div><div class="field"><label>Type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>VIDEO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Evidence date</label><input type="date" name="occurredAt" value="'+today()+'" required></div><div class="field"><label>Status</label><select name="evidenceStatus"><option selected>ACTIVE</option><option>REFERENCE</option><option>ARCHIVED</option></select></div><div class="field"><label>Asset</label><select name="assetId">'+assetOptionsHtml+'</select></div><div class="field"><label>Issue</label><select name="issueId">'+optional("None",issues,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field"><label>Repair</label><select name="repairId">'+optional("None",repairs,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field"><label>Recurring charge</label><select name="chargeId">'+optional("None",charges,function(x){return x.name+" · "+x.billing_cycle})+'</select></div><div class="field"><label>Potential purchase</label><select name="purchaseCandidateId">'+optional("None",purchases,function(x){return x.title+" · "+x.status})+'</select></div><div class="field full"><label>Provenance</label><input name="provenance" maxlength="1000" value="Saved by homeowner."></div><div class="field full"><label>Reason</label><textarea name="evidenceReason" maxlength="2000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview evidence</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#link-evidence-form").onsubmit=async function(e){
     e.preventDefault();const d=new FormData(e.currentTarget),url=String(d.get("sourceUrl")||"").trim();
@@ -532,18 +538,18 @@ async function showFiles(){
     const buttons='<button class="button" id="save-link" type="button">+ Save link</button><button class="primary-button" id="upload-file" type="button">+ Upload file</button>';
     let cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
-      return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false"><span class="file-glyph" aria-hidden="true">▤</span><span class="file-type">'+esc(d.type||"FILE")+'</span><strong>'+esc(d.title)+'</strong><small>'+esc(links.join(" · "))+'</small></button>';
+      return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false"><span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-type">'+esc(d.type||"FILE")+'</span><strong>'+esc(d.title)+'</strong><small>'+esc(links.join(" · "))+'</small></button>';
     }).join("");
-    if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">▤</span><strong>No files</strong></div>';
+    if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
     content.innerHTML='<section class="file-browser"><div class="ledger-toolbar"><div class="ledger-identity"><span class="ledger-overline">Files</span><span class="ledger-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span></div><div class="ledger-controls">'+buttons+'</div></div>'
-      +'<div class="file-browser-body"><div class="file-browser-main"><div class="file-browser-search"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">▤</span></div></aside></div></section>';
+      +'<div class="file-browser-body"><div class="file-browser-main"><div class="file-browser-search"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></aside></div></section>';
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
     const inspector=$("#file-inspector");
     function selectFile(doc){
       $$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed",String(card.dataset.file===doc.id)));
       const related=[doc.asset_name,doc.issue_title&&"Issue: "+doc.issue_title,doc.repair_title&&"Repair: "+doc.repair_title,doc.charge_name&&"Charge: "+doc.charge_name,doc.purchase_title&&"Purchase: "+doc.purchase_title].filter(Boolean).join(" · ");
-      inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-heading"><span class="file-glyph" aria-hidden="true">▤</span><strong>'+esc(doc.title)+'</strong></div><dl class="inspector-details">'
+      inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-heading"><span class="file-glyph" aria-hidden="true">'+fileIcon(doc)+'</span><strong>'+esc(doc.title)+'</strong></div><dl class="inspector-details">'
         +'<div><dt>Type</dt><dd>'+esc(doc.type||"File")+'</dd></div><div><dt>Date</dt><dd>'+fmtDate(doc.occurred_at||doc.created_at)+'</dd></div>'
         +(related?'<div><dt>Linked to</dt><dd>'+esc(related)+'</dd></div>':'')
         +(doc.evidence_reason?'<div><dt>Reason</dt><dd>'+esc(doc.evidence_reason)+'</dd></div>':'')
@@ -558,7 +564,7 @@ async function showFiles(){
       noMatches.hidden=!docs.length||count>0;
       if(!$("[data-file][aria-pressed=true]:not([hidden])",content)){
         $$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed","false"));
-        inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">▤</span></div>';
+        inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div>';
       }
     };
     $$("[data-file]",content).forEach(b=>{
