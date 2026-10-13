@@ -192,10 +192,30 @@ async function refreshStatus(){
   catch(_){agentState.textContent="Chat unavailable"}
 }
 
-function openModal(html){modalBody.innerHTML=html;$$(".field",modalBody).forEach(function(field,index){const label=$("label",field),input=$("input,select,textarea",field);if(label&&input){input.id=input.id||"record-field-"+index;label.htmlFor=input.id}});modal.showModal()}
-function closeModal(){if(modal.open)modal.close();modalBody.innerHTML=""}
+let modalGeneration=0;
+function openModal(html){
+  modalGeneration++;
+  modalBody.innerHTML=html;
+  $(".field",modalBody).forEach(function(field,index){
+    const label=$("label",field),input=$("input,select,textarea",field);
+    if(label&&input){input.id=input.id||"record-field-"+index;label.htmlFor=input.id}
+  });
+  if(!modal.open)modal.showModal();
+  return modalGeneration;
+}
+function closeModal(){
+  modalGeneration++;
+  if(modal.open)modal.close();
+  modalBody.innerHTML="";
+}
+function waitingModal(text){return openModal('<div class="loading" role="status">'+esc(text||"Loading…")+'</div>')}
+function modalPending(token){return modal.open&&modalGeneration===token}
+function modalLoadFailed(token,error){
+  if(modalPending(token)){closeModal();notify(error instanceof Error?error.message:"Could not load form.")}
+}
 $("#modal-close").onclick=closeModal;
 modal.addEventListener("cancel",function(e){e.preventDefault();closeModal()});
+modal.addEventListener("close",()=>{modalGeneration++});
 
 async function assetOptions(selected){
   if(!state.assets.length)state.assets=await api("/api/assets");
@@ -223,8 +243,12 @@ function openResolveForm(issue){
 }
 async function openRepairForm(prefill){
   prefill=prefill||{};
-  const options=await assetOptions(prefill.asset_id||"");
-  const issues=await api("/api/issues");
+  const pending=waitingModal("Preparing repair form…");
+  let options,issues;
+  try{
+    [options,issues]=await Promise.all([assetOptions(prefill.asset_id||""),api("/api/issues")]);
+  }catch(error){modalLoadFailed(pending,error);return}
+  if(!modalPending(pending))return;
   const issueOpts=['<option value="">None</option>'].concat(issues.map(function(i){return '<option value="'+esc(i.id)+'" '+(i.id===prefill.id?"selected":"")+">"+esc(i.title)+" · "+esc(i.asset_name)+"</option>"})).join("");
   const title=prefill.title?"Repair: "+prefill.title:"";
   openModal('<h2>Record a repair</h2><form class="form" id="repair-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field full"><label>Linked issue</label><select name="issueId">'+issueOpts+'</select></div><div class="field full"><label>Repair title</label><input name="title" maxlength="180" required value="'+esc(title)+'"></div><div class="field"><label>Date</label><input type="date" name="repairDate" value="'+today()+'" required></div><div class="field"><label>Cost (ZAR)</label><input type="number" name="cost" min="0" step=".01" placeholder="0.00"></div><div class="field full"><label>Contractor / person</label><input name="contractor" maxlength="240"></div><div class="field full"><label>Work performed</label><textarea name="description"></textarea></div><div class="field full"><label>Outcome</label><textarea name="outcome"></textarea></div></div><div class="row-note">Permanent record.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
@@ -387,14 +411,19 @@ function evidenceMarkup(docs){return '<div class="detail-section"><h3>Files</h3>
 function bindEvidence(docs){$$("[data-evidence]",modalBody).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.evidence}))}})}
 async function openIssue(issue){
   if(!issue)return;
-  try{const results=await Promise.all([api("/api/documents"),api("/api/assets/"+encodeURIComponent(issue.asset_id))]),docs=results[0].filter(function(d){return d.issue_id===issue.id}),history=(results[1].history||[]).filter(function(e){return e.issue_id===issue.id});
+  const pending=waitingModal("Opening issue…");
+  try{const results=await Promise.all([api("/api/documents"),api("/api/assets/"+encodeURIComponent(issue.asset_id))]);
+    if(!modalPending(pending))return;
+    const docs=results[0].filter(function(d){return d.issue_id===issue.id}),history=(results[1].history||[]).filter(function(e){return e.issue_id===issue.id});
     openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issue.status)+badge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"—")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-attach">Attach file</button><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
     bindEvidence(docs);$("#issue-attach").onclick=function(){openUploadEvidenceForm({assetId:issue.asset_id,issueId:issue.id})};$("#issue-asset").onclick=function(){openAsset(issue.asset_id)};if($("#issue-repair"))$("#issue-repair").onclick=function(){openRepairForm(issue)};if($("#issue-resolve"))$("#issue-resolve").onclick=function(){openResolveForm(issue)};
   }catch(e){notify(e.message)}
 }
 async function openRepair(repair){
   if(!repair)return;
+  const pending=waitingModal("Opening repair…");
   try{const docs=(await api("/api/documents")).filter(function(d){return d.repair_id===repair.id});
+    if(!modalPending(pending))return;
     openModal('<p class="eyebrow">Repair · '+esc(repair.asset_name)+'</p><h2>'+esc(repair.title)+'</h2><div class="detail-grid">'+[["Date",fmtDate(repair.repair_date)],["Cost",money(repair.cost_cents)],["Contractor",repair.contractor||"—"]].map(function(pair){return '<div class="detail"><span>'+esc(pair[0])+'</span><strong>'+esc(pair[1])+'</strong></div>'}).join("")+'</div><div class="detail-section"><h3>Work performed</h3><p>'+esc(repair.description||"—")+'</p></div><div class="detail-section"><h3>Outcome</h3><p>'+esc(repair.outcome||"—")+'</p></div>'+(repair.issue_title?'<div class="row-meta">Issue: '+esc(repair.issue_title)+'</div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="repair-attach">Attach file</button><button class="button" id="repair-asset">View asset</button></div>');bindEvidence(docs);$("#repair-attach").onclick=function(){openUploadEvidenceForm({assetId:repair.asset_id,repairId:repair.id})};$("#repair-asset").onclick=function(){openAsset(repair.asset_id)};
   }catch(e){notify(e.message)}
 }
@@ -449,8 +478,10 @@ async function showAppliances(){
 }
 
 async function openAsset(id){
+  const pending=waitingModal("Opening asset…");
   try{
     const a=await api("/api/assets/"+encodeURIComponent(id));
+    if(!modalPending(pending))return;
     let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(a.condition||"UNKNOWN")+badge(a.health)+'</div><div class="detail-grid">';
     [["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Age",assetAge(a)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]].forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
     html+="</div>";if(a.notes)html+='<div class="detail-section"><h3>Notes</h3><div class="row-note">'+esc(a.notes)+"</div></div>";
@@ -571,7 +602,12 @@ $("#viewer-close").onclick=function(){viewer.close()};
 viewer.addEventListener("close",function(){state.viewerRevision=(state.viewerRevision||0)+1;$("#viewer-insight").hidden=true;if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
 
 async function openLinkEvidenceForm(){
-  const results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
+  const pending=waitingModal("Preparing file options…");
+  let results;
+  try {
+    results=await Promise.all([assetOptions(""),api("/api/issues"),api("/api/repairs"),api("/api/charges"),api("/api/purchases")]);
+  } catch(error){modalLoadFailed(pending,error);return}
+  if(!modalPending(pending))return;
   const options=results[0],issues=results[1],repairs=results[2],charges=results[3],purchases=results[4];
   const optional=function(label,items,display){return '<option value="">'+esc(label)+'</option>'+items.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(display(x))+'</option>'}).join("")};
   const assetOptionsHtml='<option value="">None</option>'+options;
@@ -853,11 +889,14 @@ async function refreshVisibleView(force=false){
 window.addEventListener("focus",()=>void refreshVisibleView());
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)void refreshVisibleView()});
 async function openHouseholdSettings(){
+  const pending=waitingModal("Opening settings…");
   try{
-    const state=await api("/api/homes"),members=await api("/api/homes/members");
+    const [state,members]=await Promise.all([api("/api/homes"),api("/api/homes/members")]);
+    if(!modalPending(pending))return;
     const home=state.homes.find(h=>h.id===state.currentHomeId);
     const owner=home&&home.role==="OWNER";
-    const pending=owner?await api("/api/homes/invitations"):[];
+    const pendingInvites=owner?await api("/api/homes/invitations"):[];
+    if(!modalPending(pending))return;
     let markup='<h2>Household settings</h2><p class="row-meta">'+esc($("#account-email").textContent)+'</p>';
     markup+='<div class="detail-section"><h3>Your homes</h3><div class="rows">'+state.homes.map(h=>
       row(h.name,h.role,h.id===state.currentHomeId?'<span class="badge">Current</span>':'<button type="button" class="button" data-switch="'+esc(h.id)+'">Open home</button>')
@@ -865,7 +904,7 @@ async function openHouseholdSettings(){
     if(owner){
       markup+='<div class="detail-section"><h3>Home name</h3><form class="form" id="rename-home-form"><div class="field"><label>Household</label><input name="homeName" maxlength="100" value="'+esc(home.name)+'" required></div><div class="form-actions"><button class="button" type="submit">Save name</button></div></form></div>';
       markup+='<div class="detail-section"><h3>Invite a member</h3><form class="form" id="invite-home-form"><div class="field"><label>Google email address</label><input name="email" type="email" required></div><div class="field"><label>Access</label><select name="role"><option value="MEMBER">Member — edit records</option><option value="VIEWER">Viewer — read only</option></select></div><div class="form-actions"><button class="button" type="submit">Create invite link</button></div></form><div id="invite-result"></div></div>';
-      markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+(pending.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")||'<div class="empty">None</div>')+'</div></div>';
+      markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+(pendingInvites.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")||'<div class="empty">None</div>')+'</div></div>';
     }
     if(owner)markup+='<div class="detail-section"><h3>Download your data</h3><div class="form-actions"><a class="button" href="/api/account/export" download="homely-backup.tar">Export household</a></div></div>';
         markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
