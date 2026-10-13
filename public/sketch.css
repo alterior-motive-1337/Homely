@@ -1468,6 +1468,34 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   padding:9px 12px;background:#151517;
 }
 .viewer-body .viewer-link{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+/* A title gets only its own column; controls keep their full width. */
+.row>div:first-child{min-width:0}
+.viewer-head>div:first-child{flex:1;min-width:0;overflow:hidden}
+.viewer-controls{flex:0 0 auto}
+.ledger-rows,.file-grid,.home-recent-list,.rows{gap:8px!important}
+.ledger-entry,
+.file-card,.file-card:hover,.file-card[aria-pressed="true"],
+.home-recent-item,
+.rows .row,.card-body.rows .row{
+  border:1px solid #303030!important;border-radius:8px!important;
+}
+.ledger-entry:hover,.file-card:hover,.home-recent-item:hover{border-color:#484848!important}
+.file-card[aria-pressed="true"]{border-color:#606060!important}
+.rows .row,.card-body.rows .row{padding:12px!important}
+.fade-title,
+#viewer-title.fade-title,
+.file-card .file-entry-copy strong.fade-title,
+.inspector-heading strong.fade-title,
+.ledger-entry-content strong.fade-title{
+  display:block!important;min-width:0;max-width:100%;width:100%;
+  overflow:hidden!important;white-space:nowrap!important;
+  text-overflow:clip!important;overflow-wrap:normal;word-break:normal;
+  -webkit-line-clamp:unset!important;
+}
+.fade-title.is-overflowing{
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);
+  mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);
+}
 @media(max-width:700px){
   .viewer-body .viewer-text{padding:16px;font-size:11px}
   .viewer-body embed[type="application/pdf"]{min-height:270px;height:65vh}

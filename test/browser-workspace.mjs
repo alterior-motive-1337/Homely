@@ -395,6 +395,67 @@ try {
       assert.equal(await fresh.locator(".ledger-columns").isVisible(),false,"empty registers should not show useless column headings");
     }
   }
+  // Long names must stay in their text column while every control remains usable.
+  const names=await browser.newPage({viewport:{width:1366,height:768}});
+  names.on("pageerror",error=>errors.push(String(error)));
+  const longName="Household_receipt_"+"equipment_reference_".repeat(12)+"2026.pdf";
+  let longDocument;
+  await names.route("**/api/documents",async route=>{
+    const response=await route.fetch(),docs=await response.json();
+    longDocument={...docs[0],title:longName,mime_type:"text/plain",provider:"LOCAL",local_path:"/api/files/fade-test",web_view_link:null,source_url:null};
+    docs[0]=longDocument;if(docs[1])docs[1]={...docs[1],title:"Receipt.txt"};
+    await route.fulfill({response,json:docs});
+  });
+  await names.route("**/api/files/fade-test",route=>route.fulfill({body:"Receipt preview",contentType:"text/plain"}));
+  await names.route("**/api/assets",async route=>{
+    const response=await route.fetch(),assets=await response.json();
+    assets[0]={...assets[0],name:longName.slice(0,180),condition:"UNKNOWN",purchase_cost_cents:null};
+    if(assets[1])assets[1]={...assets[1],purchase_cost_cents:0};
+    await route.fulfill({response,json:assets});
+  });
+  await names.route("**/api/assets/*",async route=>{
+    const response=await route.fetch(),asset=await response.json();
+    await route.fulfill({response,json:{...asset,documents:[longDocument]}});
+  });
+  await names.goto(base);
+  await names.locator('[data-view="files"]').click();
+  const longTitle=names.locator(".file-card .fade-title").first();
+  await names.locator(".file-card .fade-title.is-overflowing").first().waitFor();
+  assert.equal(await longTitle.getAttribute("title"),longName,"full filename remains available");
+  assert.notEqual(await longTitle.evaluate(el=>getComputedStyle(el).maskImage),"none","overflowing filenames fade");
+  assert.equal(await names.locator(".file-card .fade-title").nth(1).evaluate(el=>getComputedStyle(el).maskImage),"none","short names stay fully visible");
+  for(const width of [1366,390,320]){
+    await names.setViewportSize({width,height:844});
+    await names.locator(".file-card .fade-title.is-overflowing").first().waitFor();
+    assert.equal(await names.locator(".file-card").first().evaluate(el=>{
+      const title=el.querySelector(".fade-title").getBoundingClientRect(),type=el.querySelector(".file-type").getBoundingClientRect();
+      return title.right<=type.left&&el.getBoundingClientRect().height<90;
+    }),true,"long names leave file metadata in its own column");
+    await names.locator(".file-card").first().click();
+    await names.locator("#viewer-title.is-overflowing").waitFor();
+    assert.equal(await names.locator(".viewer-head").evaluate(el=>{
+      const title=el.querySelector("#viewer-title").getBoundingClientRect(),buttons=el.querySelector(".viewer-controls").getBoundingClientRect(),box=el.getBoundingClientRect();
+      return title.right<=buttons.left&&buttons.right<=box.right;
+    }),true,"viewer title must not push Analyze or Close offscreen");
+    assert.equal(await names.locator("#analyze-file").isVisible(),true);
+    await names.locator("#viewer-close").click();
+    if(process.env.TEST_SCREENSHOT_DIR)await names.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/faded-names-"+width+".png"});
+  }
+  await names.setViewportSize({width:1366,height:768});
+  await names.locator('[data-view="appliances"]').click();
+  await names.locator(".ledger-entry").first().waitFor();
+  assert.equal(await names.locator(".ledger-entry .ledger-details").first().textContent(),"UNKNOWN","missing purchase price adds no dash or empty value");
+  assert.match(await names.locator(".ledger-entry .money").first().textContent(),/R\s*0/,"a recorded zero price must remain visible");
+  await names.locator("[data-asset]").first().click();
+  await names.locator("#modal .row-title.is-overflowing").waitFor();
+  assert.equal(await names.locator("#modal .row").filter({has:names.locator(".fade-title")}).first().evaluate(el=>{
+    return el.querySelector(".fade-title").getBoundingClientRect().right<=el.querySelector(".row-actions").getBoundingClientRect().left;
+  }),true,"attached filenames leave room for Open");
+  await names.locator("#modal [data-file]").click();
+  await names.locator("#viewer-body .viewer-text").waitFor();
+  await names.locator("#viewer-close").click();await names.locator("#modal-close").click();
+  assert.equal(await names.locator(".ledger-entry").first().evaluate(el=>getComputedStyle(el).borderTopWidth),"1px","entries have visible borders");
+  await names.close();
   // Render saved and new replies using provider-free Markdown fixtures.
   const markdown = await browser.newPage({ viewport: { width: 1366, height: 768 } });
   markdown.on("pageerror", error => errors.push(String(error)));

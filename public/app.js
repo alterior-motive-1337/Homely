@@ -1,4 +1,5 @@
 import { createInteraction, createReview } from "./interactions.js";
+import { watchFadingTitles } from "./fading.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -6,6 +7,8 @@ const content=$("#content"), pageTitle=$("#page-title"), nav=$("#nav");
 const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewerBody=$("#viewer-body"), viewerTitle=$("#viewer-title");
 const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input"), voiceButton=$("#voice-button");
 const agentState=$("#agent-state");
+viewerTitle.classList.add("fade-title");
+watchFadingTitles(document.body);
 const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false};
 const viewPanels=new Map();
 const VIEW_CACHE_MS=45000;
@@ -75,7 +78,7 @@ function notify(message){toast.textContent=message;toast.classList.add("show");s
 function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="loading">'+esc(label||"Loading…")+"</div>"}
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
 function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(v||"UNKNOWN")+"</span>"}
-function row(title,meta,right,note){return '<div class="row"><div><div class="row-title">'+esc(title)+'</div><div class="row-meta">'+esc(meta||"")+'</div>'+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
+function row(title,meta,right,note,fadeTitle=false){return '<div class="row"><div><div class="row-title'+(fadeTitle?' fade-title':'')+'">'+esc(title)+'</div><div class="row-meta">'+esc(meta||"")+'</div>'+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
 
 function emptyState(title,buttons,compact=false){
@@ -403,7 +406,7 @@ async function showIssues(){
        : '<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
     const body=items.map((item,index)=>{
       const active=!["RESOLVED","CLOSED"].includes(item.status);
-      return '<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-entry-content"><strong>'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
+      return '<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
         +'<div class="ledger-details"><span>'+fmtDate(item.detected_at)+'</span>'+badge(item.status)+badge(item.severity)+'</div>'
         +'<div class="ledger-actions">'+linkedFilesButton("issue-files",item.id)
         +(active?'<button class="ledger-quiet-action" type="button" data-repair="'+esc(item.id)+'">Repair</button><button class="ledger-quiet-action" type="button" data-resolve="'+esc(item.id)+'">Resolve</button>':'')
@@ -428,7 +431,7 @@ async function showRepairs(){
     if(revision!==state.viewRevision)return;
     state.assets=assets;
     const action=assets.length?'<button class="primary-button" id="new-repair" type="button">+ Record repair</button>':'<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
-    const body=items.map((r,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-entry-content"><strong>'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
+    const body=items.map((r,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
     content.innerHTML=registerTools("repairs",false,action,items.length)+ledger("Repairs",items.length,"",body,"Repair");
     bindRegisterSearch(items,r=>[r.title,r.asset_name,r.contractor,r.description,r.outcome].filter(Boolean).join(" "));
     const add=$("#new-repair");if(add)add.onclick=()=>openRepairForm();
@@ -438,7 +441,7 @@ async function showRepairs(){
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
-function evidenceMarkup(docs){return '<div class="detail-section"><h3>Files</h3><div class="rows">'+(docs.map(function(d){return row(d.title,d.type+" · "+fmtDate(d.occurred_at||d.created_at),'<button class="button" data-evidence="'+esc(d.id)+'">Open</button>',d.evidence_reason||"")}).join("")||'<div class="empty">No files.</div>')+'</div></div>'}
+function evidenceMarkup(docs){return '<div class="detail-section"><h3>Files</h3><div class="rows">'+(docs.map(function(d){return row(d.title,d.type+" · "+fmtDate(d.occurred_at||d.created_at),'<button class="button" data-evidence="'+esc(d.id)+'">Open</button>',d.evidence_reason||"",true)}).join("")||'<div class="empty">No files.</div>')+'</div></div>'}
 function bindEvidence(docs){$$("[data-evidence]",modalBody).forEach(function(b){b.onclick=function(){openFile(docs.find(function(d){return d.id===b.dataset.evidence}))}})}
 async function openIssue(issue){
   if(!issue)return;
@@ -492,7 +495,7 @@ async function openAssetForm(existing){
 function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
-  const body=items.map((a,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong>'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+'<span>'+money(a.purchase_cost_cents)+'</span></div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">'+fileIcon()+'<span>Files</span></button></div></div>').join("");
+  const body=items.map((a,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+(a.purchase_cost_cents!=null?'<span class="money">'+money(a.purchase_cost_cents)+'</span>':'')+'</div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">'+fileIcon()+'<span>Files</span></button></div></div>').join("");
   target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
   const count=$("#asset-count");
   if(count)count.textContent=items.length+" "+(items.length===1?"entry":"entries");
@@ -521,7 +524,7 @@ async function openAsset(id){
     html+="</div>";if(a.notes)html+='<div class="detail-section"><h3>Notes</h3><div class="row-note">'+esc(a.notes)+"</div></div>";
     html+='<div class="detail-section"><h3>Issues</h3><div class="rows">'+(a.issues.map(function(i){return row(i.title,fmtDate(i.detected_at)+" · "+i.severity,badge(i.status),i.description||"")}).join("")||'<div class="empty">No issues.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
-    html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>')}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
+    html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>',"",true)}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
     html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
     openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$("[data-file]",modalBody).forEach(function(b){b.onclick=function(){const doc=(a.documents||[]).find(d=>d.id===b.dataset.file);if(doc)void openFile(doc)}})
   }catch(e){notify(e.message)}
@@ -736,7 +739,7 @@ async function showFiles(){
     let cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
       return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false">'
-        +'<span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-entry-copy"><strong>'+esc(d.title)+'</strong><small>'+esc(links.join(" · ")||d.type||"File")+'</small></span><span class="file-type">'+esc(d.type||"FILE")+'</span></button>';
+        +'<span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-entry-copy"><strong class="fade-title">'+esc(d.title)+'</strong><small>'+esc(links.join(" · ")||d.type||"File")+'</small></span><span class="file-type">'+esc(d.type||"FILE")+'</span></button>';
     }).join("");
     if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
     content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading">'+quickSearch("files","file-search")+'</div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+buttons+'</div></div>'
@@ -753,7 +756,7 @@ async function showFiles(){
     function selectFile(doc){
       $$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed",String(card.dataset.file===doc.id)));
       const related=[doc.asset_name,doc.issue_title&&"Issue: "+doc.issue_title,doc.repair_title&&"Repair: "+doc.repair_title,doc.charge_name&&"Charge: "+doc.charge_name,doc.purchase_title&&"Purchase: "+doc.purchase_title].filter(Boolean).join(" · ");
-      inspector.innerHTML='<div class="inspector-heading"><span class="file-glyph" aria-hidden="true">'+fileIcon(doc)+'</span><strong>'+esc(doc.title)+'</strong></div><dl class="inspector-details">'
+      inspector.innerHTML='<div class="inspector-heading"><span class="file-glyph" aria-hidden="true">'+fileIcon(doc)+'</span><strong class="fade-title">'+esc(doc.title)+'</strong></div><dl class="inspector-details">'
         +'<div><dt>Type</dt><dd>'+esc(doc.type||"File")+'</dd></div><div><dt>Date</dt><dd>'+fmtDate(doc.occurred_at||doc.created_at)+'</dd></div>'
         +(related?'<div><dt>Linked to</dt><dd>'+esc(related)+'</dd></div>':'')
         +(doc.evidence_reason?'<div><dt>Reason</dt><dd>'+esc(doc.evidence_reason)+'</dd></div>':'')
