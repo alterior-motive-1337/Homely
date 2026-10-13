@@ -115,8 +115,7 @@ async function showAlerts(){
 $("#alerts-trigger").onclick=()=>void showAlerts();
 function ledger(title,count,action,body,columns){
   return '<section class="ledger" aria-label="'+esc(title)+'">'
-   +'<div class="ledger-columns"><span>'+esc(columns||'Record')+'</span><span>Details</span><span>Related</span></div>'
-   +'<div class="ledger-rows">'+(body||'<div class="ledger-zero"><span class="ledger-zero-mark" aria-hidden="true">—</span><strong>No records</strong></div>')+'</div></section>';
+    +'<div class="ledger-rows" role="list">'+(body||'<div class="ledger-zero" role="status">No records</div>')+'</div></section>';
 }
 function linkedFilesButton(label,id){
   return '<button type="button" class="ledger-file-link" data-'+label+'="'+esc(id)+'" title="Open record and related files" aria-label="Open record and related files">'+fileIcon()+'<span>Files</span></button>';
@@ -173,6 +172,7 @@ function bindRegisterSearch(items,textFor,isOpen){
     entries.forEach((entry,index)=>{const item=items[index];const matches=textFor(item).toLowerCase().includes(query)&&(!isOpen||status==="all"||(status==="open"?isOpen(item):!isOpen(item)));entry.hidden=!matches;if(matches)count++});
     empty.hidden=!items.length||count>0;
     $("#search-count").textContent=query||status!=="all"?count+" of "+items.length:items.length+" "+(items.length===1?"entry":"entries");
+    $("#search-count").classList.toggle("is-filtered",Boolean(query||status!=="all"));
   }
   search.oninput=update;
   $$("[data-status]",content).forEach(button=>button.onclick=()=>{status=button.dataset.status;$$("[data-status]",content).forEach(b=>b.setAttribute("aria-pressed",String(b===button)));update()});
@@ -300,14 +300,13 @@ async function showHome(){
       html+='</div>';
     }
     if(recent.length||assets.length){
-      html+='<section class="home-recent" aria-label="Latest records"><div class="home-recent-title"><span>Latest records</span>'
-        +'<button class="ghost-link" '+(recent.length?'id="home-history-link"':'data-go="appliances"')+'>'+(recent.length?'History':'View all')+'</button></div>';
+      html+='<section class="home-recent" aria-label="Recent home records">';
       if(recent.length){
         html+='<div class="home-recent-list">'+recent.slice(0,3).map(e=>'<div class="home-recent-item"><span class="home-recent-name">'+esc(e.title)+'</span><span class="home-recent-detail">'+fmtDate(e.occurred_at)+'</span></div>').join("")+'</div>';
       }else{
         html+='<div class="home-recent-list">'+assets.slice(0,3).map(a=>'<button class="home-recent-item" type="button" data-home-asset="'+esc(a.id)+'"><span class="home-recent-name">'+esc(a.name)+'</span><span class="home-recent-detail">'+esc(a.category||"Asset")+'</span></button>').join("")+'</div>';
       }
-      html+='</section>';
+      html+='<div class="home-recent-tail"><button class="ghost-link" '+(recent.length?'id="home-history-link"':'data-go="appliances"')+'>'+(recent.length?'History':'View all')+'</button></div></section>';
     }
     html+='<nav class="home-utilities" aria-label="Other home records"><div class="utility-links"><button class="ghost-link" id="view-charges-shortcut">Charges</button><button class="ghost-link" id="view-purchases-shortcut">Purchases</button><button class="ghost-link" id="view-history">History</button></div></nav></div>';
     content.innerHTML=html;
@@ -349,7 +348,7 @@ async function showIssues(){
        : '<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
     const body=items.map((item,index)=>{
       const active=!["RESOLVED","CLOSED"].includes(item.status);
-      return '<div class="ledger-entry"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
+      return '<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-entry-content"><strong>'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
         +'<div class="ledger-details"><span>'+fmtDate(item.detected_at)+'</span>'+badge(item.status)+badge(item.severity)+'</div>'
         +'<div class="ledger-actions">'+linkedFilesButton("issue-files",item.id)
         +(active?'<button class="ledger-quiet-action" type="button" data-repair="'+esc(item.id)+'">Repair</button><button class="ledger-quiet-action" type="button" data-resolve="'+esc(item.id)+'">Resolve</button>':'')
@@ -374,7 +373,7 @@ async function showRepairs(){
     if(revision!==state.viewRevision)return;
     state.assets=assets;
     const action=assets.length?'<button class="primary-button" id="new-repair" type="button">+ Record repair</button>':'<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
-    const body=items.map((r,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
+    const body=items.map((r,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-entry-content"><strong>'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
     content.innerHTML=registerTools("repairs",false,action,items.length)+ledger("Repairs",items.length,"",body,"Repair");
     bindRegisterSearch(items,r=>[r.title,r.asset_name,r.contractor,r.description,r.outcome].filter(Boolean).join(" "));
     const add=$("#new-repair");if(add)add.onclick=()=>openRepairForm();
@@ -430,7 +429,7 @@ async function openAssetForm(existing){
 function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
-  const body=items.map((a,index)=>'<div class="ledger-entry"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-index">'+String(index+1).padStart(2,"0")+'</span><span class="ledger-entry-content"><strong>'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+'<span>'+money(a.purchase_cost_cents)+'</span></div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">▤ <span>Files</span></button></div></div>').join("");
+  const body=items.map((a,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong>'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+'<span>'+money(a.purchase_cost_cents)+'</span></div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">▤ <span>Files</span></button></div></div>').join("");
   target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
   const count=$("#asset-count");
   if(count)count.textContent=items.length+" "+(items.length===1?"entry":"entries");
@@ -445,7 +444,7 @@ async function showAppliances(){
     content.innerHTML='<div class="register-search page-controls"><div class="controls-leading">'+quickSearch("assets","asset-search")+'</div><span class="search-count" id="asset-count"></span><div class="controls-actions"><button type="button" class="primary-button" id="new-asset">+ Register asset</button></div></div><div id="asset-results"></div>';
     $("#new-asset").onclick=()=>openAssetForm();
     renderAssets(state.assets);
-    $("#asset-search").oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))))};
+    $("#asset-search").oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))));$("#asset-count")?.classList.toggle("is-filtered",Boolean(q))};
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -631,11 +630,12 @@ async function showFiles(){
     const buttons='<button class="button" id="save-link" type="button">+ Save link</button><button class="primary-button" id="upload-file" type="button">+ Upload file</button><button class="icon-button" id="file-info-toggle" type="button" '+(docs.length?'':'hidden ')+'aria-controls="file-inspector" aria-label="Hide file information" title="Hide file information"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>';
     let cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
-      return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false"><span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-type">'+esc(d.type||"FILE")+'</span><strong>'+esc(d.title)+'</strong><small>'+esc(links.join(" · "))+'</small></button>';
+      return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false">'
+        +'<span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-entry-copy"><strong>'+esc(d.title)+'</strong><small>'+esc(links.join(" · ")||d.type||"File")+'</small></span><span class="file-type">'+esc(d.type||"FILE")+'</span></button>';
     }).join("");
     if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
     content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading">'+quickSearch("files","file-search")+'</div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+buttons+'</div></div>'
-      +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><div class="panel-resizer" id="file-info-resizer" role="separator" tabindex="0" aria-label="Resize file information" aria-orientation="vertical" aria-controls="file-inspector" title="Drag or use arrow keys to resize. Double-click to reset."></div><span class="ledger-overline">Information</span><div id="file-inspector-content"><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></div></aside></div></section>';
+      +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-grid" role="list" aria-label="Files">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><div class="panel-resizer" id="file-info-resizer" role="separator" tabindex="0" aria-label="Resize file information" aria-orientation="vertical" aria-controls="file-inspector" title="Drag or use arrow keys to resize. Double-click to reset."></div><div id="file-inspector-content"><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></div></aside></div></section>';
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
     const browser=$(".file-browser"),infoPanel=$("#file-inspector"),infoToggle=$("#file-info-toggle");
@@ -660,6 +660,8 @@ async function showFiles(){
       const q=e.target.value.toLowerCase().trim();let count=0;
       $$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q);if(!card.hidden)count++});
       noMatches.hidden=!docs.length||count>0;
+      const visibleCount=$("#file-count");
+      if(visibleCount){visibleCount.textContent=q?count+" of "+docs.length:docs.length+" "+(docs.length===1?"file":"files");visibleCount.classList.toggle("is-filtered",Boolean(q))}
       if(!$("[data-file][aria-pressed=true]:not([hidden])",content)){
         $$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed","false"));
         inspector.innerHTML='<div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div>';
@@ -671,6 +673,7 @@ async function showFiles(){
       b.ondblclick=()=>openFile(doc);
       b.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();void openFile(doc)}};
     });
+    if(docs.length)selectFile(docs[0]);
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
