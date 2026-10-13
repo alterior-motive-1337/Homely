@@ -27,6 +27,7 @@ export type HomelyToolName =
   | "get_document"
   | "analyze_document"
   | "get_asset_history"
+  | "search_records"
   | "search_history"
   | "list_maintenance_due"
   | "list_projects"
@@ -184,6 +185,22 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
       type: "object",
       properties: { assetId: { type: "string" } },
       required: ["assetId"],
+      additionalProperties: false
+    }
+  },
+  {
+    type: "function",
+    name: "search_records",
+    description: "Fast read-only search of recorded household entries across assets, issues, repairs, files, charges, saved purchases, maintenance, projects and the timeline. Use this first for questions like 'find the fridge warranty', 'show repairs for the kitchen tap', or 'where did we save the invoice'. Results include a record type and ID; use the corresponding read tool for details. This searches stored metadata and text fields, not unprocessed file contents.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", minLength: 1, maxLength: 200 },
+        category: { type: "string", enum: ["ALL","ASSET","ISSUE","REPAIR","FILE","CHARGE","PURCHASE","MAINTENANCE","PROJECT","HISTORY"] },
+        limit: { type: "integer", minimum: 1, maximum: 30 }
+      },
+      required: ["query","category","limit"],
       additionalProperties: false
     }
   },
@@ -367,6 +384,55 @@ export function executeHomelyTool(
     const asset = getAsset(db, String(args.assetId ?? ""));
     if (!asset) throw new DomainError("Asset not found.", 404);
     return asset.history;
+  }
+
+  if (name === "search_records") {
+    const query = String(args.query ?? "").trim().toLowerCase().slice(0,200);
+    if (!query) throw new DomainError("Search query is required.");
+    const category = String(args.category ?? "ALL").toUpperCase();
+    const valid = ["ALL","ASSET","ISSUE","REPAIR","FILE","CHARGE","PURCHASE","MAINTENANCE","PROJECT","HISTORY"];
+    if (!valid.includes(category)) throw new DomainError("Invalid search category.");
+    const limit = Math.max(1,Math.min(30,Number(args.limit ?? 15) || 15));
+    const tokens = query.split(/\s+/).filter(Boolean);
+    const matches: {type:string;id:string;title:string;context:string;score:number}[]=[];
+    const add = (type:string, records:unknown[], titleFields:string[], contextFields:string[]) => {
+      if (category !== "ALL" && category !== type) return;
+      for (const record of records) {
+        const fields=record as Record<string,unknown>;
+        const id=String(fields.id ?? "");
+        const title=titleFields.map(key=>String(fields[key] ?? "")).find(Boolean) ?? "";
+        const context=contextFields.map(key=>String(fields[key] ?? "")).filter(Boolean).join(" · ");
+        const heading=title.toLowerCase();
+        const body=(title+" "+context).toLowerCase();
+        if (!id || !tokens.every(token=>body.includes(token))) continue;
+        const score=heading===query?4:heading.includes(query)?3:tokens.every(token=>heading.includes(token))?2:1;
+        matches.push({type,id,title,context:context.slice(0,240),score});
+      }
+    };
+    if (category==="ALL" || category==="ASSET")
+      add("ASSET",listAssets(db),["name"],["system_name","category","location","manufacturer","model","notes"]);
+    if (category==="ALL" || category==="ISSUE")
+      add("ISSUE",listIssues(db),["title"],["asset_name","description","status","severity","system_name"]);
+    if (category==="ALL" || category==="REPAIR")
+      add("REPAIR",listRepairs(db),["title"],["asset_name","description","contractor","outcome","issue_title"]);
+    if (category==="ALL" || category==="FILE")
+      add("FILE",listDocuments(db),["title"],["type","asset_name","issue_title","repair_title","original_name","evidence_reason"]);
+    if (category==="ALL" || category==="CHARGE")
+      add("CHARGE",listCharges(db),["name"],["provider","category","notes","billing_cycle"]);
+    if (category==="ALL" || category==="PURCHASE")
+      add("PURCHASE",listPurchaseCandidates(db),["title"],["category","rationale","source_url","asset_name","status"]);
+    if (category==="ALL" || category==="MAINTENANCE")
+      add("MAINTENANCE",listMaintenance(db),["title"],["asset_name","system_name","description","due_state"]);
+    if (category==="ALL" || category==="PROJECT")
+      add("PROJECT",listProjects(db),["title"],["notes","description","status"]);
+    if (category==="ALL" || category==="HISTORY")
+      add("HISTORY",getTimeline(db,250),["title"],["summary","asset_name","event_type"]);
+    matches.sort((a,b)=>b.score-a.score || a.title.localeCompare(b.title));
+    return {
+      query,category,total:matches.length,
+      matches:matches.slice(0,limit).map(({score,...item})=>item),
+      truncated:matches.length>limit
+    };
   }
 
   if (name === "search_history") {
