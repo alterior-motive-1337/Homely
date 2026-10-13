@@ -7,6 +7,46 @@ const runtime=$("#runtime-status"), runtimeText=$("#runtime-text"), agentState=$
 const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false};
 const viewPanels=new Map();
 const VIEW_CACHE_MS=120000;
+const LAYOUT_KEY="homely_workspace_layout_v1";
+const workspaceLayout={assistant:{width:null,collapsed:false},files:{width:null,collapsed:false}};
+try{
+  const saved=JSON.parse(localStorage.getItem(LAYOUT_KEY)||"null");
+  for(const name of Object.keys(workspaceLayout)){
+    const pane=saved?.[name];
+    if(pane){workspaceLayout[name].collapsed=pane.collapsed===true;if(Number.isFinite(pane.width))workspaceLayout[name].width=Math.max(180,Math.min(640,pane.width))}
+  }
+}catch(_){/* Layout remains usable when browser storage is unavailable. */}
+function saveWorkspaceLayout(){try{localStorage.setItem(LAYOUT_KEY,JSON.stringify(workspaceLayout))}catch(_){}}
+
+function bindPanelResize({name,container,panel,handle,variable,min,max,mainMin,breakpoint}){
+  const preference=workspaceLayout[name];
+  if(preference.width!=null)container.style.setProperty(variable,preference.width+"px");
+  const bounds=()=>({min,max:Math.max(min,Math.min(max,container.clientWidth-mainMin))});
+  function updateAria(){const limits=bounds();handle.setAttribute("aria-valuemin",String(limits.min));handle.setAttribute("aria-valuemax",String(Math.round(limits.max)));const width=Math.round(panel.getBoundingClientRect().width);handle.setAttribute("aria-valuenow",String(width));handle.setAttribute("aria-valuetext",width+" pixels")}
+  function setWidth(width){const limits=bounds();preference.width=Math.round(Math.max(limits.min,Math.min(limits.max,width)));container.style.setProperty(variable,preference.width+"px");updateAria()}
+  function reset(){preference.width=null;container.style.removeProperty(variable);updateAria();saveWorkspaceLayout()}
+  let drag=null;
+  handle.onpointerdown=e=>{
+    if(e.button!==0||!window.matchMedia("(min-width: "+breakpoint+"px)").matches)return;
+    e.preventDefault();handle.focus();drag={id:e.pointerId,x:e.clientX,width:panel.getBoundingClientRect().width,preference:preference.width};
+    handle.setPointerCapture(e.pointerId);document.body.classList.add("panel-resizing");
+  };
+  handle.onpointermove=e=>{if(drag?.id===e.pointerId)setWidth(drag.width+drag.x-e.clientX)};
+  function finish(cancel=false){if(!drag)return;const previous=drag;drag=null;document.body.classList.remove("panel-resizing");if(cancel){preference.width=previous.preference;if(preference.width==null)container.style.removeProperty(variable);else container.style.setProperty(variable,preference.width+"px")}if(handle.hasPointerCapture(previous.id))handle.releasePointerCapture(previous.id);updateAria();saveWorkspaceLayout()}
+  handle.onpointerup=()=>finish();handle.onpointercancel=()=>finish(true);handle.onlostpointercapture=()=>finish(true);
+  handle.ondblclick=reset;
+  handle.onkeydown=e=>{
+    if(e.key==="Escape"&&drag){e.preventDefault();e.stopPropagation();finish(true);return}
+    if(e.key==="Enter"){e.preventDefault();reset();return}
+    const width=panel.getBoundingClientRect().width,step=e.shiftKey?50:20,limits=bounds();
+    const next=e.key==="ArrowLeft"?width+step:e.key==="ArrowRight"?width-step:e.key==="Home"?limits.min:e.key==="End"?limits.max:null;
+    if(next!=null){e.preventDefault();setWidth(next);saveWorkspaceLayout()}
+  };
+  const observer=new ResizeObserver(updateAria);observer.observe(panel);
+  // File tabs are cached or rebuilt; release observers for detached panels.
+  if(name==="files"){state.filePanelObserver?.disconnect();state.filePanelObserver=observer}
+  updateAria();
+}
 
 function esc(v){return String(v==null?"":v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
 function fmtDate(v){return v?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(v)):"—"}
@@ -535,21 +575,26 @@ async function showFiles(){
   try{
     const docs=await api("/api/documents");
     if(revision!==state.viewRevision)return;
-    const buttons='<button class="button" id="save-link" type="button">+ Save link</button><button class="primary-button" id="upload-file" type="button">+ Upload file</button>';
+    const buttons='<button class="button" id="save-link" type="button">+ Save link</button><button class="primary-button" id="upload-file" type="button">+ Upload file</button><button class="icon-button" id="file-info-toggle" type="button" aria-controls="file-inspector" aria-label="Hide file information" title="Hide file information"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>';
     let cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
       return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false"><span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-type">'+esc(d.type||"FILE")+'</span><strong>'+esc(d.title)+'</strong><small>'+esc(links.join(" · "))+'</small></button>';
     }).join("");
     if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
     content.innerHTML='<section class="file-browser"><div class="ledger-toolbar"><div class="ledger-identity"><span class="ledger-overline">Files</span><span class="ledger-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span></div><div class="ledger-controls">'+buttons+'</div></div>'
-      +'<div class="file-browser-body"><div class="file-browser-main"><div class="file-browser-search"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></aside></div></section>';
+      +'<div class="file-browser-body"><div class="file-browser-main"><div class="file-browser-search"><input class="search" id="file-search" type="search" placeholder="Search files" aria-label="Search files"></div><div class="file-grid">'+cards+'</div></div><aside class="file-inspector" id="file-inspector"><div class="panel-resizer" id="file-info-resizer" role="separator" tabindex="0" aria-label="Resize file information" aria-orientation="vertical" aria-controls="file-inspector" title="Drag or use arrow keys to resize. Double-click to reset."></div><span class="ledger-overline">Information</span><div id="file-inspector-content"><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div></div></aside></div></section>';
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
-    const inspector=$("#file-inspector");
+    const browser=$(".file-browser"),infoPanel=$("#file-inspector"),infoToggle=$("#file-info-toggle");
+    function syncInfo(){const collapsed=workspaceLayout.files.collapsed;browser.classList.toggle("inspector-collapsed",collapsed);infoPanel.inert=collapsed;infoPanel.setAttribute("aria-hidden",String(collapsed));infoToggle.setAttribute("aria-expanded",String(!collapsed));infoToggle.setAttribute("aria-label",collapsed?"Show file information":"Hide file information");infoToggle.title=collapsed?"Show file information":"Hide file information"}
+    infoToggle.onclick=()=>{workspaceLayout.files.collapsed=!workspaceLayout.files.collapsed;syncInfo();saveWorkspaceLayout()};
+    syncInfo();
+    bindPanelResize({name:"files",container:browser,panel:infoPanel,handle:$("#file-info-resizer"),variable:"--info-width",min:180,max:360,mainMin:280,breakpoint:701});
+    const inspector=$("#file-inspector-content");
     function selectFile(doc){
       $$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed",String(card.dataset.file===doc.id)));
       const related=[doc.asset_name,doc.issue_title&&"Issue: "+doc.issue_title,doc.repair_title&&"Repair: "+doc.repair_title,doc.charge_name&&"Charge: "+doc.charge_name,doc.purchase_title&&"Purchase: "+doc.purchase_title].filter(Boolean).join(" · ");
-      inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-heading"><span class="file-glyph" aria-hidden="true">'+fileIcon(doc)+'</span><strong>'+esc(doc.title)+'</strong></div><dl class="inspector-details">'
+      inspector.innerHTML='<div class="inspector-heading"><span class="file-glyph" aria-hidden="true">'+fileIcon(doc)+'</span><strong>'+esc(doc.title)+'</strong></div><dl class="inspector-details">'
         +'<div><dt>Type</dt><dd>'+esc(doc.type||"File")+'</dd></div><div><dt>Date</dt><dd>'+fmtDate(doc.occurred_at||doc.created_at)+'</dd></div>'
         +(related?'<div><dt>Linked to</dt><dd>'+esc(related)+'</dd></div>':'')
         +(doc.evidence_reason?'<div><dt>Reason</dt><dd>'+esc(doc.evidence_reason)+'</dd></div>':'')
@@ -564,7 +609,7 @@ async function showFiles(){
       noMatches.hidden=!docs.length||count>0;
       if(!$("[data-file][aria-pressed=true]:not([hidden])",content)){
         $$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed","false"));
-        inspector.innerHTML='<span class="ledger-overline">Information</span><div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div>';
+        inspector.innerHTML='<div class="inspector-placeholder"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span></div>';
       }
     };
     $$("[data-file]",content).forEach(b=>{
@@ -642,16 +687,20 @@ nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.
 window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
 function syncAssistantAccessibility(){
   const docked=window.matchMedia("(min-width: 960px)").matches;
-  const visible=docked||chatRail.classList.contains("open");
+  const visible=docked?!workspaceLayout.assistant.collapsed:chatRail.classList.contains("open");
+  $("#app-shell").classList.toggle("assistant-collapsed",workspaceLayout.assistant.collapsed);
   chatRail.setAttribute("aria-hidden",String(!visible));chatRail.inert=!visible;
   const modalAssistant=!docked&&visible;
   $(".workspace").inert=modalAssistant;$(".sidebar").inert=modalAssistant;
   chatRail.setAttribute("role",modalAssistant?"dialog":"complementary");
   if(modalAssistant)chatRail.setAttribute("aria-modal","true");else chatRail.removeAttribute("aria-modal");
-  if(docked)$("#chat-backdrop").hidden=true;
+  if(docked){chatRail.classList.remove("open");$("#chat-backdrop").hidden=true;document.body.classList.remove("chat-visible")}
+  $("#chat-open").setAttribute("aria-expanded",String(visible));$("#chat-trigger").setAttribute("aria-expanded",String(visible));
+  if(!visible&&chatRail.contains(document.activeElement))(docked?$("#chat-trigger"):$("#chat-open")).focus();
 }
 window.addEventListener("resize",syncAssistantAccessibility);
 function openChat(){
+  if(window.matchMedia("(min-width: 960px)").matches){workspaceLayout.assistant.collapsed=false;saveWorkspaceLayout();syncAssistantAccessibility();$("#assistant-collapse").focus();return}
   state.chatReturnFocus=document.activeElement;
   document.body.classList.add("chat-visible");
   chatRail.classList.add("open");
@@ -664,6 +713,7 @@ function openChat(){
 }
 function closeChat(){
   if(state.stopVoice)state.stopVoice();
+  if(window.matchMedia("(min-width: 960px)").matches){workspaceLayout.assistant.collapsed=true;chatRail.classList.remove("open");saveWorkspaceLayout();syncAssistantAccessibility();$("#chat-trigger").focus();return}
   chatRail.classList.remove("open");
   document.body.classList.remove("chat-visible");
   chatRail.setAttribute("aria-hidden","true");
@@ -676,6 +726,8 @@ function closeChat(){
 $("#chat-open").onclick=openChat;
 $("#chat-trigger").onclick=openChat;
 $("#chat-close").onclick=closeChat;
+$("#assistant-collapse").onclick=closeChat;
+bindPanelResize({name:"assistant",container:$("#app-shell"),panel:chatRail,handle:$("#assistant-resizer"),variable:"--assistant-width",min:280,max:640,mainMin:480,breakpoint:960});
 $("#chat-backdrop").onclick=closeChat;
 $("#refresh-view").onclick=function(){viewPanels.clear();state.needsReload=true;void selectView(state.view)};
 async function openHouseholdSettings(){
@@ -798,7 +850,7 @@ async function bootstrap(){
 void bootstrap();
 window.addEventListener("keydown",function(e){
   if(modal.open||viewer.open)return;
-  if(e.key==="Escape"){closeChat();return}
+  if(e.key==="Escape"&&(chatRail.contains(document.activeElement)||chatRail.classList.contains("open"))){closeChat();return}
   if(e.key==="Tab"&&chatRail.classList.contains("open")&&!window.matchMedia("(min-width: 960px)").matches){
     const controls=$$("button:not(:disabled),textarea:not(:disabled),a[href]",chatRail).filter(el=>!el.hidden&&el.getClientRects().length);
     if(controls.length){

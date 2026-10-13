@@ -18,6 +18,31 @@ try {
   assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"), "false", "desktop assistant must be docked");
   await page.getByText("Saved household chat",{exact:true}).waitFor();
   await noOverflow();
+  const assistantWidth=()=>page.locator("#chat-rail").evaluate(el=>Math.round(el.getBoundingClientRect().width));
+  const defaultWidth=await assistantWidth();
+  const divider=page.locator("#assistant-resizer");
+  const dividerBox=await divider.boundingBox();
+  await page.mouse.move(dividerBox.x+dividerBox.width/2,dividerBox.y+180);
+  await page.mouse.down();await page.mouse.move(dividerBox.x+dividerBox.width/2-100,dividerBox.y+180);await page.mouse.up();
+  assert.equal(await assistantWidth(),defaultWidth+100,"drag must resize the assistant");
+  await divider.focus();await page.keyboard.press("ArrowRight");
+  assert.equal(await assistantWidth(),defaultWidth+80,"separator must support keyboard resizing");
+  await page.reload();await page.locator("#home-repair").waitFor();
+  assert.equal(await assistantWidth(),defaultWidth+80,"assistant width must survive reload");
+  await page.locator("#assistant-collapse").click();
+  assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"),"true");
+  assert.equal(await page.locator("#chat-rail").evaluate(el=>el.inert),true,"collapsed chat must not receive focus");
+  assert.equal(await page.locator("#chat-trigger").evaluate(el=>el===document.activeElement),true);
+  assert.ok(await page.locator(".workspace").evaluate(el=>el.getBoundingClientRect().width)>1300,"collapsed assistant must release its space");
+  await page.reload();await page.locator("#home-repair").waitFor();
+  assert.equal(await page.locator("#chat-rail").isVisible(),false,"collapsed layout must survive reload");
+  await page.setViewportSize({width:390,height:844});
+  await page.locator("#chat-open").click();
+  assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"),"false","mobile drawer must open even with desktop chat collapsed");
+  await page.locator("#chat-close").click();
+  await page.setViewportSize({width:1366,height:768});
+  await page.locator("#chat-trigger").click();await divider.dblclick();
+  assert.equal(await assistantWidth(),defaultWidth,"double-click must reset assistant width");
   await page.locator("#household-settings").click();
   await page.getByRole("link", { name: "Export household" }).waitFor();
   await page.locator('#invite-home-form input[name="email"]').fill("ci-invite@example.test");
@@ -79,6 +104,22 @@ try {
   await page.locator("#record-search").fill("");
 
   await go("files");
+  const infoDivider=page.locator("#file-info-resizer");
+  const infoWidth=()=>page.locator("#file-inspector").evaluate(el=>Math.round(el.getBoundingClientRect().width));
+  const originalInfoWidth=await infoWidth();
+  await infoDivider.focus();await page.keyboard.press("ArrowLeft");
+  assert.equal(await infoWidth(),originalInfoWidth+20,"file information must resize independently");
+  await page.locator("#file-info-toggle").click();
+  assert.equal(await page.locator("#file-inspector").isVisible(),false);
+  await go("home");await go("files");
+  assert.equal(await page.locator("#file-inspector").isVisible(),false,"cached tabs must retain collapse state");
+  await page.locator("#refresh-view").click();await page.locator("#file-info-toggle").waitFor();
+  assert.equal(await page.locator("#file-inspector").isVisible(),false,"rebuilt tabs must retain collapse state");
+  await page.locator("#file-info-toggle").click();
+  assert.equal(await infoWidth(),originalInfoWidth+20,"rebuilt file pane must retain width");
+  await infoDivider.focus();await page.keyboard.press("Enter");
+  assert.equal(await infoWidth(),originalInfoWidth);
+  await noOverflow();
   await page.locator("#upload-file").click();
   await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
   await page.locator("#modal-close").click();
@@ -212,5 +253,5 @@ try {
     await fresh.locator(view === "files" ? ".files-empty" : ".ledger-zero").waitFor();
   }
   assert.deepEqual(errors, [], "browser errors");
-  console.log("Workspace browser checks passed: record commits, search/cache, related files, keyboard viewer, desktop/mobile, fresh home and voice.");
+  console.log("Workspace browser checks passed: panel resizing/collapse/persistence, record commits, search/cache, related files, keyboard viewer, desktop/mobile, fresh home and voice.");
 } finally { await browser.close(); }
