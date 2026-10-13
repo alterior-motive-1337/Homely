@@ -509,28 +509,63 @@ async function openFile(doc){
     }catch(e){if(revision===state.viewerRevision)insight.textContent=e.message}
     finally{if(revision===state.viewerRevision){analyze.disabled=false;analyze.textContent="Analyze"}}
   };
+  viewerBody.innerHTML='<div class="viewer-loading" role="status">Opening file…</div>';
+  if(!viewer.open)viewer.showModal();
+  const live=()=>revision===state.viewerRevision&&viewer.open;
+  const action=(text,url,download=false)=>'<a class="primary-button" href="'+esc(url)+'" '+(download?'download':'target="_blank" rel="noopener noreferrer"')+'>'+esc(text)+'</a>';
   if(!href){
-    viewerBody.innerHTML='<div class="viewer-link"><strong>No viewable file is attached.</strong></div>';
-  }else if(new URL(href).origin===location.origin){
+    viewerBody.innerHTML='<div class="viewer-link"><strong>No file or source link is attached.</strong></div>';
+    return;
+  }
+  if(new URL(href).origin===location.origin){
+    if(mime.startsWith("video/")||mime.startsWith("audio/")){
+      viewerBody.innerHTML=mime.startsWith("video/")
+        ?'<video controls preload="metadata" src="'+esc(href)+'"></video>'
+        :'<audio controls preload="metadata" src="'+esc(href)+'"></audio>';
+      return;
+    }
+    if(mime.startsWith("image/")){
+      viewerBody.innerHTML='<img src="'+esc(href)+'" alt="'+esc(doc.title)+'">';
+      const image=$("img",viewerBody);
+      image.onerror=()=>{if(live())viewerBody.innerHTML='<div class="viewer-link"><strong>Image unavailable.</strong>'+action("Open file",href)+'</div>'};
+      return;
+    }
+    if(!/^(application\/pdf|text\/plain|text\/csv|application\/json)$/.test(mime)){
+      viewerBody.innerHTML='<div class="viewer-link">'+action("Download file",href,true)+'</div>';
+      return;
+    }
     try{
-      if(stored && mime.startsWith("video/")) viewerBody.innerHTML='<video controls preload="metadata" src="'+esc(href)+'"></video>';
-      else if(stored && mime.startsWith("audio/")) viewerBody.innerHTML='<audio controls preload="metadata" src="'+esc(href)+'"></audio>';
-      else{
-        const res=await fetch(href);
-        if(!res.ok)throw new Error("File unavailable");
-        const blob=await res.blob();state.objectUrl=URL.createObjectURL(blob);
-        const type=mime||blob.type||"";
-        if(type.startsWith("image/"))viewerBody.innerHTML='<img src="'+esc(state.objectUrl)+'" alt="">';
-        else viewerBody.innerHTML='<iframe sandbox title="'+esc(doc.title)+'" src="'+esc(state.objectUrl)+'"></iframe>';
+      const res=await fetch(href,{credentials:"same-origin"});
+      if(!live())return;
+      if(!res.ok)throw new Error("File unavailable (HTTP "+res.status+").");
+      if(mime.startsWith("text/")||mime==="application/json"){
+        const plain=await res.text();
+        if(!live())return;
+        const pre=document.createElement("pre");
+        pre.className="viewer-text";
+        pre.textContent=plain.length>500000?plain.slice(0,500000)+"\n\n[Preview truncated]":plain;
+        viewerBody.replaceChildren(pre);
+      }else{
+        const blob=await res.blob();
+        if(!live())return;
+        state.objectUrl=URL.createObjectURL(blob);
+        viewerBody.innerHTML='<embed type="application/pdf" src="'+esc(state.objectUrl)+'" />'
+          +'<div class="viewer-file-action">'+action("Download PDF",href,true)+'</div>';
       }
-    }catch(e){viewerBody.innerHTML='<div class="viewer-link"><strong>'+esc(e.message)+'</strong></div>'}
+    }catch(e){
+      if(live())viewerBody.innerHTML='<div class="viewer-link"><strong>'+esc(e.message)+'</strong>'+action("Try opening file",href)+'</div>';
+    }
   }else if(doc.provider==="GOOGLE_DRIVE"&&doc.provider_file_id){
     viewerBody.innerHTML='<iframe title="'+esc(doc.title)+'" src="https://drive.google.com/file/d/'+encodeURIComponent(doc.provider_file_id)+'/preview" sandbox="allow-scripts allow-same-origin"></iframe>';
-  }else if(mime.startsWith("image/"))viewerBody.innerHTML='<img src="'+esc(href)+'" alt="'+esc(doc.title)+'">';
-  else if(mime.startsWith("video/"))viewerBody.innerHTML='<video controls src="'+esc(href)+'"></video>';
-  else if(mime.startsWith("audio/"))viewerBody.innerHTML='<audio controls src="'+esc(href)+'"></audio>';
-  else viewerBody.innerHTML='<div class="viewer-link"><a class="primary-button" href="'+esc(href)+'" target="_blank" rel="noreferrer">Open source</a></div>';
-  viewer.showModal();
+  }else if(mime.startsWith("image/")){
+    viewerBody.innerHTML='<img src="'+esc(href)+'" alt="'+esc(doc.title)+'">';
+  }else if(mime.startsWith("video/")){
+    viewerBody.innerHTML='<video controls preload="metadata" src="'+esc(href)+'"></video>';
+  }else if(mime.startsWith("audio/")){
+    viewerBody.innerHTML='<audio controls preload="metadata" src="'+esc(href)+'"></audio>';
+  }else{
+    viewerBody.innerHTML='<div class="viewer-link">'+action("Open source",href)+'</div>';
+  }
 }
 $("#viewer-close").onclick=function(){viewer.close()};
 viewer.addEventListener("close",function(){state.viewerRevision=(state.viewerRevision||0)+1;$("#viewer-insight").hidden=true;if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
@@ -669,9 +704,7 @@ async function showFiles(){
     };
     $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
-      b.onclick=()=>selectFile(doc);
-      b.ondblclick=()=>openFile(doc);
-      b.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();void openFile(doc)}};
+      b.onclick=()=>{selectFile(doc);void openFile(doc)};
     });
     if(docs.length)selectFile(docs[0]);
   }catch(e){if(revision===state.viewRevision)fail(e)}
