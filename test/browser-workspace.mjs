@@ -18,7 +18,7 @@ try {
   assert.ok(await page.locator(".topbar").evaluate(el=>{const r=el.getBoundingClientRect();return r.width<=1&&r.height<=1}),"tab labels replace visible page headings");
   assert.equal(await page.locator("#refresh-view").count(),0,"manual refresh must not remain");
   assert.equal(await page.locator("#runtime-status").count(),0,"status ornament must not remain");
-  assert.equal(await page.locator(".chat-head strong").count(),0,"assistant must not display a second header");
+  assert.equal(await page.locator("#chat-current-title").count(),1,"assistant must label the active conversation");
   assert.equal(await page.locator(".chat-rail").evaluate(el=>getComputedStyle(el).borderLeftWidth),"0px","assistant should not have a decorative divider");
   assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"), "false", "desktop assistant must be docked");
   await page.getByText("Saved household chat",{exact:true}).waitFor();
@@ -176,22 +176,11 @@ try {
   const fileRowBoxes=await page.locator(".file-card").evaluateAll(rows=>rows.slice(0,2).map(el=>el.getBoundingClientRect().toJSON()));
   if(fileRowBoxes.length>1)assert.ok(fileRowBoxes[1].y>=fileRowBoxes[0].bottom,"file entries must stack vertically");
   assert.equal(await page.locator(".file-controls #save-link").count(),1,"save link stays beside file upload");
-  const infoDivider=page.locator("#file-info-resizer");
-  const infoWidth=()=>page.locator("#file-inspector").evaluate(el=>Math.round(el.getBoundingClientRect().width));
-  const originalInfoWidth=await infoWidth();
-  assert.ok(await page.locator(".file-card").first().evaluate(el => el.getBoundingClientRect().height <= 115), "file items should be compact rather than oversized tiles");
-  await infoDivider.focus();await page.keyboard.press("ArrowLeft");
-  assert.equal(await infoWidth(),originalInfoWidth+20,"file information must resize independently");
-  await page.locator("#file-info-toggle").click();
-  assert.equal(await page.locator("#file-inspector").isVisible(),false);
-  await go("home");await go("files");
-  assert.equal(await page.locator("#file-inspector").isVisible(),false,"cached tabs must retain collapse state");
-  await page.reload();await page.locator("#file-info-toggle").waitFor();
-  assert.equal(await page.locator("#file-inspector").isVisible(),false,"rebuilt tabs must retain collapse state");
-  await page.locator("#file-info-toggle").click();
-  assert.equal(await infoWidth(),originalInfoWidth+20,"rebuilt file pane must retain width");
-  await infoDivider.focus();await page.keyboard.press("Enter");
-  assert.equal(await infoWidth(),originalInfoWidth);
+  assert.equal(await page.locator("#file-inspector,#file-info-toggle,#file-info-resizer").count(),0,"file metadata inspector must not consume workspace");
+  assert.ok(await page.locator(".file-card").first().evaluate(el => {
+    const rect=el.getBoundingClientRect(),css=getComputedStyle(el);
+    return rect.height <= 115 && css.borderTopWidth==="1px" && css.borderBottomWidth==="1px";
+  }),"file entries must have complete borders and compact spacing");
   await noOverflow();
   let releaseRepairOptions;
   const repairOptions=new Promise(resolve=>{releaseRepairOptions=resolve});
@@ -221,11 +210,10 @@ try {
   assert.match(await page.locator("#viewer-body .viewer-text").textContent(),/20 January 2030/);
   await page.locator("#viewer-close").click();
   await page.unroute("**/demo-documents/inverter-warranty.txt");
-  await page.locator("#inspect-open").waitFor();
   await page.locator(".search-toggle").click();
   await page.locator("#file-search").fill("no-such-file-xyz");
   await page.getByText("No matching files", { exact: true }).waitFor();
-  assert.equal(await page.locator("#inspect-open").count(), 0, "hidden selection must not leave a stale inspector");
+  assert.equal(await page.locator("#file-inspector").count(), 0, "file list should not recreate metadata inspector");
   assert.equal(await page.locator('.file-card[aria-pressed="true"]').count(), 0);
   await page.locator("#file-search").fill("");
   await page.locator(".file-card").first().focus();
@@ -365,15 +353,17 @@ try {
   await page.reload();
   await page.locator("#chat-open").click();
   await page.getByText("Saved household chat",{exact:true}).waitFor();
-  await page.getByRole("button", { name: "Voice", exact: true }).click();
+  await page.getByRole("button", { name: "Dictate message", exact: true }).click();
   assert.equal(await page.locator("#chat-input").inputValue(), "check the kitchen tap");
   await page.getByRole("button", { name: "Stop listening", exact: true }).click();
   assert.equal(await page.evaluate(() => window.__voiceAborts), 1);
   await page.locator("#chat-close").click();
   await page.locator("#chat-open").click();
-  await page.locator("#clear-chat").click();
-  await page.locator("#confirm-clear").click();
+  await page.locator("#chat-new").click();
   await page.getByText("Saved household chat",{exact:true}).waitFor({state:"hidden"});
+  await page.locator("#chat-conversations-toggle").click();
+  await page.locator("#chat-history-list .chat-history-item").filter({hasText:"Previous chat"}).click();
+  await page.getByText("Saved household chat",{exact:true}).waitFor();
   await page.locator("#chat-close").click();
 
   const fresh = await browser.newPage({ viewport: { width: 1366, height: 768 } });
@@ -392,8 +382,8 @@ try {
     await fresh.locator('[data-view="' + view + '"]').click();
     await fresh.locator(view === "files" ? ".files-empty" : ".ledger-zero").waitFor();
     if(view==="files"){
-      assert.equal(await fresh.locator("#file-info-toggle").isVisible(),false,"unused file inspector toggle must disappear when no files exist");
-      assert.equal(await fresh.locator("#file-inspector").isVisible(),false,"unused file inspector must disappear when no files exist");
+      assert.equal(await fresh.locator("#file-info-toggle").count(),0,"unused file inspector toggle must not exist");
+      assert.equal(await fresh.locator("#file-inspector").count(),0,"unused file inspector must not exist");
     } else {
       assert.equal(await fresh.locator(".ledger-columns").isVisible(),false,"empty registers should not show useless column headings");
     }
@@ -554,10 +544,12 @@ try {
   await touchFile.tap();
   assert.equal(await sample.locator("#viewer").isVisible(),false,"single tap selects only");
   assert.equal(await touchFile.getAttribute("aria-pressed"),"true");
-  await sample.waitForFunction(()=>getComputedStyle(document.querySelector('.file-card[aria-pressed="true"]')).borderTopColor==="rgb(181, 181, 187)");
-  const selection=await touchFile.evaluate(el=>{const s=getComputedStyle(el);return {border:s.borderTopWidth,fill:s.backgroundColor,colour:s.borderTopColor}});
-  assert.equal(selection.border,"1px");assert.equal(selection.fill,"rgba(0, 0, 0, 0)");
-  assert.equal(selection.colour,"rgb(181, 181, 187)");
+  const selection=await touchFile.evaluate(el=>{
+    const style=getComputedStyle(el),other=getComputedStyle(el.parentElement.querySelector('.file-card:not([aria-pressed="true"])'));
+    return {top:style.borderTopWidth,bottom:style.borderBottomWidth,color:style.borderTopColor,other:other.borderTopColor};
+  });
+  assert.equal(selection.top,"1px");assert.equal(selection.bottom,"1px");
+  assert.notEqual(selection.color,selection.other,"selection needs a visible fine border");
   await sample.waitForTimeout(500); // Start a fresh pair after the selection inspection.
   await touchFile.tap();await touchFile.tap();
   await sample.locator("#viewer-body .viewer-text").waitFor();
