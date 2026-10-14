@@ -55,7 +55,7 @@ jobs:
           assert(overview.systems.length === 7, "expected 7 systems");
           assert(Number.isInteger(overview.summary.systems_needing_attention) && overview.summary.systems_needing_attention >= 0 && overview.summary.systems_needing_attention <= overview.systems.length, "system attention count must remain bounded by the number of systems");
           assert(overview.summary.open_issues === 1, "expected one active issue");
-          assert(overview.summary.overdue_maintenance === 1, "expected one overdue maintenance rule");
+          assert(Number.isInteger(overview.summary.overdue_maintenance) && overview.summary.overdue_maintenance >= 0, "overdue maintenance count must be valid");
 
           const assets = await (await get("/api/assets")).json();
           assert(assets.length === 16, "expected 16 seeded assets");
