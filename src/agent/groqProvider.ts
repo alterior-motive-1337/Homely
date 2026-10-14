@@ -91,10 +91,23 @@ export class GroqAgentProvider implements AgentProvider {
     const homeId=activeHomeId();
     const stored=request.previousResponseId&&homeId&&request.userId
       ?this.db.prepare("SELECT input_json FROM agent_contexts WHERE response_id=? AND home_id=? AND user_id=?").get(request.previousResponseId,homeId,request.userId):null;
-    const prior = stored ? (JSON.parse(String(stored.input_json)) as unknown[]).slice(-16) : request.previousResponseId && !homeId
-      ? (this.conversationHistories.get(request.previousResponseId)?.homeId===activeHomeId()
-          ? this.conversationHistories.get(request.previousResponseId)?.messages : null) ?? []
-      : [];
+    // When a user reopens an older conversation, reconstruct its bounded model
+    // context from saved turns even if its short-lived response cache expired.
+    const resumed=request.previousResponseId&&homeId&&request.userId&&!stored
+      ?this.db.prepare("SELECT conversation_id FROM agent_turns WHERE response_id=? AND home_id=? AND user_id=?").get(request.previousResponseId,homeId,request.userId):null;
+    const recent=resumed?.conversation_id&&homeId&&request.userId
+      ?this.db.prepare("SELECT request_text,reply_text FROM agent_turns WHERE conversation_id=? AND home_id=? AND user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 8")
+        .all(String(resumed.conversation_id),homeId,request.userId).reverse():[];
+    const recovered=recent.flatMap(t=>[
+      {role:"user",content:String(t.request_text)},
+      {role:"assistant",content:String(t.reply_text)}
+    ]);
+    const prior = stored ? (JSON.parse(String(stored.input_json)) as unknown[]).slice(-16)
+      : resumed ? recovered.slice(-16)
+      : request.previousResponseId && !homeId
+        ? (this.conversationHistories.get(request.previousResponseId)?.homeId===activeHomeId()
+            ? this.conversationHistories.get(request.previousResponseId)?.messages : null) ?? []
+        : [];
     let groqInput: unknown[] = [...prior, { role: "user", content: message }];
 
     const modelStartedAt=Date.now();
