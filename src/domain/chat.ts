@@ -7,7 +7,7 @@ import { DomainError } from "./transactions.js";
 type Conversation = { id:string; title:string; createdAt:string; updatedAt:string };
 
 export function listChatConversations(db:HomelyDatabase,user:AuthUser):{conversations:Conversation[]} {
-  const rows=db.prepare("SELECT id,title,created_at,updated_at FROM agent_conversations WHERE home_id=? AND user_id=? ORDER BY updated_at DESC,id DESC").all(user.homeId,user.id);
+  const rows=db.prepare("SELECT id,title,created_at,updated_at FROM agent_conversations WHERE home_id=? AND user_id=? ORDER BY updated_at DESC,rowid DESC").all(user.homeId,user.id);
   return {conversations:rows.map(row=>({id:String(row.id),title:String(row.title),createdAt:String(row.created_at),updatedAt:String(row.updated_at)}))};
 }
 export function createChatConversation(db:HomelyDatabase,user:AuthUser):Conversation {
@@ -22,7 +22,7 @@ export function resolveChatConversation(db:HomelyDatabase,user:AuthUser,conversa
     if(!row)throw new DomainError("Conversation not found.",404);
     return String(row.id);
   }
-  const row=db.prepare("SELECT id FROM agent_conversations WHERE home_id=? AND user_id=? ORDER BY updated_at DESC,id DESC LIMIT 1").get(user.homeId,user.id);
+  const row=db.prepare("SELECT id FROM agent_conversations WHERE home_id=? AND user_id=? ORDER BY updated_at DESC,rowid DESC LIMIT 1").get(user.homeId,user.id);
   return row?String(row.id):createChatConversation(db,user).id;
 }
 export function belongsToConversation(db:HomelyDatabase,user:AuthUser,conversationId:string,responseId:string):boolean {
@@ -43,7 +43,7 @@ export function saveChatTurn(db:HomelyDatabase,user:AuthUser,message:string,resp
 export function chatHistory(db:HomelyDatabase,user:AuthUser,conversationId?:string|null) {
   const selected=conversationId
     ? db.prepare("SELECT id FROM agent_conversations WHERE id=? AND home_id=? AND user_id=?").get(conversationId,user.homeId,user.id)
-    : db.prepare("SELECT id FROM agent_conversations WHERE home_id=? AND user_id=? ORDER BY updated_at DESC,id DESC LIMIT 1").get(user.homeId,user.id);
+    : db.prepare("SELECT id FROM agent_conversations WHERE home_id=? AND user_id=? ORDER BY updated_at DESC,rowid DESC LIMIT 1").get(user.homeId,user.id);
   if(conversationId&&!selected)throw new DomainError("Conversation not found.",404);
   const id=selected?String(selected.id):null;
   if(!id)return {conversationId:null,messages:[],previousResponseId:null};
