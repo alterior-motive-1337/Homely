@@ -1680,3 +1680,13 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
 /* Selected files use only a fine high-contrast outline, not a filled tile. */
 .file-card[aria-pressed="true"]{background:transparent!important;border-color:#dedee2!important}
 @media(min-width:960px){.app-shell.assistant-expanded .chat-rail{height:calc(100dvh - 62px)!important}}
+
+/* Keep all chat-toolbar actions inside narrow docked widths. */
+.chat-rail{overflow-x:clip!important}
+.chat-head{min-width:0!important}
+.chat-toolbar{min-width:0;gap:3px!important}
+@media(min-width:960px){
+  .chat-head{padding-inline:9px!important;gap:4px!important}
+  .chat-head .chat-toolbar .icon-button{width:34px!important;min-width:34px!important;height:34px!important;padding:7px!important}
+  .chat-head .chat-toolbar #assistant-collapse,.chat-head .chat-toolbar #assistant-expand{width:34px!important;min-width:34px!important;height:34px!important}
+}
