@@ -10,7 +10,7 @@ import { seedDemo } from "../src/seed.js";
 import { runInHome } from "../src/security/homeScope.js";
 import { proposeTransaction,commitTransaction,undoTransaction } from "../src/domain/transactions.js";
 import { listAlerts,acknowledgeAlert } from "../src/domain/alerts.js";
-import { saveChatTurn,chatHistory,clearChat } from "../src/domain/chat.js";
+import { saveChatTurn,chatHistory,clearChat,createChatConversation,listChatConversations,belongsToConversation } from "../src/domain/chat.js";
 import { GroqAgentProvider } from "../src/agent/groqProvider.js";
 import { extractDocument,DOCX_MIME } from "../src/evidence/extract.js";
 import { analyzeDocument } from "../src/evidence/analyze.js";
@@ -70,6 +70,28 @@ test("chat context survives provider restarts, remains personal, and clears inde
     assert.equal(JSON.stringify(calls[2]?.input).includes("Remember the tap"),false);
     assert.equal(chatHistory(db,user).messages.length,2);assert.equal(chatHistory(db,{...user,id:"second"}).messages.length,0);
     clearChat(db,user);assert.equal(chatHistory(db,user).messages.length,0);assert.ok(db.prepare("SELECT id FROM assets LIMIT 1").get());
+  }finally{db.close()}
+});
+test("assistant conversations keep separate histories and never leak between identities",()=>{
+  const {db,user}=fixture();
+  try {
+    const first=createChatConversation(db,user);
+    const second=createChatConversation(db,user);
+    const responseOne={responseId:"session-one-reply",text:"Answer one",proposals:[]};
+    const responseTwo={responseId:"session-two-reply",text:"Answer two",proposals:[]};
+    saveChatTurn(db,user,"Question one",responseOne as never,first.id);
+    saveChatTurn(db,user,"Question two",responseTwo as never,second.id);
+    assert.equal(chatHistory(db,user,first.id).messages.length,2);
+    assert.equal(chatHistory(db,user,first.id).messages[0]?.text,"Question one");
+    assert.equal(chatHistory(db,user,second.id).messages[0]?.text,"Question two");
+    assert.equal(chatHistory(db,user,second.id).previousResponseId,"session-two-reply");
+    assert.equal(belongsToConversation(db,user,second.id,"session-one-reply"),false);
+    assert.equal(belongsToConversation(db,user,first.id,"session-one-reply"),true);
+    assert.throws(()=>chatHistory(db,{...user,id:"second"},first.id),/Conversation not found/);
+    assert.equal(listChatConversations(db,{...user,id:"second"}).conversations.length,0);
+    assert.equal(listChatConversations(db,user).conversations.length,2);
+    assert.equal(listChatConversations(db,user).conversations[0]?.title,"Question two");
+    assert.equal(listChatConversations(db,user).conversations[1]?.title,"Question one");
   }finally{db.close()}
 });
 test("real PDF and DOCX evidence extracts locally, rejecting damaged documents",async()=>{
