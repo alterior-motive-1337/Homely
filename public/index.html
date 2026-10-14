@@ -21,7 +21,6 @@
 </section>
 <div class="app-shell" id="app-shell" hidden>
   <aside class="sidebar">
-    <a class="brand" href="/" aria-label="Homely home"><img class="brand-mark" src="/house.svg" width="32" height="32" alt=""><span><strong>Homely</strong></span></a>
     <nav id="nav" class="nav" aria-label="Main navigation">
       <button class="nav-item active" data-view="home" aria-label="Home" title="Home"><svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span class="nav-label">Home</span></button>
       <button class="nav-item" data-view="issues" aria-label="Issues" title="Issues"><svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17.5h.01"/></svg><span class="nav-label">Issues</span></button>
@@ -41,9 +40,22 @@
   </main>
   <aside class="chat-rail" id="chat-rail" aria-hidden="true" aria-label="Homely assistant">
     <div class="panel-resizer" id="assistant-resizer" role="separator" tabindex="0" aria-label="Resize assistant" aria-orientation="vertical" aria-controls="workspace chat-rail" title="Drag or use arrow keys to resize. Double-click to reset."></div>
-    <div class="chat-head"><span id="agent-state" role="status" aria-live="polite" class="sr-only"></span><button class="icon-button" id="assistant-collapse" type="button" aria-label="Collapse assistant" title="Collapse assistant"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button><button class="icon-button" id="chat-close" type="button" aria-label="Close chat"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <div class="chat-head">
+      <strong id="chat-current-title" class="chat-current-title">New chat</strong>
+      <div class="chat-toolbar">
+        <button class="icon-button" id="chat-conversations-toggle" type="button" aria-label="Previous chats" title="Previous chats" aria-expanded="false" aria-controls="chat-history-panel"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2-5.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></button>
+        <button class="icon-button" id="chat-new" type="button" aria-label="New chat" title="New chat"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="icon-button" id="assistant-expand" type="button" aria-label="Expand chat" title="Expand chat" aria-pressed="false"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+        <button class="icon-button" id="assistant-collapse" type="button" aria-label="Collapse chat" title="Collapse chat"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>
+        <button class="icon-button" id="chat-close" type="button" aria-label="Close chat" title="Close chat"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+    </div>
+    <div class="chat-history-panel" id="chat-history-panel" hidden><div id="chat-history-list" class="chat-history-list"></div></div>
     <div class="chat-body" id="chat-body"></div>
-    <form class="chat-form" id="chat-form"><textarea id="chat-input" aria-label="Message Homely" maxlength="4000" rows="3" placeholder="Ask Homely…" aria-keyshortcuts="Enter Shift+Enter" required></textarea><div class="chat-actions"><button class="icon-button" id="clear-chat" type="button" aria-label="Clear chat" title="Clear chat"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h5M4 10V5M4 10a8 8 0 1 1 1 8"/></svg></button><button class="button voice-button" id="voice-button" type="button">Voice</button><button class="primary-button" type="submit">Send</button></div></form>
+    <form class="chat-form" id="chat-form"><textarea id="chat-input" aria-label="Message Homely" maxlength="4000" rows="3" placeholder="Ask Homely…" aria-keyshortcuts="Enter Shift+Enter" required></textarea><div class="chat-actions">
+      <button class="icon-button voice-button" id="voice-button" type="button" aria-label="Dictate message" title="Dictate message" aria-pressed="false"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button>
+      <button class="primary-button chat-send" type="submit" aria-label="Send message" title="Send message"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 14 0M13 6l6 6-6 6"/></svg></button>
+    </div></form>
   </aside>
 </div>
 <button class="chat-backdrop" id="chat-backdrop" type="button" aria-label="Close assistant" hidden></button>
