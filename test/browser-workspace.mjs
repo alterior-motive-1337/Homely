@@ -504,6 +504,11 @@ try {
   assert.equal(await markdown.locator(".markdown-body script,.markdown-body img,.markdown-body svg,.markdown-body iframe,.markdown-body [onerror]").count(),0);
   assert.equal(await markdown.evaluate(()=>window.__markdownExecuted),undefined);
   await markdown.locator("#assistant-resizer").focus();await markdown.keyboard.press("Home");
+  const desktopOverflow=await markdown.evaluate(()=>({
+    window:innerWidth,doc:document.documentElement.scrollWidth,
+    overflowing:[...document.querySelectorAll("body *")].map(el=>({selector:el.tagName.toLowerCase()+(el.id?"#"+el.id:"")+(el.className&&typeof el.className==="string"?"."+el.className.split(" ").slice(0,2).join("."):""),right:Math.round(el.getBoundingClientRect().right),left:Math.round(el.getBoundingClientRect().left),width:Math.round(el.scrollWidth)})).filter(x=>x.right>innerWidth+3).slice(0,10)
+  }));
+  if(desktopOverflow.doc>desktopOverflow.window+2)console.log("Markdown horizontal overflow diagnosis:",JSON.stringify(desktopOverflow));
   assert.equal(await markdown.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false,"Markdown must fit narrow desktop pane");
   await markdown.locator("#chat-input").fill("Format this reply");
   await markdown.locator("#chat-input").press("Shift+Enter");
