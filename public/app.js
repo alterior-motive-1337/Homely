@@ -873,6 +873,7 @@ function messageElement(m){
 }
 function renderChat(){
   chatBody.replaceChildren(...state.agentMessages.map(messageElement));
+  if(!state.agentMessages.length){const empty=document.createElement("p");empty.className="chat-empty";empty.textContent="Ask Homely anything about your home.";chatBody.append(empty)}
   $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
   $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
   if(state.chatBusy){
@@ -889,7 +890,16 @@ chatInput.addEventListener("keydown",event=>{
 chatForm.onsubmit=async function(e){
   e.preventDefault();if(state.chatLoading||state.chatBusy)return;const message=chatInput.value.trim();if(!message)return;state.chatBusy=true;$("#chat-new").disabled=true;
   state.agentMessages.push({role:"user",text:message,proposals:[]});chatInput.value="";renderChat();const button=chatForm.querySelector('button[type="submit"]');button.disabled=true;button.setAttribute("aria-label","Sending message");
-  try{const r=await api("/api/agent/respond",{method:"POST",body:{message:message,previousResponseId:state.previousResponseId}});state.previousResponseId=r.responseId;state.agentMessages.push({role:"assistant",text:r.text,proposals:(r.proposals||[]).map(function(p){return Object.assign({},p,{status:"PROPOSED"})})})}
+  try{
+    if(!state.conversationId){
+      const c=await api("/api/agent/conversations",{method:"POST"});
+      state.conversationId=c.id;state.conversations.unshift(c);
+    }
+    const r=await api("/api/agent/respond",{method:"POST",body:{message,conversationId:state.conversationId,previousResponseId:state.previousResponseId}});
+    state.previousResponseId=r.responseId;
+    state.agentMessages.push({role:"assistant",text:r.text,proposals:(r.proposals||[]).map(p=>({...p,status:"PROPOSED"}))});
+    await refreshConversationList();
+  }
   catch(err){state.agentMessages.push({role:"assistant",text:err.message,proposals:[]})}
   finally{
     state.chatBusy=false;$("#chat-new").disabled=false;
@@ -908,9 +918,9 @@ function setupVoiceInput(){
   recognition.interimResults=true;
   recognition.continuous=false;
   let prefix="",listening=false;
-  function reset(){listening=false;voiceButton.classList.remove("listening");voiceButton.setAttribute("aria-label","Dictate message")}
+  function reset(){listening=false;voiceButton.classList.remove("listening");voiceButton.setAttribute("aria-label","Dictate message");voiceButton.setAttribute("aria-pressed","false");voiceButton.title="Dictate message"}
   state.stopVoice=function(){if(!listening)return;reset();if(recognition.abort)recognition.abort();else recognition.stop()};
-  recognition.onstart=function(){if(!listening){recognition.abort();return}voiceButton.classList.add("listening");voiceButton.setAttribute("aria-label","Stop listening")};
+  recognition.onstart=function(){if(!listening){recognition.abort();return}voiceButton.classList.add("listening");voiceButton.setAttribute("aria-label","Stop listening");voiceButton.setAttribute("aria-pressed","true");voiceButton.title="Stop listening"};
   recognition.onresult=function(event){
     if(!listening)return;
     let transcript="";for(let i=0;i<event.results.length;i++)transcript+=event.results[i][0].transcript;
