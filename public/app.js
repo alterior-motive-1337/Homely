@@ -804,6 +804,7 @@ async function showFiles(){
       const q=e.target.value.toLowerCase().trim();let count=0;
       $$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q);if(!card.hidden)count++});
       noMatches.hidden=!docs.length||count>0;
+      if(!$("[data-file][aria-pressed=true]:not([hidden])",content))$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed","false"));
       const counter=$("#file-count");
       if(counter){counter.textContent=q?count+" of "+docs.length:docs.length+" "+(docs.length===1?"file":"files");counter.classList.toggle("is-filtered",Boolean(q))}
     };
