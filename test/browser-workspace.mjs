@@ -366,7 +366,7 @@ try {
   await page.locator("#chat-new").click();
   await page.getByText("Saved household chat",{exact:true}).waitFor({state:"hidden"});
   await page.locator("#chat-conversations-toggle").click();
-  await page.locator("#chat-history-list .chat-history-item").filter({hasText:"Previous chat"}).click();
+  await page.locator('#chat-history-list .chat-history-item[aria-current="false"]').first().click();
   await page.getByText("Saved household chat",{exact:true}).waitFor();
   await page.locator("#chat-close").click();
 
