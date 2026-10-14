@@ -39,6 +39,10 @@ try {
   assert.equal(await page.locator(".metric").first().evaluate(el => getComputedStyle(el).borderRightWidth),"0px","metrics should not be separated by visible dividers");
   assert.equal(await page.locator(".nav-item.active").evaluate(el => getComputedStyle(el).borderBottomWidth),"2px");
   assert.equal(await page.locator(".nav-item.active").evaluate(el => getComputedStyle(el).borderBottomColor), "rgba(0, 0, 0, 0)", "active navigation uses text emphasis rather than an accent line");
+  await page.locator("#assistant-expand").click();
+  assert.ok(await page.locator("#chat-rail").evaluate(el=>el.getBoundingClientRect().width>1200),"expanded chat must fill the desktop workspace");
+  await page.locator("#assistant-expand").click();
+  assert.ok(await page.locator(".workspace").isVisible(),"restored chat must return main workspace");
   const assistantWidth=()=>page.locator("#chat-rail").evaluate(el=>Math.round(el.getBoundingClientRect().width));
   const defaultWidth=await assistantWidth();
   const divider=page.locator("#assistant-resizer");
@@ -471,7 +475,7 @@ try {
   await markdown.route("**/api/integrations/status",async route=>{
     const response=await route.fetch(),data=await response.json();data.ai.available=true;await route.fulfill({response,json:data});
   });
-  await markdown.route("**/api/agent/history",route=>route.fulfill({json:{messages:[
+  await markdown.route("**/api/agent/history**",route=>route.fulfill({json:{messages:[
     {role:"user",text:"**Format my message**",proposals:[]},
     {role:"assistant",text:formattedReply,proposals:[]}
   ],previousResponseId:null}}));
