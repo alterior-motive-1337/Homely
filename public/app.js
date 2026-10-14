@@ -59,7 +59,7 @@ function bindPanelResize({name,container,panel,handle,variable,min,max,mainMin,b
 function esc(v){return String(v==null?"":v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
 function fmtDate(v){return v?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(v)):"—"}
 function assetAge(a){const value=a.acquired_at||a.purchase_date;if(!value)return"Unknown";const date=new Date(value),now=new Date();if(!Number.isFinite(date.getTime()))return"Unknown";let months=(now.getFullYear()-date.getFullYear())*12+now.getMonth()-date.getMonth();if(now.getDate()<date.getDate())months-=1;if(months<0)return"Not yet acquired";const years=Math.floor(months/12);return years?years+"y "+months%12+"m":months+"m"}
-function money(c){return c==null?"—":new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR",maximumFractionDigits:0}).format(Number(c)/100)}
+function money(c){const currency=state.overview?.currency;return c==null?"—":new Intl.NumberFormat(currency?.locale||"en-ZA",{style:"currency",currency:currency?.code||"ZAR",maximumFractionDigits:0}).format(Number(c)/(currency?.minorUnitsPerMajor||100))}
 function today(){return new Date().toISOString().slice(0,10)}
 
 

@@ -6,8 +6,11 @@ import { HomeResearch } from "../integrations/webResearch.js";
 import { executeResearchTool, researchToolDefinitions, type ResearchToolName } from "./researchTools.js";
 import type { AgentProposal, AgentProvider, AgentRequest, AgentResponse } from "./types.js";
 import { analyzeDocument } from "../evidence/analyze.js";
+import { CURRENCY_INSTRUCTIONS } from "../domain/currency.js";
 
 const INSTRUCTIONS = `You are Homely, a thoughtful household assistant and the operating memory for one physical home.
+
+${CURRENCY_INSTRUCTIONS}
 
 Rules:
 - Homely's structured state and tool results are the source of truth. Never invent facts about this home.

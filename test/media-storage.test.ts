@@ -60,15 +60,40 @@ test("image analysis routes through a vision model and persists the result",asyn
   const preview=proposeTransaction(db,{actionType:"ATTACH_DOCUMENT",reason:"Test photo",payload:{title:"Label",documentType:"PHOTO",provider:"LOCAL",uploadId:upload.id}});
   commitTransaction(db,String(preview.transaction?.id));
   const doc=String(db.prepare("SELECT document_id FROM file_uploads WHERE id=?").get(upload.id)?.document_id);
-  let calls=0,passedModel="";
-  const mock={chat:{completions:{create:async(input:{model:string})=>{
+  let calls=0,passedModel="",currencyContext="";
+  const mock={chat:{completions:{create:async(input:{model:string;messages:Array<{role:string;content:unknown}>})=>{
     calls++;passedModel=input.model;
+    currencyContext=String(input.messages.find(message=>message.role==="system")?.content);
     return {choices:[{message:{content:"A visible appliance serial label."}}]};
   }}}};
   const first=await analyzeDocument(db,doc,mock as never);
   const second=await analyzeDocument(db,doc,mock as never);
   assert.equal(passedModel,"qwen/qwen3.8-27b");
+  assert.match(currencyContext,/South African rand \(ZAR\)/);
+  assert.match(currencyContext,/If a file's currency is ambiguous/);
   assert.equal(first.text,"A visible appliance serial label.");
   assert.equal(second.cached,true);assert.equal(calls,1);
   db.close();
 });
+
+test("sampled video analysis receives currency context without altering extracted evidence",async()=>{
+  const db=createTestDatabase();migrate(db);seedDemo(db);
+  try{
+    const bytes=Buffer.from("sample video");
+    const upload=startUpload(db,{name:"receipt.webm",mimeType:"video/webm",size:bytes.length});
+    appendUploadChunk(db,upload.id,0,bytes);finishUpload(db,upload.id);
+    const preview=proposeTransaction(db,{actionType:"ATTACH_DOCUMENT",reason:"Test sampled receipt",payload:{title:"Receipt video",documentType:"VIDEO",provider:"LOCAL",uploadId:upload.id}});
+    commitTransaction(db,String(preview.transaction?.id));
+    const doc=String(db.prepare("SELECT document_id FROM file_uploads WHERE id=?").get(upload.id)?.document_id);
+    const frame={image:"data:image/jpeg;base64,"+Buffer.from([255,216,255,217]).toString("base64"),timeSeconds:1};
+    const mock={chat:{completions:{create:async(input:{messages:Array<{role:string;content:unknown}>})=>{
+      const context=String(input.messages.find(message=>message.role==="system")?.content);
+      assert.match(context,/South African rand \(ZAR\)/);
+      assert.match(context,/never relabel a foreign amount as rand/);
+      return {choices:[{message:{content:"The receipt shows USD 20.00."}}]};
+    }}}};
+    const result=await analyzeDocument(db,doc,mock as never,[frame]);
+    assert.equal(result.text,"Video samples at 1s.\n\nThe receipt shows USD 20.00.");
+  }finally{db.close()}
+});
+

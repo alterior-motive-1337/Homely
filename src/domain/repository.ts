@@ -1,6 +1,7 @@
 import type { HomelyDatabase } from "../db.js";
 import { activeHomeId } from "../security/homeScope.js";
 import { deriveAssetHealth, deriveSystemHealth, type HealthState, type Severity } from "./health.js";
+import { HOUSEHOLD_CURRENCY } from "./currency.js";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -193,6 +194,7 @@ export function getOverview(db: HomelyDatabase) {
 
   return {
     home,
+    currency: HOUSEHOLD_CURRENCY,
     systems,
     summary: {
       systems_needing_attention: systems.filter((s) => ["FAILED","DEGRADED","ATTENTION"].includes(String(s.health))).length,
@@ -237,3 +239,4 @@ export function getProject(db: HomelyDatabase, projectId: string) {
     ).all(projectId)
   };
 }
+

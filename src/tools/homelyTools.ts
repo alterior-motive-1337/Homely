@@ -46,7 +46,7 @@ export const agentToolDefinitions: HomelyToolDefinition[] = [
   {
     type: "function",
     name: "get_home_summary",
-    description: "Return deterministic current home health, active issues, overdue and upcoming maintenance, and recent history.",
+    description: "Return the household currency and monetary units, deterministic current home health, active issues, overdue and upcoming maintenance, and recent history.",
     strict: true,
     parameters: {
       type: "object",
@@ -475,3 +475,4 @@ export function executeHomelyTool(
 
   throw new DomainError(`Unknown Homely tool: ${name}`, 404);
 }
+

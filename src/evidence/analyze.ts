@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { DomainError } from "../domain/transactions.js";
 import { getStoredFile, readStoredFile } from "./storage.js";
 import { DOCX_MIME, extractDocument } from "./extract.js";
+import { CURRENCY_INSTRUCTIONS } from "../domain/currency.js";
 
 type MediaClient = Pick<OpenAI,"chat"|"audio">;
 
@@ -51,7 +52,7 @@ export async function analyzeDocument(
     if(!api)throw new DomainError("Groq must be configured to analyze multimedia.",503);
     if(visualFrames){
       const visionModel="qwen/qwen3.8-27b";model=visionModel+":video-frames";
-      const result=await api.chat.completions.create({model:visionModel,messages:[{role:"user",content:[
+      const result=await api.chat.completions.create({model:visionModel,messages:[{role:"system",content:CURRENCY_INSTRUCTIONS},{role:"user",content:[
         {type:"text",text:"Interpret these three sampled household video frames. Frame times in seconds: "+visualFrames.map(f=>f.timeSeconds).join(", ")+". Give a useful Markdown explanation of visible equipment, legible text, relevant identifiers and damage, with as much detail as the evidence supports. Explain the significance of observations when supported and clearly separate visible facts from possible interpretations. Lead with the main finding, retain uncertainty and avoid repetition or generic advice. These are samples, not full-video understanding. Do not infer unseen events, motion or audio. Do not use raw HTML."},
         ...visualFrames.map(frame=>({type:"image_url" as const,image_url:{url:frame.image}}))
       ]}],max_completion_tokens:1200});
@@ -64,7 +65,7 @@ export async function analyzeDocument(
       const data=readStoredFile(db,documentId,12_000_000).toString("base64");
       const result=await api.chat.completions.create({
         model,
-        messages:[{role:"user",content:[
+        messages:[{role:"system",content:CURRENCY_INSTRUCTIONS},{role:"user",content:[
           {type:"text",text:"Interpret this household evidence accurately in a useful Markdown explanation, with as much detail as the evidence supports. Lead with the main finding and include relevant equipment, legible model or serial numbers, material text and visible damage. Explain the significance of observations when supported and clearly separate visible facts from possible interpretations. Retain uncertainty and avoid repetition or generic advice. Do not invent details, assert facts not visible, or use raw HTML."},
           {type:"image_url",image_url:{url:`data:${mime};base64,${data}`}}
         ]}],

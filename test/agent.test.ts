@@ -116,3 +116,35 @@ test("Groq provider carries conversation history without previous_response_id", 
   db.close();
 });
 
+test("currency context reaches the first turn, grounded tool results and follow-ups", async () => {
+  const db = createTestDatabase();
+  migrate(db);
+  seedDemo(db);
+  const calls: Record<string, unknown>[] = [];
+  const fake = { responses: { create: async (input: Record<string, unknown>) => {
+    calls.push(input);
+    if (calls.length === 1) return response("currency-read", [{
+      type: "function_call", name: "get_home_summary", arguments: "{}", call_id: "currency-call"
+    }]);
+    return response("currency-" + calls.length, [], "Household prices are in rand (ZAR).");
+  } } };
+
+  try {
+    const provider = new GroqAgentProvider(db, fake as never, "test-model");
+    const first = await provider.respond({ message: "What currency are these costs in?" });
+    await provider.respond({ message: "And a budget of 500?", previousResponseId: first.responseId });
+    assert.equal(calls.length, 3);
+    for (const call of calls) {
+      assert.match(String(call.instructions), /South African rand \(ZAR\)/);
+      assert.match(String(call.instructions), /45000 cents is R450\.00/);
+      assert.match(String(call.instructions), /never relabel a foreign amount as rand/);
+    }
+    const output = (calls[1]!.input as Array<Record<string, unknown>>).find(item => item.type === "function_call_output");
+    const summary = JSON.parse(String(output?.output));
+    assert.equal(summary.currency.code, "ZAR");
+    assert.equal(summary.currency.minorUnitsPerMajor, 100);
+    assert.equal(summary.currency.symbol, "R");
+  } finally { db.close(); }
+});
+
+
