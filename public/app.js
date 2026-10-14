@@ -9,19 +9,19 @@ const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), cha
 const agentState=$("#agent-state");
 viewerTitle.classList.add("fade-title");
 watchFadingTitles(document.body);
-const state={view:"home",assets:[],agentMessages:[],previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false};
+const state={view:"home",assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false};
 const viewPanels=new Map();
 const VIEW_CACHE_MS=45000;
 const ACTIVE_REFRESH_MS=45000;
 const LAYOUT_KEY="homely_workspace_layout_v1";
-const workspaceLayout={assistant:{width:null,collapsed:false},files:{width:null,collapsed:false,mobileCollapsed:true}};
+const workspaceLayout={assistant:{width:null,collapsed:false,expanded:false},files:{width:null,collapsed:false,mobileCollapsed:true}};
 const compactFiles=window.matchMedia("(max-width: 700px)");
 compactFiles.addEventListener("change",()=>state.syncFileInfo?.());
 try{
   const saved=JSON.parse(localStorage.getItem(LAYOUT_KEY)||"null");
   for(const name of Object.keys(workspaceLayout)){
     const pane=saved?.[name];
-    if(pane){workspaceLayout[name].collapsed=pane.collapsed===true;if(name==="files")workspaceLayout.files.mobileCollapsed=pane.mobileCollapsed!==false;if(Number.isFinite(pane.width))workspaceLayout[name].width=Math.max(180,Math.min(640,pane.width))}
+    if(pane){workspaceLayout[name].collapsed=pane.collapsed===true;if(name==="files")workspaceLayout.files.mobileCollapsed=pane.mobileCollapsed!==false;if(name==="assistant")workspaceLayout.assistant.expanded=pane.expanded===true;if(Number.isFinite(pane.width))workspaceLayout[name].width=Math.max(180,Math.min(640,pane.width))}
   }
 }catch(_){/* Layout remains usable when browser storage is unavailable. */}
 function saveWorkspaceLayout(){try{localStorage.setItem(LAYOUT_KEY,JSON.stringify(workspaceLayout))}catch(_){}}
@@ -87,11 +87,68 @@ function emptyState(title,buttons,compact=false){
 }
 function fillForm(form,values){Object.entries(values).forEach(([name,value])=>{const input=form.elements.namedItem(name);if(input)input.value=value==null?"":String(value)})}
 
-async function loadChatHistory(){
-  try{const history=await api("/api/agent/history");state.agentMessages=history.messages||[];state.previousResponseId=history.previousResponseId;renderChat()}
-  catch(e){notify(e.message)}
+function updateChatTitle(){
+  const active=state.conversations.find(c=>c.id===state.conversationId);
+  $("#chat-current-title").textContent=active?.title||"New chat";
+}
+function toggleConversationList(show){
+  $("#chat-history-panel").hidden=!show;
+  $("#chat-conversations-toggle").setAttribute("aria-expanded",String(Boolean(show)));
+}
+function renderConversationList(){
+  const list=$("#chat-history-list");list.replaceChildren();
+  if(!state.conversations.length){const empty=document.createElement("p");empty.className="chat-history-empty";empty.textContent="No previous chats";list.append(empty);return}
+  for(const c of state.conversations){
+    const button=document.createElement("button");button.type="button";button.className="chat-history-item";
+    button.textContent=c.title||"New chat";button.title=c.title||"New chat";
+    button.setAttribute("aria-current",String(c.id===state.conversationId));
+    button.onclick=()=>{void switchConversation(c.id)};
+    list.append(button);
+  }
+}
+async function refreshConversationList(){
+  const result=await api("/api/agent/conversations");
+  state.conversations=result.conversations||[];
+  renderConversationList();updateChatTitle();
+}
+async function switchConversation(id){
+  if(state.chatBusy||state.chatLoading)return;
+  state.chatLoading=true;
+  try{
+    const result=await api("/api/agent/history?conversationId="+encodeURIComponent(id));
+    state.conversationId=result.conversationId;
+    state.agentMessages=result.messages||[];
+    state.previousResponseId=result.previousResponseId||null;
+    renderConversationList();updateChatTitle();renderChat();toggleConversationList(false);
+  }catch(e){notify(e.message)}
   finally{state.chatLoading=false;if(state.integrations)setRuntime(state.integrations)}
 }
+async function loadChatHistory(){
+  try{
+    await refreshConversationList();
+    state.conversationId=state.conversations[0]?.id||null;
+    if(state.conversationId){
+      const result=await api("/api/agent/history?conversationId="+encodeURIComponent(state.conversationId));
+      state.agentMessages=result.messages||[];
+      state.previousResponseId=result.previousResponseId||null;
+    }else{state.agentMessages=[];state.previousResponseId=null}
+    renderConversationList();updateChatTitle();renderChat();
+  }catch(e){notify(e.message)}
+  finally{state.chatLoading=false;if(state.integrations)setRuntime(state.integrations)}
+}
+$("#chat-conversations-toggle").onclick=()=>toggleConversationList($("#chat-history-panel").hidden);
+$("#chat-new").onclick=async()=>{
+  if(state.chatBusy||state.chatLoading)return;
+  state.chatLoading=true;
+  try{
+    const c=await api("/api/agent/conversations",{method:"POST"});
+    state.conversations.unshift(c);state.conversationId=c.id;
+    state.agentMessages=[];state.previousResponseId=null;chatInput.value="";
+    renderConversationList();updateChatTitle();renderChat();toggleConversationList(false);
+    if(!chatInput.disabled)chatInput.focus();
+  }catch(e){notify(e.message)}
+  finally{state.chatLoading=false;if(state.integrations)setRuntime(state.integrations)}
+};
 const notifiedAlerts=new Set();
 async function refreshAlerts(){
   try{
