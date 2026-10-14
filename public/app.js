@@ -92,12 +92,6 @@ async function loadChatHistory(){
   catch(e){notify(e.message)}
   finally{state.chatLoading=false;if(state.integrations)setRuntime(state.integrations)}
 }
-$("#clear-chat").onclick=()=>{
-  if(state.chatBusy)return;
-  openModal('<h2>Clear chat?</h2><p>Messages will be deleted.</p><div class="form-actions"><button class="button" id="cancel-clear">Cancel</button><button class="primary-button" id="confirm-clear">Clear chat</button></div>');
-  $("#cancel-clear").onclick=closeModal;
-  $("#confirm-clear").onclick=async()=>{try{await api("/api/agent/history",{method:"DELETE"});state.agentMessages=[];state.previousResponseId=null;renderChat();closeModal()}catch(e){notify(e.message)}};
-};
 const notifiedAlerts=new Set();
 async function refreshAlerts(){
   try{
@@ -821,7 +815,6 @@ function messageElement(m){
   return message;
 }
 function renderChat(){
-  $("#clear-chat").hidden=!state.agentMessages.length;
   chatBody.replaceChildren(...state.agentMessages.map(messageElement));
   $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
   $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
@@ -837,14 +830,14 @@ chatInput.addEventListener("keydown",event=>{
   if(!chatInput.disabled&&!state.chatLoading&&!state.chatBusy&&chatInput.value.trim())chatForm.requestSubmit();
 });
 chatForm.onsubmit=async function(e){
-  e.preventDefault();if(state.chatLoading||state.chatBusy)return;const message=chatInput.value.trim();if(!message)return;state.chatBusy=true;$("#clear-chat").disabled=true;
-  state.agentMessages.push({role:"user",text:message,proposals:[]});chatInput.value="";renderChat();const button=chatForm.querySelector('button[type="submit"]');button.disabled=true;button.textContent="Working…";
+  e.preventDefault();if(state.chatLoading||state.chatBusy)return;const message=chatInput.value.trim();if(!message)return;state.chatBusy=true;$("#chat-new").disabled=true;
+  state.agentMessages.push({role:"user",text:message,proposals:[]});chatInput.value="";renderChat();const button=chatForm.querySelector('button[type="submit"]');button.disabled=true;button.setAttribute("aria-label","Sending message");
   try{const r=await api("/api/agent/respond",{method:"POST",body:{message:message,previousResponseId:state.previousResponseId}});state.previousResponseId=r.responseId;state.agentMessages.push({role:"assistant",text:r.text,proposals:(r.proposals||[]).map(function(p){return Object.assign({},p,{status:"PROPOSED"})})})}
   catch(err){state.agentMessages.push({role:"assistant",text:err.message,proposals:[]})}
   finally{
-    state.chatBusy=false;$("#clear-chat").disabled=false;
+    state.chatBusy=false;$("#chat-new").disabled=false;
     button.disabled=!(state.integrations&&state.integrations.ai&&state.integrations.ai.available);
-    button.textContent="Send";renderChat();
+    button.setAttribute("aria-label","Send message");renderChat();
     if(!chatRail.inert&&chatRail.contains(document.activeElement))chatInput.focus();
   }
 };
@@ -858,9 +851,9 @@ function setupVoiceInput(){
   recognition.interimResults=true;
   recognition.continuous=false;
   let prefix="",listening=false;
-  function reset(){listening=false;voiceButton.classList.remove("listening");voiceButton.textContent="Voice"}
+  function reset(){listening=false;voiceButton.classList.remove("listening");voiceButton.setAttribute("aria-label","Dictate message")}
   state.stopVoice=function(){if(!listening)return;reset();if(recognition.abort)recognition.abort();else recognition.stop()};
-  recognition.onstart=function(){if(!listening){recognition.abort();return}voiceButton.classList.add("listening");voiceButton.textContent="Stop listening"};
+  recognition.onstart=function(){if(!listening){recognition.abort();return}voiceButton.classList.add("listening");voiceButton.setAttribute("aria-label","Stop listening")};
   recognition.onresult=function(event){
     if(!listening)return;
     let transcript="";for(let i=0;i<event.results.length;i++)transcript+=event.results[i][0].transcript;
