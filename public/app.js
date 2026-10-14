@@ -960,12 +960,17 @@ function syncAssistantAccessibility(){
   const docked=window.matchMedia("(min-width: 960px)").matches;
   const visible=docked?!workspaceLayout.assistant.collapsed:chatRail.classList.contains("open");
   $("#app-shell").classList.toggle("assistant-collapsed",workspaceLayout.assistant.collapsed);
+  $("#app-shell").classList.toggle("assistant-expanded",docked&&workspaceLayout.assistant.expanded&&!workspaceLayout.assistant.collapsed);
+  $("#assistant-expand").setAttribute("aria-pressed",String(workspaceLayout.assistant.expanded));
+  $("#assistant-expand").setAttribute("aria-label",workspaceLayout.assistant.expanded?"Restore chat width":"Expand chat");
+  $("#assistant-expand").title=workspaceLayout.assistant.expanded?"Restore chat width":"Expand chat";
   chatRail.setAttribute("aria-hidden",String(!visible));chatRail.inert=!visible;
   const modalAssistant=!docked&&visible;
   $(".workspace").inert=modalAssistant;$(".sidebar").inert=modalAssistant;
   chatRail.setAttribute("role",modalAssistant?"dialog":"complementary");
   if(modalAssistant)chatRail.setAttribute("aria-modal","true");else chatRail.removeAttribute("aria-modal");
   if(docked){chatRail.classList.remove("open");$("#chat-backdrop").hidden=true;document.body.classList.remove("chat-visible")}
+  if(!visible)toggleConversationList(false);
   $("#chat-open").setAttribute("aria-expanded",String(visible));$("#chat-trigger").setAttribute("aria-expanded",String(visible));
   if(!visible&&chatRail.contains(document.activeElement))(docked?$("#chat-trigger"):$("#chat-open")).focus();
 }
@@ -998,6 +1003,7 @@ $("#chat-open").onclick=openChat;
 $("#chat-trigger").onclick=openChat;
 $("#chat-close").onclick=closeChat;
 $("#assistant-collapse").onclick=closeChat;
+$("#assistant-expand").onclick=()=>{workspaceLayout.assistant.expanded=!workspaceLayout.assistant.expanded;workspaceLayout.assistant.collapsed=false;saveWorkspaceLayout();syncAssistantAccessibility()};
 bindPanelResize({name:"assistant",container:$("#app-shell"),panel:chatRail,handle:$("#assistant-resizer"),variable:"--assistant-width",min:280,max:640,mainMin:480,breakpoint:960});
 $("#chat-backdrop").onclick=closeChat;
 async function refreshVisibleView(force=false){
