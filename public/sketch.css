@@ -1676,3 +1676,7 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   .chat-head .chat-toolbar .icon-button{width:36px!important;min-width:36px!important;height:36px!important}
   .chat-form{margin-bottom:max(14px,env(safe-area-inset-bottom))!important}
 }
+
+/* Selected files use only a fine high-contrast outline, not a filled tile. */
+.file-card[aria-pressed="true"]{background:transparent!important;border-color:#dedee2!important}
+@media(min-width:960px){.app-shell.assistant-expanded .chat-rail{height:calc(100dvh - 62px)!important}}
