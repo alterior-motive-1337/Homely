@@ -1517,6 +1517,43 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
 .badge:is(.UNKNOWN,.INACTIVE,.DISMISSED,.REJECTED,.CANCELLED,.LOW,.ARCHIVED){
   color:#c2c2cb!important;background:#28282e!important;border-color:#50505b!important;
 }
+/* One control height and centred labels throughout action groups. */
+.button,.primary-button{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:40px!important;line-height:1.2;vertical-align:middle;text-decoration:none;
+}
+.controls-actions,.ledger-actions,.row-actions,.form-actions,.hero-actions,.viewer-controls{
+  align-items:center;gap:8px;
+}
+.register-filters button,.ledger-file-link,.ledger-quiet-action{min-height:40px!important}
+.file-controls #file-info-toggle{width:40px!important;height:40px!important}
+.file-card,.file-card:hover,.file-card[aria-pressed="true"]{
+  grid-template-columns:27px minmax(0,1fr)!important;
+}
+.ledger-entry:focus-within{background:transparent!important}
+.form-actions{flex-wrap:wrap}
+.modal #modal-body>.card-head{
+  padding:0 48px 16px 0!important;min-height:56px;gap:12px;
+}
+.modal:has(#modal-body>.card-head) .modal-close{top:28px;right:28px;width:40px;height:40px}
+.modal #modal-body>.card-head h2{min-width:0;line-height:1.35}
+.modal #modal-body>.card-head button{flex-shrink:0}
+.modal #modal-body>.form-actions,.settings-content .form-actions{
+  position:static;bottom:auto;background:transparent;border:0;
+  padding:0;margin-top:16px;
+}
+.settings-content #rename-home-form .form-actions button,
+.settings-content #invite-home-form .form-actions button{min-height:42px!important}
+.settings-content #invite-result:empty{display:none}
+@media(max-width:700px){
+  .modal:has(#modal-body>.card-head) .modal-close{top:24px;right:18px}
+  .modal .row:has(.row-actions>.button){grid-template-columns:minmax(0,1fr);gap:10px}
+  .modal .row-actions:has(>.button){width:100%;justify-content:flex-end}
+  .settings-content #rename-home-form .form-actions,
+  .settings-content #invite-home-form .form-actions{justify-content:flex-end}
+  .ledger-actions{grid-column:1/-1!important;justify-content:flex-end}
+  .ledger-details{grid-column:1/-1!important}
+}
 @media(max-width:700px){
   .viewer-body .viewer-text{padding:16px;font-size:11px}
   .viewer-body embed[type="application/pdf"]{min-height:270px;height:65vh}

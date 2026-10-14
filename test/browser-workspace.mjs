@@ -237,7 +237,7 @@ try {
   await go("files");
   await go("home");
   assert.equal(await page.locator("#page-title").textContent(), "14 Hawthorn Residence", "cached home title");
-  await page.locator("#view-charges-shortcut").click();
+  await page.locator("#view-charges,#view-charges-shortcut").click();
   await page.locator("#add-charge").click();
   await page.locator('#charge-form input[name="name"]').fill("Browser charge");
   await page.locator('#charge-form input[name="category"]').fill("UTILITIES");
@@ -247,29 +247,29 @@ try {
   assert.equal(await page.locator("#action-review .message.assistant .markdown-body").count()>0,true,"action reviews use the shared Markdown message box");
   await page.getByRole("button", {name:"Approve & commit"}).click();
   await page.locator("#modal").waitFor({state:"hidden"});
-  await page.locator("#view-charges-shortcut").click();
+  await page.locator("#view-charges,#view-charges-shortcut").click();
   await page.locator("[data-charge-edit]").first().click();
   await page.locator('#charge-form select[name="active"]').selectOption("0");
   await page.getByRole("button", {name:"Preview",exact:true}).click();
   await page.getByRole("button", {name:"Approve & commit"}).click();
   await page.locator("#modal").waitFor({state:"hidden"});
-  await page.locator("#view-charges-shortcut").click();
+  await page.locator("#view-charges,#view-charges-shortcut").click();
   await page.getByText("INACTIVE",{exact:true}).waitFor();
   await page.locator("#modal-close").click();
-  await page.locator("#view-purchases-shortcut").click();
+  await page.locator("#view-purchases,#view-purchases-shortcut").click();
   await page.locator("#add-purchase").click();
   await page.locator('#purchase-form input[name="title"]').fill("Browser purchase");
   await page.locator('#purchase-form input[name="category"]').fill("FURNITURE");
   await page.getByRole("button", {name:"Preview",exact:true}).click();
   await page.getByRole("button", {name:"Approve & commit"}).click();
   await page.locator("#modal").waitFor({state:"hidden"});
-  await page.locator("#view-purchases-shortcut").click();
+  await page.locator("#view-purchases,#view-purchases-shortcut").click();
   await page.locator("[data-purchase-edit]").first().click();
   await page.locator('#purchase-form select[name="status"]').selectOption("PURCHASED");
   await page.getByRole("button", {name:"Preview",exact:true}).click();
   await page.getByRole("button", {name:"Approve & commit"}).click();
   await page.locator("#modal").waitFor({state:"hidden"});
-  await page.locator("#view-purchases-shortcut").click();
+  await page.locator("#view-purchases,#view-purchases-shortcut").click();
   await page.locator("[data-purchase-edit]").first().click();
   assert.equal(await page.locator('#purchase-form select[name="status"]').inputValue(),"PURCHASED");
   await page.locator("#modal-close").click();
@@ -431,9 +431,9 @@ try {
     await names.setViewportSize({width,height:844});
     await names.locator(".file-card .fade-title.is-overflowing").first().waitFor();
     assert.equal(await names.locator(".file-card").first().evaluate(el=>{
-      const title=el.querySelector(".fade-title").getBoundingClientRect(),type=el.querySelector(".file-type").getBoundingClientRect();
-      return title.right<=type.left&&el.getBoundingClientRect().height<90;
-    }),true,"long names leave file metadata in its own column");
+      const title=el.querySelector(".fade-title").getBoundingClientRect(),box=el.getBoundingClientRect();
+      return title.left>=box.left&&title.right<=box.right&&box.height<90;
+    }),true,"long names stay inside compact file rows");
     await names.locator(".file-card").first().dblclick();
     await names.locator("#viewer-title.is-overflowing").waitFor();
     assert.equal(await names.locator(".viewer-head").evaluate(el=>{

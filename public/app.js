@@ -77,8 +77,8 @@ async function api(path,options){
 function notify(message){toast.textContent=message;toast.classList.add("show");setTimeout(function(){toast.classList.remove("show")},2400)}
 function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="loading">'+esc(label||"Loading…")+"</div>"}
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
-function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(v||"UNKNOWN")+"</span>"}
-function row(title,meta,right,note,fadeTitle=false){return '<div class="row"><div><div class="row-title'+(fadeTitle?' fade-title':'')+'">'+esc(title)+'</div><div class="row-meta">'+esc(meta||"")+'</div>'+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
+function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(String(v||"UNKNOWN").replaceAll("_"," "))+"</span>"}
+function row(title,meta,right,note,fadeTitle=false){return '<div class="row"><div><div class="row-title'+(fadeTitle?' fade-title':'')+'">'+esc(title)+'</div>'+(meta?'<div class="row-meta">'+esc(meta)+'</div>':'')+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
 
 function emptyState(title,buttons,compact=false){
@@ -362,13 +362,12 @@ async function showHome(){
       }
       html+='</section>';
     }
-    html+='<nav class="home-utilities" aria-label="Other home records"><div class="utility-links"><button class="ghost-link" id="view-charges-shortcut">Charges</button><button class="ghost-link" id="view-purchases-shortcut">Purchases</button><button class="ghost-link" id="view-history">History</button></div></nav></div>';
+    html+='<nav class="home-utilities" aria-label="Other home records"><div class="utility-links">'+(!charges.length?'<button class="ghost-link" id="view-charges-shortcut">Charges</button>':'')+(!purchases.length?'<button class="ghost-link" id="view-purchases-shortcut">Purchases</button>':'')+'<button class="ghost-link" id="view-history">History</button></div></nav></div>';
     content.innerHTML=html;
     const chargesBtn=$("#view-charges");if(chargesBtn)chargesBtn.onclick=showCharges;
     const purchasesBtn=$("#view-purchases");if(purchasesBtn)purchasesBtn.onclick=showPurchases;
-    const historyBtn=$("#home-history-link");if(historyBtn)historyBtn.onclick=showHistory;
-    $("#view-charges-shortcut").onclick=showCharges;
-    $("#view-purchases-shortcut").onclick=showPurchases;
+    const chargesShortcut=$("#view-charges-shortcut");if(chargesShortcut)chargesShortcut.onclick=showCharges;
+    const purchasesShortcut=$("#view-purchases-shortcut");if(purchasesShortcut)purchasesShortcut.onclick=showPurchases;
     $("#view-history").onclick=showHistory;
     $$("[data-go]",content).forEach(b=>b.onclick=()=>navigate(b.dataset.go));
     $$("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
@@ -377,11 +376,11 @@ async function showHome(){
 
 async function showCharges(){
   const pending=waitingModal("Loading records…");
-  try{const items=await api("/api/charges");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">+ Charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+'</span>'+badge(Number(c.active)?'ACTIVE':'INACTIVE')+'<button class="button" data-charge-edit="'+esc(c.id)+'">Edit</button>',c.notes||"")}).join("")||'<div class="empty">No charges.</div>')+'</div>');$("#add-charge").onclick=()=>openChargeForm();$$("[data-charge-edit]",modalBody).forEach(b=>b.onclick=()=>openChargeForm(items.find(c=>c.id===b.dataset.chargeEdit)))}catch(e){modalLoadFailed(pending,e)}
+  try{const items=await api("/api/charges");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">Add charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,c.billing_cycle+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+'</span>'+badge(Number(c.active)?'ACTIVE':'INACTIVE')+'<button class="button" data-charge-edit="'+esc(c.id)+'">Edit</button>',c.notes||"")}).join("")||'<div class="empty">No charges.</div>')+'</div>');$("#add-charge").onclick=()=>openChargeForm();$$("[data-charge-edit]",modalBody).forEach(b=>b.onclick=()=>openChargeForm(items.find(c=>c.id===b.dataset.chargeEdit)))}catch(e){modalLoadFailed(pending,e)}
 }
 async function showPurchases(){
   const pending=waitingModal("Loading records…");
-  try{const items=await api("/api/purchases");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">+ Save</button></div><div class="rows">'+(items.map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)))}catch(e){modalLoadFailed(pending,e)}
+  try{const items=await api("/api/purchases");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">Save purchase</button></div><div class="rows">'+(items.map(function(p){return row(p.title,p.category+" · "+p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)))}catch(e){modalLoadFailed(pending,e)}
 }
 async function showHistory(){
   const pending=waitingModal("Loading records…");
@@ -402,8 +401,8 @@ async function showIssues(){
     if(revision!==state.viewRevision)return;
     state.assets=assets;
     const action=assets.length
-       ? '<button class="primary-button" id="new-issue" type="button">+ Report issue</button>'
-       : '<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
+       ? '<button class="primary-button" id="new-issue" type="button">Report issue</button>'
+       : '<button class="primary-button" id="new-asset" type="button">Register asset</button>';
     const body=items.map((item,index)=>{
       const active=!["RESOLVED","CLOSED"].includes(item.status);
       return '<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
@@ -430,7 +429,7 @@ async function showRepairs(){
     const [items,assets]=await Promise.all([api("/api/repairs"),api("/api/assets")]);
     if(revision!==state.viewRevision)return;
     state.assets=assets;
-    const action=assets.length?'<button class="primary-button" id="new-repair" type="button">+ Record repair</button>':'<button class="primary-button" id="new-asset" type="button">+ Register asset</button>';
+    const action=assets.length?'<button class="primary-button" id="new-repair" type="button">Record repair</button>':'<button class="primary-button" id="new-asset" type="button">Register asset</button>';
     const body=items.map((r,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
     content.innerHTML=registerTools("repairs",false,action,items.length)+ledger("Repairs",items.length,"",body,"Repair");
     bindRegisterSearch(items,r=>[r.title,r.asset_name,r.contractor,r.description,r.outcome].filter(Boolean).join(" "));
@@ -507,7 +506,7 @@ async function showAppliances(){
   try{
     state.assets=await api("/api/assets");
     if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="register-search page-controls"><div class="controls-leading">'+quickSearch("assets","asset-search")+'</div><span class="search-count" id="asset-count"></span><div class="controls-actions"><button type="button" class="primary-button" id="new-asset">+ Register asset</button></div></div><div id="asset-results"></div>';
+    content.innerHTML='<div class="register-search page-controls"><div class="controls-leading">'+quickSearch("assets","asset-search")+'</div><span class="search-count" id="asset-count"></span><div class="controls-actions"><button type="button" class="primary-button" id="new-asset">Register asset</button></div></div><div id="asset-results"></div>';
     $("#new-asset").onclick=()=>openAssetForm();
     renderAssets(state.assets);
     $("#asset-search").oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))));$("#asset-count")?.classList.toggle("is-filtered",Boolean(q))};
@@ -737,11 +736,12 @@ async function showFiles(){
   try{
     const docs=await api("/api/documents");
     if(revision!==state.viewRevision)return;
-    const buttons='<button class="button" id="save-link" type="button">+ Save link</button><button class="primary-button" id="upload-file" type="button">+ Upload file</button><button class="icon-button" id="file-info-toggle" type="button" '+(docs.length?'':'hidden ')+'aria-controls="file-inspector" aria-label="Hide file information" title="Hide file information"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>';
+    const buttons='<button class="button" id="save-link" type="button">Save link</button><button class="primary-button" id="upload-file" type="button">Upload file</button><button class="icon-button" id="file-info-toggle" type="button" '+(docs.length?'':'hidden ')+'aria-controls="file-inspector" aria-label="Hide file information" title="Hide file information"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>';
     let cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
+      const context=links.join(" · ");
       return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false">'
-        +'<span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-entry-copy"><strong class="fade-title">'+esc(d.title)+'</strong><small>'+esc(links.join(" · ")||d.type||"File")+'</small></span><span class="file-type">'+esc(d.type||"FILE")+'</span></button>';
+        +'<span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-entry-copy"><strong class="fade-title">'+esc(d.title)+'</strong>'+(context?'<small>'+esc(context)+'</small>':'')+'</span></button>';
     }).join("");
     if(!docs.length)cards='<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
     content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading">'+quickSearch("files","file-search")+'</div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+buttons+'</div></div>'
@@ -762,7 +762,7 @@ async function showFiles(){
         +'<div><dt>Type</dt><dd>'+esc(doc.type||"File")+'</dd></div><div><dt>Date</dt><dd>'+fmtDate(doc.occurred_at||doc.created_at)+'</dd></div>'
         +(related?'<div><dt>Linked to</dt><dd>'+esc(related)+'</dd></div>':'')
         +(doc.evidence_reason?'<div><dt>Reason</dt><dd>'+esc(doc.evidence_reason)+'</dd></div>':'')
-        +'</dl><button type="button" class="primary-button inspector-open" id="inspect-open">Open file ↗</button>';
+        +'</dl><button type="button" class="primary-button inspector-open" id="inspect-open">Open file</button>';
       $("#inspect-open").onclick=()=>openFile(doc);
     }
     const search=$("#file-search");
@@ -961,19 +961,20 @@ async function openHouseholdSettings(){
     if(!modalPending(pending))return;
     const home=state.homes.find(h=>h.id===state.currentHomeId);
     const owner=home&&home.role==="OWNER";
+    const hasSample=state.homes.some(h=>h.id.startsWith("home-sample-"));
     const pendingInvites=owner?await api("/api/homes/invitations"):[];
     if(!modalPending(pending))return;
     let markup='<h2>Household settings</h2><p class="row-meta">'+esc($("#account-email").textContent)+'</p>';
     markup+='<div class="detail-section"><h3>Your homes</h3><div class="rows">'+state.homes.map(h=>
       row(h.name,h.role,h.id===state.currentHomeId?'<span class="badge">Current</span>':'<button type="button" class="button" data-switch="'+esc(h.id)+'">Open home</button>')
-    ).join("")+'</div>'+(owner?'<div class="form-actions"><button type="button" class="button" id="open-sample-home">Open sample home</button></div>':'')+'</div>';
+    ).join("")+'</div>'+(owner&&!hasSample?'<div class="form-actions"><button type="button" class="button" id="open-sample-home">Open sample home</button></div>':'')+'</div>';
     if(owner){
       markup+='<div class="detail-section"><h3>Home name</h3><form class="form" id="rename-home-form"><div class="field"><label>Household</label><input name="homeName" maxlength="100" value="'+esc(home.name)+'" required></div><div class="form-actions"><button class="button" type="submit">Save name</button></div></form></div>';
       markup+='<div class="detail-section"><h3>Invite a member</h3><form class="form" id="invite-home-form"><div class="field"><label>Google email address</label><input name="email" type="email" required></div><div class="field"><label>Access</label><select name="role"><option value="MEMBER">Member — edit records</option><option value="VIEWER">Viewer — read only</option></select></div><div class="form-actions"><button class="button" type="submit">Create invite link</button></div></form><div id="invite-result"></div></div>';
-      markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+(pendingInvites.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")||'<div class="empty">None</div>')+'</div></div>';
+      if(pendingInvites.length)markup+='<div class="detail-section"><h3>Pending invitations</h3><div class="rows">'+pendingInvites.map(x=>row(x.email,x.role+' · expires '+fmtDate(x.expires_at),'<button type="button" class="button" data-revoke="'+esc(x.id)+'">Revoke</button>')).join("")+'</div></div>';
     }
     if(owner)markup+='<div class="detail-section"><h3>Download your data</h3><div class="form-actions"><a class="button" href="/api/account/export" download="homely-backup.tar">Export household</a></div></div>';
-        markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.id!==state.homes.find(h=>h.id===state.currentHomeId)?.owner_id&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
+    if(members.length>1)markup+='<div class="detail-section"><h3>Members</h3><div class="rows">'+members.map(x=>row(x.name,x.email+' · '+x.role,owner&&x.role!=="OWNER"?'<button type="button" class="button" data-remove="'+esc(x.id)+'">Remove</button>':'')).join("")+'</div></div>';
     markup+='<div class="detail-section"><h3>Delete account</h3><div class="form-actions"><button type="button" class="button" id="delete-account">Delete account…</button></div></div>';
     openModal('<div class="settings-content">'+markup+'</div>');
     const sampleButton=$("#open-sample-home");
