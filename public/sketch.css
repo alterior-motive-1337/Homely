@@ -1706,7 +1706,7 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
 /* Keep all chat-toolbar actions inside narrow docked widths. */
 .chat-rail{overflow-x:clip!important}
 .chat-head{min-width:0!important}
-.chat-toolbar{min-width:0;gap:3px!important}
+.chat-toolbar{min-width:0;gap:3px!important;justify-content:flex-end!important}
 @media(min-width:960px){
   .chat-head{padding-inline:9px!important;gap:4px!important}
   .chat-head .chat-toolbar .icon-button{width:34px!important;min-width:34px!important;height:34px!important;padding:7px!important}
