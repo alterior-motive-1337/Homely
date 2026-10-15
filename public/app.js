@@ -775,9 +775,9 @@ async function openLinkEvidenceForm(){
   const assetOptionsHtml='<option value="">None</option>'+options;
   openModal('<h2>Save a source link</h2><form class="form" id="link-evidence-form"><div class="form-grid"><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…" required></div><div class="field full"><label>Title</label><input name="title" maxlength="240" required></div><div class="field"><label>Type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>VIDEO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Evidence date</label><input type="date" name="occurredAt" value="'+today()+'" required></div><div class="field"><label>Status</label><select name="evidenceStatus"><option selected>ACTIVE</option><option>REFERENCE</option><option>ARCHIVED</option></select></div><div class="field"><label>Asset</label><select name="assetId">'+assetOptionsHtml+'</select></div><div class="field"><label>Issue</label><select name="issueId">'+optional("None",issues,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field"><label>Repair</label><select name="repairId">'+optional("None",repairs,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field"><label>Recurring charge</label><select name="chargeId">'+optional("None",charges,function(x){return x.name+" · "+x.billing_cycle})+'</select></div><div class="field"><label>Potential purchase</label><select name="purchaseCandidateId">'+optional("None",purchases,function(x){return x.title+" · "+x.status})+'</select></div><div class="field full"><label>Provenance</label><input name="provenance" maxlength="1000" value="Saved by homeowner."></div><div class="field full"><label>Reason</label><textarea name="evidenceReason" maxlength="2000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview evidence</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#link-evidence-form").onsubmit=async function(e){
-    e.preventDefault();const d=new FormData(e.currentTarget),url=String(d.get("sourceUrl")||"").trim();
-    await previewAction("ATTACH_DOCUMENT",{
+  bindPreviewForm("#link-evidence-form",d=>{
+    const url=String(d.get("sourceUrl")||"").trim();
+    return ["ATTACH_DOCUMENT",{
       assetId:d.get("assetId")||null,
       issueId:d.get("issueId")||null,
       repairId:d.get("repairId")||null,
@@ -794,8 +794,8 @@ async function openLinkEvidenceForm(){
       occurredAt:d.get("occurredAt"),
       evidenceReason:d.get("evidenceReason"),
       evidenceStatus:d.get("evidenceStatus")
-    },"Homeowner saved this source link as household evidence.");
-  };
+    },"Homeowner saved this source link as household evidence."];
+  });
 }
 
 
@@ -826,7 +826,8 @@ async function openUploadEvidenceForm(defaults){
     if(!file)return notify("Select a file.");
     if(!file.size||file.size>50_000_000)return notify("Select a file of 50 MB or less.");
 
-    const submit=$('button[type="submit"]',form);
+    const submit=$('button[type="submit"],button.primary-button',form);
+    const uploadGeneration=modalGeneration;
     if(submit)submit.disabled=true;
     try{
       const staged=await api("/api/uploads/start",{method:"POST",body:{name:file.name,mimeType:file.type||"application/octet-stream",size:file.size}});
@@ -838,7 +839,8 @@ async function openUploadEvidenceForm(defaults){
         if(submit)submit.textContent="Uploading "+Math.round((index+1)/total*100)+"%";
       }
       await api("/api/uploads/"+encodeURIComponent(staged.id)+"/finish",{method:"POST"});
-      if(submit)submit.textContent="Preview attachment";
+      if(!modalPending(uploadGeneration))return;
+      if(submit){submit.disabled=false;submit.textContent="Preview attachment"}
       await previewAction("ATTACH_DOCUMENT",{
         assetId:data.get("assetId")||null,issueId:data.get("issueId")||null,
         repairId:data.get("repairId")||null,chargeId:data.get("chargeId")||null,
@@ -849,8 +851,8 @@ async function openUploadEvidenceForm(defaults){
         provenance:data.get("provenance"),occurredAt:data.get("occurredAt"),
         evidenceReason:data.get("evidenceReason"),evidenceStatus:data.get("evidenceStatus")
       },"Homeowner attached a file as household evidence.");
-    }catch(err){notify(err.message)}
-    finally{if(submit)submit.disabled=false}
+    }catch(err){if(modalPending(uploadGeneration))notify(err.message)}
+    finally{if(submit?.isConnected){submit.disabled=false;submit.textContent="Preview attachment"}}
   };
 }
 
