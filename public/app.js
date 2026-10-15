@@ -878,7 +878,7 @@ async function showFiles(){
       container:$(".file-grid",content),
       textFor:d=>[d.title,d.asset_name,d.issue_title,d.repair_title,d.charge_name,d.purchase_title].filter(Boolean).join(" "),
       unit:"file",plural:"files",emptyMessage:"No matching files",
-      onUpdate:()=>{if(!$(".file-card[aria-pressed=true]:not([hidden])",content))$(".file-card",content).forEach(card=>card.setAttribute("aria-pressed","false"))}
+      onUpdate:()=>{if(!$(".file-card[aria-pressed=true]:not([hidden])",content))for(const card of document.querySelectorAll(".file-card"))card.setAttribute("aria-pressed","false")}
     });
     $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
