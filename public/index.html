@@ -30,8 +30,8 @@
     </nav>
     <div class="sidebar-footer">
       <div class="account-menu"><span id="account-email" class="account-email" title="Signed-in account"></span><button id="household-settings" type="button" class="button" aria-label="Settings" title="Settings"><svg class="account-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5a2 2 0 0 1 2 2l1.8.8 1.8-.5 1.8 3.1-1.3 1.3v2l1.3 1.3-1.8 3.1-1.8-.5-1.8.8a2 2 0 0 1-4 0l-1.8-.8-1.8.5-1.8-3.1 1.3-1.3v-2L4.6 8.9l1.8-3.1 1.8.5 1.8-.8a2 2 0 0 1 2-2Z"/><circle cx="12" cy="11.5" r="2.5"/></svg></button><button id="sign-out" type="button" class="button" aria-label="Sign out" title="Sign out"><svg class="account-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5M15 7l5 5-5 5M8 12h12"/></svg></button></div>
-      <button class="button" id="alerts-trigger" type="button" hidden>Alerts</button>
-      <button class="button chat-trigger" id="chat-trigger" type="button" aria-expanded="false" aria-controls="chat-rail">Ask Homely</button>
+      <button class="icon-button status-button" id="alerts-trigger" type="button" aria-label="Alerts" title="Alerts" hidden><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 9h18c0-1-3-2-3-9M10 21h4"/></svg><span id="alerts-count" class="toolbar-count" aria-hidden="true"></span></button>
+      <button class="icon-button chat-trigger" id="chat-trigger" type="button" aria-label="Ask Homely" title="Ask Homely" aria-expanded="false" aria-controls="chat-rail"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-8 8 8.7 8.7 0 0 1-3.7-.8L4 20l1.3-4.1a8 8 0 1 1 14.7-4.4Z"/><path d="M8 11.5h8"/></svg></button>
     </div>
   </aside>
   <main class="workspace" id="workspace">
@@ -41,7 +41,7 @@
   <aside class="chat-rail" id="chat-rail" aria-hidden="true" aria-label="Homely assistant">
     <div class="panel-resizer" id="assistant-resizer" role="separator" tabindex="0" aria-label="Resize assistant" aria-orientation="vertical" aria-controls="workspace chat-rail" title="Drag or use arrow keys to resize. Double-click to reset."></div>
     <div class="chat-head">
-      <strong id="chat-current-title" class="chat-current-title">New chat</strong>
+      <strong id="chat-current-title" class="chat-current-title sr-only">New chat</strong>
       <div class="chat-toolbar">
         <button class="icon-button" id="chat-conversations-toggle" type="button" aria-label="Previous chats" title="Previous chats" aria-expanded="false" aria-controls="chat-history-panel"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2-5.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></button>
         <button class="icon-button" id="chat-new" type="button" aria-label="New chat" title="New chat"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>

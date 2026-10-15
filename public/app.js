@@ -153,7 +153,10 @@ const notifiedAlerts=new Set();
 async function refreshAlerts(){
   try{
     state.alerts=(await api("/api/alerts")).alerts;
-    const trigger=$("#alerts-trigger");trigger.hidden=!state.alerts.length;trigger.textContent="Alerts "+state.alerts.length;
+    const trigger=$("#alerts-trigger");trigger.hidden=!state.alerts.length;
+    const alertLabel="Alerts ("+state.alerts.length+")";
+    trigger.setAttribute("aria-label",alertLabel);trigger.title=alertLabel;
+    $("#alerts-count").textContent=state.alerts.length>99?"99+":String(state.alerts.length);
     if("Notification" in window&&Notification.permission==="granted")state.alerts.forEach(alert=>{
       if(notifiedAlerts.has(alert.key))return;notifiedAlerts.add(alert.key);
       try{const notification=new Notification(alert.title,{body:alert.detail,tag:alert.key});notification.onclick=()=>{window.focus();void showAlerts();notification.close()}}catch(_){}
@@ -211,6 +214,14 @@ content.addEventListener("keydown",event=>{
   event.preventDefault();event.stopPropagation();button.click();
 });
 
+function registerAction(id,label,kind="plus",primary=true){
+  const paths=kind==="upload"
+    ?'<path d="M12 16V4m-5 5 5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>'
+    :kind==="link"
+      ?'<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/>'
+      :'<path d="M12 5v14M5 12h14"/>';
+  return '<button type="button" class="'+(primary?"primary-button":"button")+' icon-action" id="'+esc(id)+'" aria-label="'+esc(label)+'" title="'+esc(label)+'"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+paths+'</svg></button>';
+}
 function registerTools(label,status=false,action="",count=0){
   return '<div class="register-tools page-controls"><div class="controls-leading">'+quickSearch(label,"record-search")
     +(status?'<div class="register-filters" aria-label="Issue status"><button type="button" data-status="all" aria-pressed="true">All</button><button type="button" data-status="open" aria-pressed="false">Open</button><button type="button" data-status="resolved" aria-pressed="false">Resolved</button></div>':'')
@@ -451,9 +462,7 @@ async function showIssues(){
     const [items,assets]=await Promise.all([api("/api/issues"),api("/api/assets")]);
     if(revision!==state.viewRevision)return;
     state.assets=assets;
-    const action=assets.length
-       ? '<button class="primary-button" id="new-issue" type="button">Report issue</button>'
-       : '<button class="primary-button" id="new-asset" type="button">Register asset</button>';
+    const action=assets.length?registerAction("new-issue","Report issue"):registerAction("new-asset","Register asset");
     const body=items.map((item,index)=>{
       const active=!["RESOLVED","CLOSED"].includes(item.status);
       return '<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
@@ -480,7 +489,7 @@ async function showRepairs(){
     const [items,assets]=await Promise.all([api("/api/repairs"),api("/api/assets")]);
     if(revision!==state.viewRevision)return;
     state.assets=assets;
-    const action=assets.length?'<button class="primary-button" id="new-repair" type="button">Record repair</button>':'<button class="primary-button" id="new-asset" type="button">Register asset</button>';
+    const action=assets.length?registerAction("new-repair","Record repair"):registerAction("new-asset","Register asset");
     const body=items.map((r,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
     content.innerHTML=registerTools("repairs",false,action,items.length)+ledger("Repairs",items.length,"",body,"Repair");
     bindRegisterSearch(items,r=>[r.title,r.asset_name,r.contractor,r.description,r.outcome].filter(Boolean).join(" "));
@@ -557,7 +566,7 @@ async function showAppliances(){
   try{
     state.assets=await api("/api/assets");
     if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="register-search page-controls"><div class="controls-leading">'+quickSearch("assets","asset-search")+'</div><span class="search-count" id="asset-count"></span><div class="controls-actions"><button type="button" class="primary-button" id="new-asset">Register asset</button></div></div><div id="asset-results"></div>';
+    content.innerHTML='<div class="register-search page-controls"><div class="controls-leading">'+quickSearch("assets","asset-search")+'</div><span class="search-count" id="asset-count"></span><div class="controls-actions">'+registerAction("new-asset","Register asset")+'</div></div><div id="asset-results"></div>';
     $("#new-asset").onclick=()=>openAssetForm();
     renderAssets(state.assets);
     $("#asset-search").oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))));$("#asset-count")?.classList.toggle("is-filtered",Boolean(q))};
@@ -787,7 +796,7 @@ async function showFiles(){
   try{
     const docs=await api("/api/documents");
     if(revision!==state.viewRevision)return;
-    const actions='<button class="button" id="save-link" type="button">Save link</button><button class="primary-button" id="upload-file" type="button">Upload file</button>';
+    const actions=registerAction("save-link","Save link","link",false)+registerAction("upload-file","Upload file","upload");
     const cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
       return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false">'
