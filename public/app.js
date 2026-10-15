@@ -319,27 +319,37 @@ async function previewAction(actionType,payload,reason,requestText){
   const submit=modal.open?$("form button[type='submit'],form button.primary-button",modalBody):null;
   if(submit?.disabled)return;
   const original=submit?.textContent;
+  const formGeneration=modalGeneration;
   if(submit){submit.disabled=true;submit.textContent="Preparing…"}
   try{
     const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
     const p=result.preview,t=result.transaction;
+    if(!modalPending(formGeneration)){
+      // Never reopen a discarded form when preview preparation completes late.
+      try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"})}catch(_){}
+      return;
+    }
     openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div id="action-review"></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
     const review=createInteraction(null);
     review.classList.add("preview");
     review.append(createReview(p,"",{title:false}));
     $("#action-review").append(review);
+    const previewGeneration=modalGeneration;
     $("#reject-preview").onclick=async function(){
-      const button=$("#reject-preview");button.disabled=true;button.textContent="Rejecting…";
-      try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected.")}
-      catch(error){button.disabled=false;button.textContent="Reject";notify(error.message)}
+      const button=$("#reject-preview"),other=$("#commit-preview");
+      button.disabled=true;other.disabled=true;button.textContent="Rejecting…";
+      try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});if(modalPending(previewGeneration))closeModal();notify("Proposal rejected.")}
+      catch(error){if(button.isConnected){button.disabled=false;other.disabled=false;button.textContent="Reject"}notify(error.message)}
     };
     $("#commit-preview").onclick=async function(){
-      const button=$("#commit-preview");button.disabled=true;button.textContent="Saving…";
+      const button=$("#commit-preview"),other=$("#reject-preview");
+      button.disabled=true;other.disabled=true;button.textContent="Saving…";
       try{
         await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});
-        closeModal();notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");
+        if(modalPending(previewGeneration))closeModal();
+        notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");
         await selectView(state.view);
-      }catch(error){if(button.isConnected){button.disabled=false;button.textContent="Approve & commit"}notify(error.message)}
+      }catch(error){if(button.isConnected){button.disabled=false;other.disabled=false;button.textContent="Approve & commit"}notify(error.message)}
     };
   }catch(error){notify(error instanceof Error?error.message:"Could not prepare action.")}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent=original}}
@@ -371,30 +381,33 @@ async function openRepairForm(prefill){
   const title=prefill.title?"Repair: "+prefill.title:"";
   openModal('<h2>Record a repair</h2><form class="form" id="repair-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field full"><label>Linked issue</label><select name="issueId">'+issueOpts+'</select></div><div class="field full"><label>Repair title</label><input name="title" maxlength="180" required value="'+esc(title)+'"></div><div class="field"><label>Date</label><input type="date" name="repairDate" value="'+today()+'" required></div><div class="field"><label>Cost (ZAR)</label><input type="number" name="cost" min="0" step=".01" placeholder="0.00"></div><div class="field full"><label>Contractor / person</label><input name="contractor" maxlength="240"></div><div class="field full"><label>Work performed</label><textarea name="description"></textarea></div><div class="field full"><label>Outcome</label><textarea name="outcome"></textarea></div></div><div class="row-note">Permanent record.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#repair-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("cost")||"").trim();await previewAction("RECORD_REPAIR",{assetId:d.get("assetId"),issueId:d.get("issueId")||null,title:d.get("title"),repairDate:d.get("repairDate"),costCents:cost?Math.round(Number(cost)*100):null,contractor:d.get("contractor"),description:d.get("description"),outcome:d.get("outcome")},"Homeowner recorded completed repair work.")}
+  $("#repair-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("cost")||"").trim();await previewAction("RECORD_REPAIR",{assetId:d.get("assetId"),issueId:d.get("issueId")||null,title:d.get("title"),repairDate:d.get("repairDate"),costCents:cost?amountToCents(cost):null,contractor:d.get("contractor"),description:d.get("description"),outcome:d.get("outcome")},"Homeowner recorded completed repair work.")}
 }
 
 function openChargeForm(existing){
   existing=existing||null;
   openModal('<h2>'+ (existing?'Edit charge':'Add recurring charge') +'</h2><form class="form" id="charge-form"><div class="form-grid"><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>Amount (ZAR)</label><input type="number" name="amount" min="0" step=".01" required></div><div class="field"><label>Billing cycle</label><select name="billingCycle"><option selected>MONTHLY</option><option>QUARTERLY</option><option>ANNUAL</option><option>OTHER</option></select></div><div class="field"><label>Due day</label><input type="number" name="dueDay" min="1" max="31"></div><div class="field"><label>Activity</label><select name="active"><option value="1">Active</option><option value="0">Inactive</option></select></div><div class="field full"><label>Provider</label><input name="provider" maxlength="240"></div><div class="field full"><label>Notes</label><textarea name="notes"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  if(existing)fillForm($("#charge-form"),{name:existing.name,category:existing.category,amount:Number(existing.amount_cents)/100,billingCycle:existing.billing_cycle,dueDay:existing.due_day,provider:existing.provider,notes:existing.notes,active:existing.active});
+  if(existing)fillForm($("#charge-form"),{name:existing.name,category:existing.category,amount:centsToAmount(existing.amount_cents),billingCycle:existing.billing_cycle,dueDay:existing.due_day,provider:existing.provider,notes:existing.notes,active:existing.active});
   $("#charge-form").onsubmit=async function(e){
     e.preventDefault();const d=new FormData(e.currentTarget),amount=String(d.get("amount")||"").trim(),due=String(d.get("dueDay")||"").trim();
-    await previewAction(existing?"UPDATE_CHARGE":"CREATE_CHARGE",{...(existing?{chargeId:existing.id}:{}),active:Number(d.get("active")),name:d.get("name"),category:d.get("category"),amountCents:Math.round(Number(amount)*100),billingCycle:d.get("billingCycle"),dueDay:due?Number(due):null,provider:d.get("provider"),notes:d.get("notes")},"Homeowner recorded a recurring household charge.");
+    await previewAction(existing?"UPDATE_CHARGE":"CREATE_CHARGE",{...(existing?{chargeId:existing.id}:{}),active:Number(d.get("active")),name:d.get("name"),category:d.get("category"),amountCents:amountToCents(amount),billingCycle:d.get("billingCycle"),dueDay:due?Number(due):null,provider:d.get("provider"),notes:d.get("notes")},"Homeowner recorded a recurring household charge.");
   };
 }
 
 async function openPurchaseForm(existing){
   existing=existing||null;
-  const options=await assetOptions("");
+  const pending=waitingModal("Preparing purchase form…");
+  let options;
+  try{options=await assetOptions("")}catch(error){modalLoadFailed(pending,error);return}
+  if(!modalPending(pending))return;
   const optionalAssets='<option value="">None</option>'+options;
   openModal('<h2>'+(existing?"Edit purchase":"Save potential purchase")+'</h2><form class="form" id="purchase-form"><div class="form-grid"><div class="field full"><label>Title</label><input name="title" maxlength="220" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>Status</label><select name="status"><option selected>SAVED</option><option>SHORTLISTED</option>'+(existing?'<option>PURCHASED</option><option>DISMISSED</option>':'')+'</select></div><div class="field full"><label>Related asset</label><select name="assetId">'+optionalAssets+'</select></div><div class="field"><label>Budget (ZAR)</label><input type="number" name="budget" min="0" step=".01"></div><div class="field"><label>Expected cost (ZAR)</label><input type="number" name="expected" min="0" step=".01"></div><div class="field full"><label>Source name</label><input name="sourceName" maxlength="240"></div><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…"></div><div class="field full"><label>Reason</label><textarea name="rationale"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  if(existing)fillForm($("#purchase-form"),{title:existing.title,category:existing.category,status:existing.status,assetId:existing.asset_id,budget:existing.budget_cents==null?null:Number(existing.budget_cents)/100,expected:existing.expected_cost_cents==null?null:Number(existing.expected_cost_cents)/100,sourceName:existing.source_name,sourceUrl:existing.source_url,rationale:existing.rationale});
+  if(existing)fillForm($("#purchase-form"),{title:existing.title,category:existing.category,status:existing.status,assetId:existing.asset_id,budget:existing.budget_cents==null?null:centsToAmount(existing.budget_cents),expected:existing.expected_cost_cents==null?null:centsToAmount(existing.expected_cost_cents),sourceName:existing.source_name,sourceUrl:existing.source_url,rationale:existing.rationale});
   $("#purchase-form").onsubmit=async function(e){
     e.preventDefault();const d=new FormData(e.currentTarget),budget=String(d.get("budget")||"").trim(),expected=String(d.get("expected")||"").trim();
-    await previewAction(existing?"UPDATE_PURCHASE":"SAVE_PURCHASE",{...(existing?{purchaseCandidateId:existing.id}:{}),assetId:d.get("assetId")||null,title:d.get("title"),category:d.get("category"),status:d.get("status"),budgetCents:budget?Math.round(Number(budget)*100):null,expectedCostCents:expected?Math.round(Number(expected)*100):null,sourceUrl:d.get("sourceUrl"),sourceName:d.get("sourceName"),rationale:d.get("rationale")},"Homeowner saved a potential household purchase.");
+    await previewAction(existing?"UPDATE_PURCHASE":"SAVE_PURCHASE",{...(existing?{purchaseCandidateId:existing.id}:{}),assetId:d.get("assetId")||null,title:d.get("title"),category:d.get("category"),status:d.get("status"),budgetCents:budget?amountToCents(budget):null,expectedCostCents:expected?amountToCents(expected):null,sourceUrl:d.get("sourceUrl"),sourceName:d.get("sourceName"),rationale:d.get("rationale")},"Homeowner saved a potential household purchase.");
   };
 }
 
@@ -555,14 +568,14 @@ async function openAssetForm(existing){
   try{systems=await api("/api/systems")}catch(error){modalLoadFailed(pending,error);return}
   if(!modalPending(pending))return;
   const options=systems.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'}).join("");
-  if(!options){notify("No home systems available.");return}
+  if(!options){closeModal();notify("No home systems available.");return}
   openModal('<h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Condition</label><select name="condition"><option>UNKNOWN</option><option>NEW</option><option>GOOD</option><option>FAIR</option><option>POOR</option><option>FAILED</option></select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>Purchase price (ZAR)</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   if(existing){
     const form=$("#asset-form");
     const values={systemId:existing.system_id,name:existing.name,category:existing.category,
       condition:existing.condition,location:existing.location,manufacturer:existing.manufacturer,
       model:existing.model,serialNumber:existing.serial_number,purchaseDate:existing.purchase_date,
-      purchaseCost:existing.purchase_cost_cents==null?"":Number(existing.purchase_cost_cents)/100,
+      purchaseCost:existing.purchase_cost_cents==null?"":centsToAmount(existing.purchase_cost_cents),
       warrantyEnd:existing.warranty_end,notes:existing.notes};
     for(const [key,value] of Object.entries(values)){
       const element=form.elements.namedItem(key);
@@ -572,7 +585,7 @@ async function openAssetForm(existing){
   $("[data-cancel]",modalBody).onclick=closeModal;
   $("#asset-form").onsubmit=async function(e){
     e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("purchaseCost")||"").trim();
-    try{await previewAction(existing?"UPDATE_ASSET":"CREATE_ASSET",{assetId:existing?existing.id:null,systemId:d.get("systemId"),name:d.get("name"),category:d.get("category"),condition:d.get("condition"),location:d.get("location"),manufacturer:d.get("manufacturer"),model:d.get("model"),serialNumber:d.get("serialNumber"),purchaseDate:d.get("purchaseDate")||null,purchaseCostCents:cost?Math.round(Number(cost)*100):null,warrantyEnd:d.get("warrantyEnd")||null,notes:d.get("notes")},existing?"Homeowner updated a household asset.":"Homeowner registered a household asset.")}
+    try{await previewAction(existing?"UPDATE_ASSET":"CREATE_ASSET",{assetId:existing?existing.id:null,systemId:d.get("systemId"),name:d.get("name"),category:d.get("category"),condition:d.get("condition"),location:d.get("location"),manufacturer:d.get("manufacturer"),model:d.get("model"),serialNumber:d.get("serialNumber"),purchaseDate:d.get("purchaseDate")||null,purchaseCostCents:cost?amountToCents(cost):null,warrantyEnd:d.get("warrantyEnd")||null,notes:d.get("notes")},existing?"Homeowner updated a household asset.":"Homeowner registered a household asset.")}
     catch(err){notify(err.message)}
   };
 }
