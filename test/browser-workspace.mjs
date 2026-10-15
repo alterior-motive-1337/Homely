@@ -196,6 +196,17 @@ try {
   await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
   await page.unroute("**/api/repairs");
   await page.locator("#modal-close").click();
+  // Uploaded bytes must reach the same preview/reject flow as linked evidence.
+  await page.locator("#upload-file").click();
+  await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
+  await page.locator('#link-evidence-form input[name="attachment"]').setInputFiles({
+    name:"normalization-check.txt",mimeType:"text/plain",
+    buffer:Buffer.from("Verify the normalized file-upload approval path.")
+  });
+  await page.locator('#link-evidence-form button.primary-button').click();
+  await page.locator("#commit-preview").waitFor({state:"visible"});
+  await page.locator("#reject-preview").click();
+  await page.locator("#modal").waitFor({state:"hidden"});
   await page.locator("#save-link").click();
   await page.locator('#link-evidence-form input[name="sourceUrl"]').waitFor();
   await page.locator("#modal-close").click();
