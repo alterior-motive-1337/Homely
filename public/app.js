@@ -236,23 +236,41 @@ function registerTools(label,status=false,action="",count=0){
     +'</div><span class="search-count" id="search-count" role="status">'+count+' '+(count===1?'entry':'entries')+'</span>'
     +'<div class="controls-actions">'+action+'</div></div>';
 }
-function bindRegisterSearch(items,textFor,isOpen){
-  const search=$("#record-search"),entries=$$(".ledger-entry",content);
-  let status="all";
+function bindCollectionSearch({items,entrySelector,searchId,countId,container,
+  textFor,isOpen=null,unit="entry",plural=unit+"s",emptyMessage="No matching records",onUpdate}){
+  const search=$("#"+searchId,content),counter=$("#"+countId,content),entries=$$(entrySelector,content);
+  if(!search||!counter||entries.length!==items.length)return;
   const empty=document.createElement("div");empty.className="search-empty";empty.hidden=true;
-  empty.innerHTML='<strong>No matching records</strong>';
-  $(".ledger-rows",content).appendChild(empty);
+  const emptyLabel=document.createElement("strong");emptyLabel.textContent=emptyMessage;empty.append(emptyLabel);
+  container.append(empty);
+  let status="all";
   function update(){
-    const query=search.value.trim().toLowerCase();let count=0;
-    entries.forEach((entry,index)=>{const item=items[index];const matches=textFor(item).toLowerCase().includes(query)&&(!isOpen||status==="all"||(status==="open"?isOpen(item):!isOpen(item)));entry.hidden=!matches;if(matches)count++});
+    const query=search.value.trim();let count=0;
+    entries.forEach((entry,index)=>{
+      const item=items[index];
+      const visible=matchesSearch(textFor(item),query)&&matchesStatusFilter(status,isOpen?isOpen(item):null);
+      entry.hidden=!visible;if(visible)count++;
+    });
+    const filtered=Boolean(query||status!=="all");
     empty.hidden=!items.length||count>0;
-    $("#search-count").textContent=query||status!=="all"?count+" of "+items.length:items.length+" "+(items.length===1?"entry":"entries");
-    $("#search-count").classList.toggle("is-filtered",Boolean(query||status!=="all"));
+    counter.textContent=countLabel(count,items.length,unit,plural,filtered);
+    counter.classList.toggle("is-filtered",filtered);
+    if(onUpdate)onUpdate(entries);
   }
   search.oninput=update;
-  $$("[data-status]",content).forEach(button=>button.onclick=()=>{status=button.dataset.status;$$("[data-status]",content).forEach(b=>b.setAttribute("aria-pressed",String(b===button)));update()});
+  $$("[data-status]",content).forEach(button=>button.onclick=()=>{
+    status=button.dataset.status;
+    $$("[data-status]",content).forEach(b=>b.setAttribute("aria-pressed",String(b===button)));
+    update();
+  });
+  update();
 }
-
+function bindRegisterSearch(items,textFor,isOpen){
+  bindCollectionSearch({
+    items,entrySelector:".ledger-entry",searchId:"record-search",countId:"search-count",
+    container:$(".ledger-rows",content),textFor,isOpen
+  });
+}
 function setRuntime(x){
   state.integrations=x;
   const ai=x&&x.ai;
