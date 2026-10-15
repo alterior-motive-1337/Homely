@@ -1,5 +1,7 @@
 import { createInteraction, createReview } from "./interactions.js";
 import { watchFadingTitles } from "./fading.js";
+import { normalizeCurrency, formatMinorAmount, majorToMinorAmount, minorToMajorAmount, localDateInput,
+  normalizeStatus, statusLabel, statusTone, matchesSearch, countLabel, matchesStatusFilter } from "./ui-normalization.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -9,7 +11,7 @@ const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), cha
 const agentState=$("#agent-state");
 viewerTitle.classList.add("fade-title");
 watchFadingTitles(document.body);
-const state={view:"home",assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false};
+const state={view:"home",assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false,currency:normalizeCurrency()};
 const viewPanels=new Map();
 const VIEW_CACHE_MS=45000;
 const ACTIVE_REFRESH_MS=45000;
@@ -59,8 +61,11 @@ function bindPanelResize({name,container,panel,handle,variable,min,max,mainMin,b
 function esc(v){return String(v==null?"":v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
 function fmtDate(v){return v?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(v)):"—"}
 function assetAge(a){const value=a.acquired_at||a.purchase_date;if(!value)return"Unknown";const date=new Date(value),now=new Date();if(!Number.isFinite(date.getTime()))return"Unknown";let months=(now.getFullYear()-date.getFullYear())*12+now.getMonth()-date.getMonth();if(now.getDate()<date.getDate())months-=1;if(months<0)return"Not yet acquired";const years=Math.floor(months/12);return years?years+"y "+months%12+"m":months+"m"}
-function money(c){const currency=state.overview?.currency;return c==null?"—":new Intl.NumberFormat(currency?.locale||"en-ZA",{style:"currency",currency:currency?.code||"ZAR",maximumFractionDigits:0}).format(Number(c)/(currency?.minorUnitsPerMajor||100))}
-function today(){return new Date().toISOString().slice(0,10)}
+function money(c){return formatMinorAmount(c,state.currency)}
+function amountToCents(v){return majorToMinorAmount(v,state.currency)}
+function centsToAmount(v){return minorToMajorAmount(v,state.currency)}
+function amountLabel(name){return name+" ("+state.currency.code+")"}
+function today(){return localDateInput()}
 
 
 async function api(path,options){
@@ -77,7 +82,10 @@ async function api(path,options){
 function notify(message){toast.textContent=message;toast.classList.add("show");setTimeout(function(){toast.classList.remove("show")},2400)}
 function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="loading">'+esc(label||"Loading…")+"</div>"}
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
-function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(String(v||"UNKNOWN").replaceAll("_"," "))+"</span>"}
+function badge(v){
+  const status=normalizeStatus(v);
+  return '<span class="badge '+esc(status)+'" data-tone="'+statusTone(status)+'">'+esc(statusLabel(status))+'</span>';
+}
 function row(title,meta,right,note,fadeTitle=false){return '<div class="row"><div><div class="row-title'+(fadeTitle?' fade-title':'')+'">'+esc(title)+'</div>'+(meta?'<div class="row-meta">'+esc(meta)+'</div>':'')+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
 
@@ -380,6 +388,7 @@ async function showHome(){
     state.assets=assets;
     const memory=d.memory||{},repairs=memory.repairs||[],charges=memory.charges||[],purchases=memory.purchases||[];
     const upcoming=d.upcoming||[],recent=d.recent||[],summary=d.summary||{};
+    state.currency=normalizeCurrency(d.currency);
     const attention=(d.attention?.issues||[]).map(i=>row(i.title,i.asset_name,badge(i.severity)))
       .concat((d.attention?.maintenance||[]).map(m=>row(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"))));
     const homeName=d.home?.name||"My Home";
