@@ -415,7 +415,6 @@ function openChargeForm(existing){
     billingCycle:d.get("billingCycle"),dueDay:d.get("dueDay")?Number(d.get("dueDay")):null,
     provider:d.get("provider"),notes:d.get("notes")
   },"Homeowner recorded a recurring household charge."]);
-  };
 }
 
 async function openPurchaseForm(existing){
@@ -434,7 +433,6 @@ async function openPurchaseForm(existing){
     budgetCents:amountToCents(d.get("budget")),expectedCostCents:amountToCents(d.get("expected")),
     sourceUrl:d.get("sourceUrl"),sourceName:d.get("sourceName"),rationale:d.get("rationale")
   },"Homeowner saved a potential household purchase."]);
-  };
 }
 
 async function showHome(){
@@ -616,7 +614,6 @@ async function openAssetForm(existing){
     purchaseDate:d.get("purchaseDate")||null,purchaseCostCents:amountToCents(d.get("purchaseCost")),
     warrantyEnd:d.get("warrantyEnd")||null,notes:d.get("notes")
   },existing?"Homeowner updated a household asset.":"Homeowner registered a household asset."]);
-  };
 }
 
 
