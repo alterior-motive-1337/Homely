@@ -1501,15 +1501,23 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
 .file-card[aria-pressed="true"]{background:transparent!important;border-color:#b5b5bb!important;outline:none!important}
 .file-card:focus-visible{outline:1px solid #d0d0d5!important;outline-offset:2px!important}
 .ledger-entry:focus-within{border-color:#b5b5bb!important}
-/* Urgency is the only colored state; routine status remains textual. */
+/* One semantic hierarchy across every register, modal and overview row. */
 .badge{
   display:inline-flex!important;align-items:center;
   border:0!important;background:transparent!important;padding:0!important;
   border-radius:0!important;font-size:11px!important;font-weight:550!important;
   color:#acacb2!important;letter-spacing:0!important;text-transform:none;
 }
-.badge:is(.CRITICAL,.OVERDUE,.FAILED){color:#efb0b0!important;font-weight:700!important}
-.badge:is(.HIGH,.POOR,.DEGRADED){color:#ededf0!important;font-weight:650!important}
+.badge[data-tone="urgent"]{color:#efb0b0!important;font-weight:700!important}
+.badge[data-tone="attention"]{color:#ededf0!important;font-weight:650!important}
+.ledger-file-link{
+  display:inline-grid!important;place-items:center!important;
+  width:40px!important;min-width:40px!important;height:40px!important;
+  min-height:40px!important;padding:9px!important;border-radius:8px!important;
+  background:transparent!important;border:1px solid transparent!important;
+}
+.ledger-file-link:hover{background:#242426!important;border-color:#46464a!important}
+.ledger-file-link .ui-icon{width:19px;height:19px}
 .page-controls .controls-actions .icon-action{
   width:40px!important;min-width:40px!important;height:40px!important;
   min-height:40px!important;padding:9px!important;border-radius:10px!important;
