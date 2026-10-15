@@ -43,7 +43,7 @@ export function matchesSearch(text,query){
   const norm=x=>String(x??"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase().trim();
   return norm(text).includes(norm(query));
 }
-export function countLabel(visible,total,singular="entry",plural=singular+"s",filtered=false){
+export function countLabel(visible,total,singular="entry",plural=singular==="entry"?"entries":singular+"s",filtered=false){
   return filtered?visible+" of "+total:total+" "+(total===1?singular:plural);
 }
 export function matchesStatusFilter(status,active){
