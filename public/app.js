@@ -237,7 +237,7 @@ function registerTools(label,status=false,action="",count=0){
     +'<div class="controls-actions">'+action+'</div></div>';
 }
 function bindCollectionSearch({items,entrySelector,searchId,countId,container,
-  textFor,isOpen=null,unit="entry",plural=unit+"s",emptyMessage="No matching records",onUpdate}){
+  textFor,isOpen=null,unit="entry",plural=unit==="entry"?"entries":unit+"s",emptyMessage="No matching records",onUpdate}){
   const search=$("#"+searchId,content),counter=$("#"+countId,content),entries=$$(entrySelector,content);
   if(!search||!counter||entries.length!==items.length)return;
   const empty=document.createElement("div");empty.className="search-empty";empty.hidden=true;
