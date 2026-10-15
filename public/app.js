@@ -8,7 +8,6 @@ const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 const content=$("#content"), pageTitle=$("#page-title"), nav=$("#nav");
 const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewerBody=$("#viewer-body"), viewerTitle=$("#viewer-title");
 const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input"), voiceButton=$("#voice-button");
-const agentState=$("#agent-state");
 viewerTitle.classList.add("fade-title");
 watchFadingTitles(document.body);
 const state={view:"home",assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false,currency:normalizeCurrency()};
@@ -274,7 +273,6 @@ function bindRegisterSearch(items,textFor,isOpen){
 function setRuntime(x){
   state.integrations=x;
   const ai=x&&x.ai;
-  agentState.textContent=ai&&ai.available?"Ready":"Chat unavailable";
   chatInput.disabled=!(ai&&ai.available)||state.chatLoading;
   chatForm.querySelector('button[type="submit"]').disabled=!(ai&&ai.available)||state.chatLoading||state.chatBusy;
   voiceButton.disabled=!(ai&&ai.available);
@@ -282,7 +280,7 @@ function setRuntime(x){
 }
 async function refreshStatus(){
   try{setRuntime(await api("/api/integrations/status"))}
-  catch(_){agentState.textContent="Chat unavailable"}
+  catch(_){setRuntime({ai:{available:false}})}
 }
 
 let modalGeneration=0;
