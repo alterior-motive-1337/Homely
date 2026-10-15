@@ -10,7 +10,7 @@ page.on("pageerror", error => errors.push(String(error)));
 const go = async view => {
   await page.locator('[data-view="' + view + '"]').click();
   await page.locator("#content .loading").waitFor({ state: "hidden" });
-  const error=await page.locator("#content .error").textContent().catch(()=>null);
+  const error=await page.locator("#content .error").count() ? await page.locator("#content .error").first().textContent() : null;
   assert.equal(error,null,view+" failed to render: "+error);
 };
 const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, "horizontal overflow");
