@@ -355,6 +355,17 @@ async function previewAction(actionType,payload,reason,requestText){
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent=original}}
 }
 
+function bindPreviewForm(selector,buildProposal){
+  const form=$(selector,modalBody);
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    try{
+      const [actionType,payload,reason]=buildProposal(new FormData(event.currentTarget));
+      await previewAction(actionType,payload,reason);
+    }catch(error){notify(error instanceof Error?error.message:"Could not prepare action.")}
+  };
+}
+
 async function openIssueForm(){
   const pending=waitingModal("Preparing issue form…");
   let options;
@@ -362,12 +373,17 @@ async function openIssueForm(){
   if(!modalPending(pending))return;
   openModal('<h2>Report a problem</h2><form class="form" id="issue-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>Title</label><input name="title" maxlength="160" required></div><div class="field"><label>Severity</label><select name="severity"><option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div><div class="field"><label>Detected</label><input type="date" name="detectedAt" value="'+today()+'" required></div><div class="field full"><label>Description</label><textarea name="description"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#issue-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget);await previewAction("REPORT_ISSUE",{assetId:d.get("assetId"),title:d.get("title"),severity:d.get("severity"),description:d.get("description"),detectedAt:d.get("detectedAt")},"Homeowner reported an issue through Homely.")}
+  bindPreviewForm("#issue-form",d=>["REPORT_ISSUE",{
+    assetId:d.get("assetId"),title:d.get("title"),severity:d.get("severity"),
+    description:d.get("description"),detectedAt:d.get("detectedAt")
+  },"Homeowner reported an issue through Homely."]);
 }
 function openResolveForm(issue){
   openModal('<p class="eyebrow">Resolve issue</p><h2>'+esc(issue.title)+'</h2><form class="form" id="resolve-form"><div class="form-grid"><div class="field"><label>Resolved</label><input type="date" name="resolvedAt" value="'+today()+'" required></div><div class="field full"><label>Resolution</label><textarea name="resolution" required></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#resolve-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget);await previewAction("RESOLVE_ISSUE",{issueId:issue.id,resolvedAt:d.get("resolvedAt"),resolution:d.get("resolution")},"Homeowner marked the issue resolved.")}
+  bindPreviewForm("#resolve-form",d=>["RESOLVE_ISSUE",{
+    issueId:issue.id,resolvedAt:d.get("resolvedAt"),resolution:d.get("resolution")
+  },"Homeowner marked the issue resolved."]);
 }
 async function openRepairForm(prefill){
   prefill=prefill||{};
@@ -381,7 +397,11 @@ async function openRepairForm(prefill){
   const title=prefill.title?"Repair: "+prefill.title:"";
   openModal('<h2>Record a repair</h2><form class="form" id="repair-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field full"><label>Linked issue</label><select name="issueId">'+issueOpts+'</select></div><div class="field full"><label>Repair title</label><input name="title" maxlength="180" required value="'+esc(title)+'"></div><div class="field"><label>Date</label><input type="date" name="repairDate" value="'+today()+'" required></div><div class="field"><label>Cost (ZAR)</label><input type="number" name="cost" min="0" step=".01" placeholder="0.00"></div><div class="field full"><label>Contractor / person</label><input name="contractor" maxlength="240"></div><div class="field full"><label>Work performed</label><textarea name="description"></textarea></div><div class="field full"><label>Outcome</label><textarea name="outcome"></textarea></div></div><div class="row-note">Permanent record.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#repair-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("cost")||"").trim();await previewAction("RECORD_REPAIR",{assetId:d.get("assetId"),issueId:d.get("issueId")||null,title:d.get("title"),repairDate:d.get("repairDate"),costCents:cost?amountToCents(cost):null,contractor:d.get("contractor"),description:d.get("description"),outcome:d.get("outcome")},"Homeowner recorded completed repair work.")}
+  bindPreviewForm("#repair-form",d=>["RECORD_REPAIR",{
+    assetId:d.get("assetId"),issueId:d.get("issueId")||null,title:d.get("title"),
+    repairDate:d.get("repairDate"),costCents:amountToCents(d.get("cost")),
+    contractor:d.get("contractor"),description:d.get("description"),outcome:d.get("outcome")
+  },"Homeowner recorded completed repair work."]);
 }
 
 function openChargeForm(existing){
@@ -389,9 +409,12 @@ function openChargeForm(existing){
   openModal('<h2>'+ (existing?'Edit charge':'Add recurring charge') +'</h2><form class="form" id="charge-form"><div class="form-grid"><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>Amount (ZAR)</label><input type="number" name="amount" min="0" step=".01" required></div><div class="field"><label>Billing cycle</label><select name="billingCycle"><option selected>MONTHLY</option><option>QUARTERLY</option><option>ANNUAL</option><option>OTHER</option></select></div><div class="field"><label>Due day</label><input type="number" name="dueDay" min="1" max="31"></div><div class="field"><label>Activity</label><select name="active"><option value="1">Active</option><option value="0">Inactive</option></select></div><div class="field full"><label>Provider</label><input name="provider" maxlength="240"></div><div class="field full"><label>Notes</label><textarea name="notes"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   if(existing)fillForm($("#charge-form"),{name:existing.name,category:existing.category,amount:centsToAmount(existing.amount_cents),billingCycle:existing.billing_cycle,dueDay:existing.due_day,provider:existing.provider,notes:existing.notes,active:existing.active});
-  $("#charge-form").onsubmit=async function(e){
-    e.preventDefault();const d=new FormData(e.currentTarget),amount=String(d.get("amount")||"").trim(),due=String(d.get("dueDay")||"").trim();
-    await previewAction(existing?"UPDATE_CHARGE":"CREATE_CHARGE",{...(existing?{chargeId:existing.id}:{}),active:Number(d.get("active")),name:d.get("name"),category:d.get("category"),amountCents:amountToCents(amount),billingCycle:d.get("billingCycle"),dueDay:due?Number(due):null,provider:d.get("provider"),notes:d.get("notes")},"Homeowner recorded a recurring household charge.");
+  bindPreviewForm("#charge-form",d=>[existing?"UPDATE_CHARGE":"CREATE_CHARGE",{
+    ...(existing?{chargeId:existing.id}:{}),active:Number(d.get("active")),name:d.get("name"),
+    category:d.get("category"),amountCents:amountToCents(d.get("amount")),
+    billingCycle:d.get("billingCycle"),dueDay:d.get("dueDay")?Number(d.get("dueDay")):null,
+    provider:d.get("provider"),notes:d.get("notes")
+  },"Homeowner recorded a recurring household charge."]);
   };
 }
 
@@ -405,9 +428,12 @@ async function openPurchaseForm(existing){
   openModal('<h2>'+(existing?"Edit purchase":"Save potential purchase")+'</h2><form class="form" id="purchase-form"><div class="form-grid"><div class="field full"><label>Title</label><input name="title" maxlength="220" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>Status</label><select name="status"><option selected>SAVED</option><option>SHORTLISTED</option>'+(existing?'<option>PURCHASED</option><option>DISMISSED</option>':'')+'</select></div><div class="field full"><label>Related asset</label><select name="assetId">'+optionalAssets+'</select></div><div class="field"><label>Budget (ZAR)</label><input type="number" name="budget" min="0" step=".01"></div><div class="field"><label>Expected cost (ZAR)</label><input type="number" name="expected" min="0" step=".01"></div><div class="field full"><label>Source name</label><input name="sourceName" maxlength="240"></div><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…"></div><div class="field full"><label>Reason</label><textarea name="rationale"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   if(existing)fillForm($("#purchase-form"),{title:existing.title,category:existing.category,status:existing.status,assetId:existing.asset_id,budget:existing.budget_cents==null?null:centsToAmount(existing.budget_cents),expected:existing.expected_cost_cents==null?null:centsToAmount(existing.expected_cost_cents),sourceName:existing.source_name,sourceUrl:existing.source_url,rationale:existing.rationale});
-  $("#purchase-form").onsubmit=async function(e){
-    e.preventDefault();const d=new FormData(e.currentTarget),budget=String(d.get("budget")||"").trim(),expected=String(d.get("expected")||"").trim();
-    await previewAction(existing?"UPDATE_PURCHASE":"SAVE_PURCHASE",{...(existing?{purchaseCandidateId:existing.id}:{}),assetId:d.get("assetId")||null,title:d.get("title"),category:d.get("category"),status:d.get("status"),budgetCents:budget?amountToCents(budget):null,expectedCostCents:expected?amountToCents(expected):null,sourceUrl:d.get("sourceUrl"),sourceName:d.get("sourceName"),rationale:d.get("rationale")},"Homeowner saved a potential household purchase.");
+  bindPreviewForm("#purchase-form",d=>[existing?"UPDATE_PURCHASE":"SAVE_PURCHASE",{
+    ...(existing?{purchaseCandidateId:existing.id}:{}),assetId:d.get("assetId")||null,
+    title:d.get("title"),category:d.get("category"),status:d.get("status"),
+    budgetCents:amountToCents(d.get("budget")),expectedCostCents:amountToCents(d.get("expected")),
+    sourceUrl:d.get("sourceUrl"),sourceName:d.get("sourceName"),rationale:d.get("rationale")
+  },"Homeowner saved a potential household purchase."]);
   };
 }
 
@@ -583,10 +609,13 @@ async function openAssetForm(existing){
     }
   }
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#asset-form").onsubmit=async function(e){
-    e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("purchaseCost")||"").trim();
-    try{await previewAction(existing?"UPDATE_ASSET":"CREATE_ASSET",{assetId:existing?existing.id:null,systemId:d.get("systemId"),name:d.get("name"),category:d.get("category"),condition:d.get("condition"),location:d.get("location"),manufacturer:d.get("manufacturer"),model:d.get("model"),serialNumber:d.get("serialNumber"),purchaseDate:d.get("purchaseDate")||null,purchaseCostCents:cost?amountToCents(cost):null,warrantyEnd:d.get("warrantyEnd")||null,notes:d.get("notes")},existing?"Homeowner updated a household asset.":"Homeowner registered a household asset.")}
-    catch(err){notify(err.message)}
+  bindPreviewForm("#asset-form",d=>[existing?"UPDATE_ASSET":"CREATE_ASSET",{
+    assetId:existing?existing.id:null,systemId:d.get("systemId"),name:d.get("name"),
+    category:d.get("category"),condition:d.get("condition"),location:d.get("location"),
+    manufacturer:d.get("manufacturer"),model:d.get("model"),serialNumber:d.get("serialNumber"),
+    purchaseDate:d.get("purchaseDate")||null,purchaseCostCents:amountToCents(d.get("purchaseCost")),
+    warrantyEnd:d.get("warrantyEnd")||null,notes:d.get("notes")
+  },existing?"Homeowner updated a household asset.":"Homeowner registered a household asset."]);
   };
 }
 
