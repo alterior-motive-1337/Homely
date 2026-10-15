@@ -1721,7 +1721,8 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   .chat-head .chat-toolbar #assistant-collapse,.chat-head .chat-toolbar #assistant-expand{width:34px!important;min-width:34px!important;height:34px!important}
 }
 
-/* File selection is an actual visible boundary, independent of hover and touch. */
+/* File selection is an immediate boundary; never animate the selected border. */
+.file-grid > button.file-card{transition:none!important}
 .file-grid > button.file-card[aria-pressed="true"]{
   border:1px solid #dedee2!important;
   background:transparent!important;
