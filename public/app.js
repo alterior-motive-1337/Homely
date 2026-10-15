@@ -1,15 +1,16 @@
 import { createInteraction, createReview } from "./interactions.js";
 import { watchFadingTitles } from "./fading.js";
+import { normalizeCurrency, formatMinorAmount, majorToMinorAmount, minorToMajorAmount, localDateInput,
+  normalizeStatus, statusLabel, statusTone, matchesSearch, countLabel, matchesStatusFilter } from "./ui-normalization.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 const content=$("#content"), pageTitle=$("#page-title"), nav=$("#nav");
 const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewerBody=$("#viewer-body"), viewerTitle=$("#viewer-title");
 const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input"), voiceButton=$("#voice-button");
-const agentState=$("#agent-state");
 viewerTitle.classList.add("fade-title");
 watchFadingTitles(document.body);
-const state={view:"home",assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false};
+const state={view:"home",assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false,currency:normalizeCurrency()};
 const viewPanels=new Map();
 const VIEW_CACHE_MS=45000;
 const ACTIVE_REFRESH_MS=45000;
@@ -59,8 +60,11 @@ function bindPanelResize({name,container,panel,handle,variable,min,max,mainMin,b
 function esc(v){return String(v==null?"":v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
 function fmtDate(v){return v?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(v)):"—"}
 function assetAge(a){const value=a.acquired_at||a.purchase_date;if(!value)return"Unknown";const date=new Date(value),now=new Date();if(!Number.isFinite(date.getTime()))return"Unknown";let months=(now.getFullYear()-date.getFullYear())*12+now.getMonth()-date.getMonth();if(now.getDate()<date.getDate())months-=1;if(months<0)return"Not yet acquired";const years=Math.floor(months/12);return years?years+"y "+months%12+"m":months+"m"}
-function money(c){const currency=state.overview?.currency;return c==null?"—":new Intl.NumberFormat(currency?.locale||"en-ZA",{style:"currency",currency:currency?.code||"ZAR",maximumFractionDigits:0}).format(Number(c)/(currency?.minorUnitsPerMajor||100))}
-function today(){return new Date().toISOString().slice(0,10)}
+function money(c){return formatMinorAmount(c,state.currency)}
+function amountToCents(v){return majorToMinorAmount(v,state.currency)}
+function centsToAmount(v){return minorToMajorAmount(v,state.currency)}
+function amountLabel(name){return name+" ("+state.currency.code+")"}
+function today(){return localDateInput()}
 
 
 async function api(path,options){
@@ -77,7 +81,10 @@ async function api(path,options){
 function notify(message){toast.textContent=message;toast.classList.add("show");setTimeout(function(){toast.classList.remove("show")},2400)}
 function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="loading">'+esc(label||"Loading…")+"</div>"}
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
-function badge(v){return '<span class="badge '+esc(v||"")+'">'+esc(String(v||"UNKNOWN").replaceAll("_"," "))+"</span>"}
+function badge(v){
+  const status=normalizeStatus(v);
+  return '<span class="badge '+esc(status)+'" data-tone="'+statusTone(status)+'">'+esc(statusLabel(status))+'</span>';
+}
 function row(title,meta,right,note,fadeTitle=false){return '<div class="row"><div><div class="row-title'+(fadeTitle?' fade-title':'')+'">'+esc(title)+'</div>'+(meta?'<div class="row-meta">'+esc(meta)+'</div>':'')+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
 
@@ -177,7 +184,7 @@ function ledger(title,count,action,body,columns){
     +'<div class="ledger-rows" role="list">'+(body||'<div class="ledger-zero" role="status">No records</div>')+'</div></section>';
 }
 function linkedFilesButton(label,id){
-  return '<button type="button" class="ledger-file-link" data-'+label+'="'+esc(id)+'" title="Open record and related files" aria-label="Open record and related files">'+fileIcon()+'<span>Files</span></button>';
+  return '<button type="button" class="ledger-file-link" data-'+label+'="'+esc(id)+'" title="Open record and related files" aria-label="Open record and related files">'+fileIcon()+'</button>';
 }
 
 function fileIcon(doc={}){
@@ -228,27 +235,44 @@ function registerTools(label,status=false,action="",count=0){
     +'</div><span class="search-count" id="search-count" role="status">'+count+' '+(count===1?'entry':'entries')+'</span>'
     +'<div class="controls-actions">'+action+'</div></div>';
 }
-function bindRegisterSearch(items,textFor,isOpen){
-  const search=$("#record-search"),entries=$$(".ledger-entry",content);
-  let status="all";
+function bindCollectionSearch({items,entrySelector,searchId,countId,container,
+  textFor,isOpen=null,unit="entry",plural=unit==="entry"?"entries":unit+"s",emptyMessage="No matching records",onUpdate}){
+  const search=$("#"+searchId,content),counter=$("#"+countId,content),entries=$$(entrySelector,content);
+  if(!search||!counter||entries.length!==items.length)return;
   const empty=document.createElement("div");empty.className="search-empty";empty.hidden=true;
-  empty.innerHTML='<strong>No matching records</strong>';
-  $(".ledger-rows",content).appendChild(empty);
+  const emptyLabel=document.createElement("strong");emptyLabel.textContent=emptyMessage;empty.append(emptyLabel);
+  container.append(empty);
+  let status="all";
   function update(){
-    const query=search.value.trim().toLowerCase();let count=0;
-    entries.forEach((entry,index)=>{const item=items[index];const matches=textFor(item).toLowerCase().includes(query)&&(!isOpen||status==="all"||(status==="open"?isOpen(item):!isOpen(item)));entry.hidden=!matches;if(matches)count++});
+    const query=search.value.trim();let count=0;
+    entries.forEach((entry,index)=>{
+      const item=items[index];
+      const visible=matchesSearch(textFor(item),query)&&matchesStatusFilter(status,isOpen?isOpen(item):null);
+      entry.hidden=!visible;if(visible)count++;
+    });
+    const filtered=Boolean(query||status!=="all");
     empty.hidden=!items.length||count>0;
-    $("#search-count").textContent=query||status!=="all"?count+" of "+items.length:items.length+" "+(items.length===1?"entry":"entries");
-    $("#search-count").classList.toggle("is-filtered",Boolean(query||status!=="all"));
+    counter.textContent=countLabel(count,items.length,unit,plural,filtered);
+    counter.classList.toggle("is-filtered",filtered);
+    if(onUpdate)onUpdate(entries);
   }
   search.oninput=update;
-  $$("[data-status]",content).forEach(button=>button.onclick=()=>{status=button.dataset.status;$$("[data-status]",content).forEach(b=>b.setAttribute("aria-pressed",String(b===button)));update()});
+  $$("[data-status]",content).forEach(button=>button.onclick=()=>{
+    status=button.dataset.status;
+    $$("[data-status]",content).forEach(b=>b.setAttribute("aria-pressed",String(b===button)));
+    update();
+  });
+  update();
 }
-
+function bindRegisterSearch(items,textFor,isOpen){
+  bindCollectionSearch({
+    items,entrySelector:".ledger-entry",searchId:"record-search",countId:"search-count",
+    container:$(".ledger-rows",content),textFor,isOpen
+  });
+}
 function setRuntime(x){
   state.integrations=x;
   const ai=x&&x.ai;
-  agentState.textContent=ai&&ai.available?"Ready":"Chat unavailable";
   chatInput.disabled=!(ai&&ai.available)||state.chatLoading;
   chatForm.querySelector('button[type="submit"]').disabled=!(ai&&ai.available)||state.chatLoading||state.chatBusy;
   voiceButton.disabled=!(ai&&ai.available);
@@ -256,7 +280,7 @@ function setRuntime(x){
 }
 async function refreshStatus(){
   try{setRuntime(await api("/api/integrations/status"))}
-  catch(_){agentState.textContent="Chat unavailable"}
+  catch(_){setRuntime({ai:{available:false}})}
 }
 
 let modalGeneration=0;
@@ -293,30 +317,51 @@ async function previewAction(actionType,payload,reason,requestText){
   const submit=modal.open?$("form button[type='submit'],form button.primary-button",modalBody):null;
   if(submit?.disabled)return;
   const original=submit?.textContent;
+  const formGeneration=modalGeneration;
   if(submit){submit.disabled=true;submit.textContent="Preparing…"}
   try{
     const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
     const p=result.preview,t=result.transaction;
+    if(!modalPending(formGeneration)){
+      // Never reopen a discarded form when preview preparation completes late.
+      try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"})}catch(_){}
+      return;
+    }
     openModal('<p class="eyebrow">Approval required</p><h2>'+esc(p.title)+'</h2><div id="action-review"></div><div class="form-actions"><button class="button" id="reject-preview">Reject</button><button class="primary-button" id="commit-preview">Approve & commit</button></div>');
     const review=createInteraction(null);
     review.classList.add("preview");
     review.append(createReview(p,"",{title:false}));
     $("#action-review").append(review);
+    const previewGeneration=modalGeneration;
     $("#reject-preview").onclick=async function(){
-      const button=$("#reject-preview");button.disabled=true;button.textContent="Rejecting…";
-      try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});closeModal();notify("Proposal rejected.")}
-      catch(error){button.disabled=false;button.textContent="Reject";notify(error.message)}
+      const button=$("#reject-preview"),other=$("#commit-preview");
+      button.disabled=true;other.disabled=true;button.textContent="Rejecting…";
+      try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});if(modalPending(previewGeneration))closeModal();notify("Proposal rejected.")}
+      catch(error){if(button.isConnected){button.disabled=false;other.disabled=false;button.textContent="Reject"}notify(error.message)}
     };
     $("#commit-preview").onclick=async function(){
-      const button=$("#commit-preview");button.disabled=true;button.textContent="Saving…";
+      const button=$("#commit-preview"),other=$("#reject-preview");
+      button.disabled=true;other.disabled=true;button.textContent="Saving…";
       try{
         await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});
-        closeModal();notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");
+        if(modalPending(previewGeneration))closeModal();
+        notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");
         await selectView(state.view);
-      }catch(error){if(button.isConnected){button.disabled=false;button.textContent="Approve & commit"}notify(error.message)}
+      }catch(error){if(button.isConnected){button.disabled=false;other.disabled=false;button.textContent="Approve & commit"}notify(error.message)}
     };
   }catch(error){notify(error instanceof Error?error.message:"Could not prepare action.")}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent=original}}
+}
+
+function bindPreviewForm(selector,buildProposal){
+  const form=$(selector,modalBody);
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    try{
+      const [actionType,payload,reason]=buildProposal(new FormData(event.currentTarget));
+      await previewAction(actionType,payload,reason);
+    }catch(error){notify(error instanceof Error?error.message:"Could not prepare action.")}
+  };
 }
 
 async function openIssueForm(){
@@ -326,12 +371,17 @@ async function openIssueForm(){
   if(!modalPending(pending))return;
   openModal('<h2>Report a problem</h2><form class="form" id="issue-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>Title</label><input name="title" maxlength="160" required></div><div class="field"><label>Severity</label><select name="severity"><option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></div><div class="field"><label>Detected</label><input type="date" name="detectedAt" value="'+today()+'" required></div><div class="field full"><label>Description</label><textarea name="description"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#issue-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget);await previewAction("REPORT_ISSUE",{assetId:d.get("assetId"),title:d.get("title"),severity:d.get("severity"),description:d.get("description"),detectedAt:d.get("detectedAt")},"Homeowner reported an issue through Homely.")}
+  bindPreviewForm("#issue-form",d=>["REPORT_ISSUE",{
+    assetId:d.get("assetId"),title:d.get("title"),severity:d.get("severity"),
+    description:d.get("description"),detectedAt:d.get("detectedAt")
+  },"Homeowner reported an issue through Homely."]);
 }
 function openResolveForm(issue){
   openModal('<p class="eyebrow">Resolve issue</p><h2>'+esc(issue.title)+'</h2><form class="form" id="resolve-form"><div class="form-grid"><div class="field"><label>Resolved</label><input type="date" name="resolvedAt" value="'+today()+'" required></div><div class="field full"><label>Resolution</label><textarea name="resolution" required></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#resolve-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget);await previewAction("RESOLVE_ISSUE",{issueId:issue.id,resolvedAt:d.get("resolvedAt"),resolution:d.get("resolution")},"Homeowner marked the issue resolved.")}
+  bindPreviewForm("#resolve-form",d=>["RESOLVE_ISSUE",{
+    issueId:issue.id,resolvedAt:d.get("resolvedAt"),resolution:d.get("resolution")
+  },"Homeowner marked the issue resolved."]);
 }
 async function openRepairForm(prefill){
   prefill=prefill||{};
@@ -343,33 +393,44 @@ async function openRepairForm(prefill){
   if(!modalPending(pending))return;
   const issueOpts=['<option value="">None</option>'].concat(issues.map(function(i){return '<option value="'+esc(i.id)+'" '+(i.id===prefill.id?"selected":"")+">"+esc(i.title)+" · "+esc(i.asset_name)+"</option>"})).join("");
   const title=prefill.title?"Repair: "+prefill.title:"";
-  openModal('<h2>Record a repair</h2><form class="form" id="repair-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field full"><label>Linked issue</label><select name="issueId">'+issueOpts+'</select></div><div class="field full"><label>Repair title</label><input name="title" maxlength="180" required value="'+esc(title)+'"></div><div class="field"><label>Date</label><input type="date" name="repairDate" value="'+today()+'" required></div><div class="field"><label>Cost (ZAR)</label><input type="number" name="cost" min="0" step=".01" placeholder="0.00"></div><div class="field full"><label>Contractor / person</label><input name="contractor" maxlength="240"></div><div class="field full"><label>Work performed</label><textarea name="description"></textarea></div><div class="field full"><label>Outcome</label><textarea name="outcome"></textarea></div></div><div class="row-note">Permanent record.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>Record a repair</h2><form class="form" id="repair-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field full"><label>Linked issue</label><select name="issueId">'+issueOpts+'</select></div><div class="field full"><label>Repair title</label><input name="title" maxlength="180" required value="'+esc(title)+'"></div><div class="field"><label>Date</label><input type="date" name="repairDate" value="'+today()+'" required></div><div class="field"><label>'+esc(amountLabel("Cost"))+'</label><input type="number" name="cost" min="0" step=".01" placeholder="0.00"></div><div class="field full"><label>Contractor / person</label><input name="contractor" maxlength="240"></div><div class="field full"><label>Work performed</label><textarea name="description"></textarea></div><div class="field full"><label>Outcome</label><textarea name="outcome"></textarea></div></div><div class="row-note">Permanent record.</div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#repair-form").onsubmit=async function(e){e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("cost")||"").trim();await previewAction("RECORD_REPAIR",{assetId:d.get("assetId"),issueId:d.get("issueId")||null,title:d.get("title"),repairDate:d.get("repairDate"),costCents:cost?Math.round(Number(cost)*100):null,contractor:d.get("contractor"),description:d.get("description"),outcome:d.get("outcome")},"Homeowner recorded completed repair work.")}
+  bindPreviewForm("#repair-form",d=>["RECORD_REPAIR",{
+    assetId:d.get("assetId"),issueId:d.get("issueId")||null,title:d.get("title"),
+    repairDate:d.get("repairDate"),costCents:amountToCents(d.get("cost")),
+    contractor:d.get("contractor"),description:d.get("description"),outcome:d.get("outcome")
+  },"Homeowner recorded completed repair work."]);
 }
 
 function openChargeForm(existing){
   existing=existing||null;
-  openModal('<h2>'+ (existing?'Edit charge':'Add recurring charge') +'</h2><form class="form" id="charge-form"><div class="form-grid"><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>Amount (ZAR)</label><input type="number" name="amount" min="0" step=".01" required></div><div class="field"><label>Billing cycle</label><select name="billingCycle"><option selected>MONTHLY</option><option>QUARTERLY</option><option>ANNUAL</option><option>OTHER</option></select></div><div class="field"><label>Due day</label><input type="number" name="dueDay" min="1" max="31"></div><div class="field"><label>Activity</label><select name="active"><option value="1">Active</option><option value="0">Inactive</option></select></div><div class="field full"><label>Provider</label><input name="provider" maxlength="240"></div><div class="field full"><label>Notes</label><textarea name="notes"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>'+ (existing?'Edit charge':'Add recurring charge') +'</h2><form class="form" id="charge-form"><div class="form-grid"><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>'+esc(amountLabel("Amount"))+'</label><input type="number" name="amount" min="0" step=".01" required></div><div class="field"><label>Billing cycle</label><select name="billingCycle"><option selected>MONTHLY</option><option>QUARTERLY</option><option>ANNUAL</option><option>OTHER</option></select></div><div class="field"><label>Due day</label><input type="number" name="dueDay" min="1" max="31"></div><div class="field"><label>Activity</label><select name="active"><option value="1">Active</option><option value="0">Inactive</option></select></div><div class="field full"><label>Provider</label><input name="provider" maxlength="240"></div><div class="field full"><label>Notes</label><textarea name="notes"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  if(existing)fillForm($("#charge-form"),{name:existing.name,category:existing.category,amount:Number(existing.amount_cents)/100,billingCycle:existing.billing_cycle,dueDay:existing.due_day,provider:existing.provider,notes:existing.notes,active:existing.active});
-  $("#charge-form").onsubmit=async function(e){
-    e.preventDefault();const d=new FormData(e.currentTarget),amount=String(d.get("amount")||"").trim(),due=String(d.get("dueDay")||"").trim();
-    await previewAction(existing?"UPDATE_CHARGE":"CREATE_CHARGE",{...(existing?{chargeId:existing.id}:{}),active:Number(d.get("active")),name:d.get("name"),category:d.get("category"),amountCents:Math.round(Number(amount)*100),billingCycle:d.get("billingCycle"),dueDay:due?Number(due):null,provider:d.get("provider"),notes:d.get("notes")},"Homeowner recorded a recurring household charge.");
-  };
+  if(existing)fillForm($("#charge-form"),{name:existing.name,category:existing.category,amount:centsToAmount(existing.amount_cents),billingCycle:existing.billing_cycle,dueDay:existing.due_day,provider:existing.provider,notes:existing.notes,active:existing.active});
+  bindPreviewForm("#charge-form",d=>[existing?"UPDATE_CHARGE":"CREATE_CHARGE",{
+    ...(existing?{chargeId:existing.id}:{}),active:Number(d.get("active")),name:d.get("name"),
+    category:d.get("category"),amountCents:amountToCents(d.get("amount")),
+    billingCycle:d.get("billingCycle"),dueDay:d.get("dueDay")?Number(d.get("dueDay")):null,
+    provider:d.get("provider"),notes:d.get("notes")
+  },"Homeowner recorded a recurring household charge."]);
 }
 
 async function openPurchaseForm(existing){
   existing=existing||null;
-  const options=await assetOptions("");
+  const pending=waitingModal("Preparing purchase form…");
+  let options;
+  try{options=await assetOptions("")}catch(error){modalLoadFailed(pending,error);return}
+  if(!modalPending(pending))return;
   const optionalAssets='<option value="">None</option>'+options;
-  openModal('<h2>'+(existing?"Edit purchase":"Save potential purchase")+'</h2><form class="form" id="purchase-form"><div class="form-grid"><div class="field full"><label>Title</label><input name="title" maxlength="220" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>Status</label><select name="status"><option selected>SAVED</option><option>SHORTLISTED</option>'+(existing?'<option>PURCHASED</option><option>DISMISSED</option>':'')+'</select></div><div class="field full"><label>Related asset</label><select name="assetId">'+optionalAssets+'</select></div><div class="field"><label>Budget (ZAR)</label><input type="number" name="budget" min="0" step=".01"></div><div class="field"><label>Expected cost (ZAR)</label><input type="number" name="expected" min="0" step=".01"></div><div class="field full"><label>Source name</label><input name="sourceName" maxlength="240"></div><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…"></div><div class="field full"><label>Reason</label><textarea name="rationale"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>'+(existing?"Edit purchase":"Save potential purchase")+'</h2><form class="form" id="purchase-form"><div class="form-grid"><div class="field full"><label>Title</label><input name="title" maxlength="220" required></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field"><label>Status</label><select name="status"><option selected>SAVED</option><option>SHORTLISTED</option>'+(existing?'<option>PURCHASED</option><option>DISMISSED</option>':'')+'</select></div><div class="field full"><label>Related asset</label><select name="assetId">'+optionalAssets+'</select></div><div class="field"><label>'+esc(amountLabel("Budget"))+'</label><input type="number" name="budget" min="0" step=".01"></div><div class="field"><label>'+esc(amountLabel("Expected cost"))+'</label><input type="number" name="expected" min="0" step=".01"></div><div class="field full"><label>Source name</label><input name="sourceName" maxlength="240"></div><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…"></div><div class="field full"><label>Reason</label><textarea name="rationale"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  if(existing)fillForm($("#purchase-form"),{title:existing.title,category:existing.category,status:existing.status,assetId:existing.asset_id,budget:existing.budget_cents==null?null:Number(existing.budget_cents)/100,expected:existing.expected_cost_cents==null?null:Number(existing.expected_cost_cents)/100,sourceName:existing.source_name,sourceUrl:existing.source_url,rationale:existing.rationale});
-  $("#purchase-form").onsubmit=async function(e){
-    e.preventDefault();const d=new FormData(e.currentTarget),budget=String(d.get("budget")||"").trim(),expected=String(d.get("expected")||"").trim();
-    await previewAction(existing?"UPDATE_PURCHASE":"SAVE_PURCHASE",{...(existing?{purchaseCandidateId:existing.id}:{}),assetId:d.get("assetId")||null,title:d.get("title"),category:d.get("category"),status:d.get("status"),budgetCents:budget?Math.round(Number(budget)*100):null,expectedCostCents:expected?Math.round(Number(expected)*100):null,sourceUrl:d.get("sourceUrl"),sourceName:d.get("sourceName"),rationale:d.get("rationale")},"Homeowner saved a potential household purchase.");
-  };
+  if(existing)fillForm($("#purchase-form"),{title:existing.title,category:existing.category,status:existing.status,assetId:existing.asset_id,budget:existing.budget_cents==null?null:centsToAmount(existing.budget_cents),expected:existing.expected_cost_cents==null?null:centsToAmount(existing.expected_cost_cents),sourceName:existing.source_name,sourceUrl:existing.source_url,rationale:existing.rationale});
+  bindPreviewForm("#purchase-form",d=>[existing?"UPDATE_PURCHASE":"SAVE_PURCHASE",{
+    ...(existing?{purchaseCandidateId:existing.id}:{}),assetId:d.get("assetId")||null,
+    title:d.get("title"),category:d.get("category"),status:d.get("status"),
+    budgetCents:amountToCents(d.get("budget")),expectedCostCents:amountToCents(d.get("expected")),
+    sourceUrl:d.get("sourceUrl"),sourceName:d.get("sourceName"),rationale:d.get("rationale")
+  },"Homeowner saved a potential household purchase."]);
 }
 
 async function showHome(){
@@ -380,6 +441,7 @@ async function showHome(){
     state.assets=assets;
     const memory=d.memory||{},repairs=memory.repairs||[],charges=memory.charges||[],purchases=memory.purchases||[];
     const upcoming=d.upcoming||[],recent=d.recent||[],summary=d.summary||{};
+    state.currency=normalizeCurrency(d.currency);
     const attention=(d.attention?.issues||[]).map(i=>row(i.title,i.asset_name,badge(i.severity)))
       .concat((d.attention?.maintenance||[]).map(m=>row(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"))));
     const homeName=d.home?.name||"My Home";
@@ -528,14 +590,14 @@ async function openAssetForm(existing){
   try{systems=await api("/api/systems")}catch(error){modalLoadFailed(pending,error);return}
   if(!modalPending(pending))return;
   const options=systems.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'}).join("");
-  if(!options){notify("No home systems available.");return}
-  openModal('<h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Condition</label><select name="condition"><option>UNKNOWN</option><option>NEW</option><option>GOOD</option><option>FAIR</option><option>POOR</option><option>FAILED</option></select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>Purchase price (ZAR)</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  if(!options){closeModal();notify("No home systems available.");return}
+  openModal('<h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Condition</label><select name="condition"><option>UNKNOWN</option><option>NEW</option><option>GOOD</option><option>FAIR</option><option>POOR</option><option>FAILED</option></select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>'+esc(amountLabel("Purchase price"))+'</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   if(existing){
     const form=$("#asset-form");
     const values={systemId:existing.system_id,name:existing.name,category:existing.category,
       condition:existing.condition,location:existing.location,manufacturer:existing.manufacturer,
       model:existing.model,serialNumber:existing.serial_number,purchaseDate:existing.purchase_date,
-      purchaseCost:existing.purchase_cost_cents==null?"":Number(existing.purchase_cost_cents)/100,
+      purchaseCost:existing.purchase_cost_cents==null?"":centsToAmount(existing.purchase_cost_cents),
       warrantyEnd:existing.warranty_end,notes:existing.notes};
     for(const [key,value] of Object.entries(values)){
       const element=form.elements.namedItem(key);
@@ -543,21 +605,21 @@ async function openAssetForm(existing){
     }
   }
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#asset-form").onsubmit=async function(e){
-    e.preventDefault();const d=new FormData(e.currentTarget),cost=String(d.get("purchaseCost")||"").trim();
-    try{await previewAction(existing?"UPDATE_ASSET":"CREATE_ASSET",{assetId:existing?existing.id:null,systemId:d.get("systemId"),name:d.get("name"),category:d.get("category"),condition:d.get("condition"),location:d.get("location"),manufacturer:d.get("manufacturer"),model:d.get("model"),serialNumber:d.get("serialNumber"),purchaseDate:d.get("purchaseDate")||null,purchaseCostCents:cost?Math.round(Number(cost)*100):null,warrantyEnd:d.get("warrantyEnd")||null,notes:d.get("notes")},existing?"Homeowner updated a household asset.":"Homeowner registered a household asset.")}
-    catch(err){notify(err.message)}
-  };
+  bindPreviewForm("#asset-form",d=>[existing?"UPDATE_ASSET":"CREATE_ASSET",{
+    assetId:existing?existing.id:null,systemId:d.get("systemId"),name:d.get("name"),
+    category:d.get("category"),condition:d.get("condition"),location:d.get("location"),
+    manufacturer:d.get("manufacturer"),model:d.get("model"),serialNumber:d.get("serialNumber"),
+    purchaseDate:d.get("purchaseDate")||null,purchaseCostCents:amountToCents(d.get("purchaseCost")),
+    warrantyEnd:d.get("warrantyEnd")||null,notes:d.get("notes")
+  },existing?"Homeowner updated a household asset.":"Homeowner registered a household asset."]);
 }
 
 
 function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
-  const body=items.map((a,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+(a.purchase_cost_cents!=null?'<span class="money">'+money(a.purchase_cost_cents)+'</span>':'')+'</div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">'+fileIcon()+'<span>Files</span></button></div></div>').join("");
+  const body=items.map((a,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+(a.purchase_cost_cents!=null?'<span class="money">'+money(a.purchase_cost_cents)+'</span>':'')+'</div><div class="ledger-actions">'+linkedFilesButton("asset-file",a.id)+'</div></div>').join("");
   target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
-  const count=$("#asset-count");
-  if(count)count.textContent=items.length+" "+(items.length===1?"entry":"entries");
   $$("[data-asset]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.asset));
   $$("[data-asset-file]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.assetFile));
 }
@@ -566,10 +628,10 @@ async function showAppliances(){
   try{
     state.assets=await api("/api/assets");
     if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="register-search page-controls"><div class="controls-leading">'+quickSearch("assets","asset-search")+'</div><span class="search-count" id="asset-count"></span><div class="controls-actions">'+registerAction("new-asset","Register asset")+'</div></div><div id="asset-results"></div>';
+    content.innerHTML=registerTools("assets",false,registerAction("new-asset","Register asset"),state.assets.length)+'<div id="asset-results"></div>';
     $("#new-asset").onclick=()=>openAssetForm();
     renderAssets(state.assets);
-    $("#asset-search").oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))));$("#asset-count")?.classList.toggle("is-filtered",Boolean(q))};
+    bindRegisterSearch(state.assets,a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].filter(Boolean).join(" "));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -711,9 +773,9 @@ async function openLinkEvidenceForm(){
   const assetOptionsHtml='<option value="">None</option>'+options;
   openModal('<h2>Save a source link</h2><form class="form" id="link-evidence-form"><div class="form-grid"><div class="field full"><label>Source URL</label><input type="url" name="sourceUrl" maxlength="2000" placeholder="https://…" required></div><div class="field full"><label>Title</label><input name="title" maxlength="240" required></div><div class="field"><label>Type</label><select name="documentType"><option>WARRANTY</option><option>MANUAL</option><option>INVOICE</option><option>RECEIPT</option><option>INSPECTION</option><option>PHOTO</option><option>VIDEO</option><option>REPORT</option><option selected>OTHER</option></select></div><div class="field"><label>Evidence date</label><input type="date" name="occurredAt" value="'+today()+'" required></div><div class="field"><label>Status</label><select name="evidenceStatus"><option selected>ACTIVE</option><option>REFERENCE</option><option>ARCHIVED</option></select></div><div class="field"><label>Asset</label><select name="assetId">'+assetOptionsHtml+'</select></div><div class="field"><label>Issue</label><select name="issueId">'+optional("None",issues,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field"><label>Repair</label><select name="repairId">'+optional("None",repairs,function(x){return x.title+" · "+x.asset_name})+'</select></div><div class="field"><label>Recurring charge</label><select name="chargeId">'+optional("None",charges,function(x){return x.name+" · "+x.billing_cycle})+'</select></div><div class="field"><label>Potential purchase</label><select name="purchaseCandidateId">'+optional("None",purchases,function(x){return x.title+" · "+x.status})+'</select></div><div class="field full"><label>Provenance</label><input name="provenance" maxlength="1000" value="Saved by homeowner."></div><div class="field full"><label>Reason</label><textarea name="evidenceReason" maxlength="2000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview evidence</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
-  $("#link-evidence-form").onsubmit=async function(e){
-    e.preventDefault();const d=new FormData(e.currentTarget),url=String(d.get("sourceUrl")||"").trim();
-    await previewAction("ATTACH_DOCUMENT",{
+  bindPreviewForm("#link-evidence-form",d=>{
+    const url=String(d.get("sourceUrl")||"").trim();
+    return ["ATTACH_DOCUMENT",{
       assetId:d.get("assetId")||null,
       issueId:d.get("issueId")||null,
       repairId:d.get("repairId")||null,
@@ -730,8 +792,8 @@ async function openLinkEvidenceForm(){
       occurredAt:d.get("occurredAt"),
       evidenceReason:d.get("evidenceReason"),
       evidenceStatus:d.get("evidenceStatus")
-    },"Homeowner saved this source link as household evidence.");
-  };
+    },"Homeowner saved this source link as household evidence."];
+  });
 }
 
 
@@ -762,7 +824,8 @@ async function openUploadEvidenceForm(defaults){
     if(!file)return notify("Select a file.");
     if(!file.size||file.size>50_000_000)return notify("Select a file of 50 MB or less.");
 
-    const submit=$('button[type="submit"]',form);
+    const submit=$('button[type="submit"],button.primary-button',form);
+    const uploadGeneration=modalGeneration;
     if(submit)submit.disabled=true;
     try{
       const staged=await api("/api/uploads/start",{method:"POST",body:{name:file.name,mimeType:file.type||"application/octet-stream",size:file.size}});
@@ -774,7 +837,8 @@ async function openUploadEvidenceForm(defaults){
         if(submit)submit.textContent="Uploading "+Math.round((index+1)/total*100)+"%";
       }
       await api("/api/uploads/"+encodeURIComponent(staged.id)+"/finish",{method:"POST"});
-      if(submit)submit.textContent="Preview attachment";
+      if(!modalPending(uploadGeneration))return;
+      if(submit){submit.disabled=false;submit.textContent="Preview attachment"}
       await previewAction("ATTACH_DOCUMENT",{
         assetId:data.get("assetId")||null,issueId:data.get("issueId")||null,
         repairId:data.get("repairId")||null,chargeId:data.get("chargeId")||null,
@@ -785,8 +849,8 @@ async function openUploadEvidenceForm(defaults){
         provenance:data.get("provenance"),occurredAt:data.get("occurredAt"),
         evidenceReason:data.get("evidenceReason"),evidenceStatus:data.get("evidenceStatus")
       },"Homeowner attached a file as household evidence.");
-    }catch(err){notify(err.message)}
-    finally{if(submit)submit.disabled=false}
+    }catch(err){if(modalPending(uploadGeneration))notify(err.message)}
+    finally{if(submit?.isConnected){submit.disabled=false;submit.textContent="Preview attachment"}}
   };
 }
 
@@ -807,16 +871,13 @@ async function showFiles(){
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
     state.syncFileInfo=null;
-    const search=$("#file-search");
-    const noMatches=document.createElement("div");noMatches.className="search-empty";noMatches.hidden=true;noMatches.innerHTML='<strong>No matching files</strong>';$(".file-grid",content).appendChild(noMatches);
-    search.oninput=e=>{
-      const q=e.target.value.toLowerCase().trim();let count=0;
-      $$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q);if(!card.hidden)count++});
-      noMatches.hidden=!docs.length||count>0;
-      if(!$("[data-file][aria-pressed=true]:not([hidden])",content))$$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed","false"));
-      const counter=$("#file-count");
-      if(counter){counter.textContent=q?count+" of "+docs.length:docs.length+" "+(docs.length===1?"file":"files");counter.classList.toggle("is-filtered",Boolean(q))}
-    };
+    bindCollectionSearch({
+      items:docs,entrySelector:".file-card",searchId:"file-search",countId:"file-count",
+      container:$(".file-grid",content),
+      textFor:d=>[d.title,d.asset_name,d.issue_title,d.repair_title,d.charge_name,d.purchase_title].filter(Boolean).join(" "),
+      unit:"file",plural:"files",emptyMessage:"No matching files",
+      onUpdate:()=>{if(!$(".file-card[aria-pressed=true]:not([hidden])",content))for(const card of document.querySelectorAll(".file-card"))card.setAttribute("aria-pressed","false")}
+    });
     $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
       const select=()=>$$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed",String(card===b)));

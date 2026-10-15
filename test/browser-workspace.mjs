@@ -10,6 +10,8 @@ page.on("pageerror", error => errors.push(String(error)));
 const go = async view => {
   await page.locator('[data-view="' + view + '"]').click();
   await page.locator("#content .loading").waitFor({ state: "hidden" });
+  const error=await page.locator("#content .error").count() ? await page.locator("#content .error").first().textContent() : null;
+  assert.equal(error,null,view+" failed to render: "+error);
 };
 const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, "horizontal overflow");
 try {
@@ -126,13 +128,13 @@ try {
   assert.equal(await page.locator(".ledger-entry:visible").count(), 1);
   const fetches = issueFetches;
   await go("appliances");
-  assert.equal(await placement(".register-search .search-toggle","#new-asset"),true,"asset search icon and action must share a row");
-  assert.equal(await page.locator("#asset-search").isVisible(),false,"asset search is collapsed by default");
+  assert.equal(await placement(".register-tools .search-toggle","#new-asset"),true,"asset search icon and action must share a row");
+  assert.equal(await page.locator("#record-search").isVisible(),false,"asset search is collapsed by default");
   await page.locator(".search-toggle").click();
   assert.equal(await page.locator(".ledger-toolbar").count(),0,"asset register should not repeat the action header");
-  await page.locator("#asset-search").fill("inverter");
+  await page.locator("#record-search").fill("inverter");
   assert.equal(await page.locator("#new-asset").count(),1,"search updates must retain the primary action");
-  await page.locator("[data-asset]").first().click();
+  await page.locator("[data-asset]:visible").first().click();
   const fileButtons = page.locator("#modal [data-file]");
   await fileButtons.first().waitFor();
   assert.ok(await fileButtons.count() > 0);
@@ -196,6 +198,17 @@ try {
   await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
   await page.unroute("**/api/repairs");
   await page.locator("#modal-close").click();
+  // Uploaded bytes must reach the same preview/reject flow as linked evidence.
+  await page.locator("#upload-file").click();
+  await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
+  await page.locator('#link-evidence-form input[name="attachment"]').setInputFiles({
+    name:"normalization-check.txt",mimeType:"text/plain",
+    buffer:Buffer.from("Verify the normalized file-upload approval path.")
+  });
+  await page.locator('#link-evidence-form button.primary-button').click();
+  await page.locator("#commit-preview").waitFor({state:"visible"});
+  await page.locator("#reject-preview").click();
+  await page.locator("#modal").waitFor({state:"hidden"});
   await page.locator("#save-link").click();
   await page.locator('#link-evidence-form input[name="sourceUrl"]').waitFor();
   await page.locator("#modal-close").click();
@@ -545,7 +558,9 @@ try {
   await sample.locator('[data-view="appliances"]').click();
   await sample.locator(".badge.GOOD").first().waitFor();
   const stateColours=await sample.locator(".badge:is(.GOOD,.FAIR,.FAILED,.UNKNOWN)").evaluateAll(nodes=>Object.fromEntries(nodes.map(el=>[el.textContent,getComputedStyle(el).color])));
-  assert.equal(new Set(Object.values(stateColours)).size,4,"state colours must be distinct");
+  assert.equal(stateColours.GOOD,stateColours.UNKNOWN,"routine conditions use neutral text");
+  assert.equal(stateColours.FAIR,stateColours.GOOD,"fair condition is not an alarm");
+  assert.notEqual(stateColours.FAILED,stateColours.GOOD,"failed condition must be emphasized");
   if(process.env.TEST_SCREENSHOT_DIR)await sample.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/sample-states-mobile.png"});
   await sample.locator('[data-view="files"]').click();
   const touchFile=sample.locator(".file-card").filter({hasText:"Washing machine warranty.txt"});
