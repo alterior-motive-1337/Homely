@@ -583,8 +583,6 @@ function renderAssets(items){
   if(!target)return;
   const body=items.map((a,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+(a.purchase_cost_cents!=null?'<span class="money">'+money(a.purchase_cost_cents)+'</span>':'')+'</div><div class="ledger-actions"><button type="button" class="ledger-file-link" data-asset-file="'+esc(a.id)+'" aria-label="Open asset and associated files">'+fileIcon()+'<span>Files</span></button></div></div>').join("");
   target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
-  const count=$("#asset-count");
-  if(count)count.textContent=items.length+" "+(items.length===1?"entry":"entries");
   $$("[data-asset]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.asset));
   $$("[data-asset-file]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.assetFile));
 }
@@ -593,10 +591,10 @@ async function showAppliances(){
   try{
     state.assets=await api("/api/assets");
     if(revision!==state.viewRevision)return;
-    content.innerHTML='<div class="register-search page-controls"><div class="controls-leading">'+quickSearch("assets","asset-search")+'</div><span class="search-count" id="asset-count"></span><div class="controls-actions">'+registerAction("new-asset","Register asset")+'</div></div><div id="asset-results"></div>';
+    content.innerHTML=registerTools("assets",false,registerAction("new-asset","Register asset"),state.assets.length)+'<div id="asset-results"></div>';
     $("#new-asset").onclick=()=>openAssetForm();
     renderAssets(state.assets);
-    $("#asset-search").oninput=e=>{const q=e.target.value.toLowerCase().trim();renderAssets(state.assets.filter(a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].some(v=>String(v||"").toLowerCase().includes(q))));$("#asset-count")?.classList.toggle("is-filtered",Boolean(q))};
+    bindRegisterSearch(state.assets,a=>[a.name,a.system_name,a.location,a.manufacturer,a.model,a.category].filter(Boolean).join(" "));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -834,16 +832,13 @@ async function showFiles(){
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
     state.syncFileInfo=null;
-    const search=$("#file-search");
-    const noMatches=document.createElement("div");noMatches.className="search-empty";noMatches.hidden=true;noMatches.innerHTML='<strong>No matching files</strong>';$(".file-grid",content).appendChild(noMatches);
-    search.oninput=e=>{
-      const q=e.target.value.toLowerCase().trim();let count=0;
-      $$("[data-file]",content).forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q);if(!card.hidden)count++});
-      noMatches.hidden=!docs.length||count>0;
-      if(!$("[data-file][aria-pressed=true]:not([hidden])",content))$$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed","false"));
-      const counter=$("#file-count");
-      if(counter){counter.textContent=q?count+" of "+docs.length:docs.length+" "+(docs.length===1?"file":"files");counter.classList.toggle("is-filtered",Boolean(q))}
-    };
+    bindCollectionSearch({
+      items:docs,entrySelector:".file-card",searchId:"file-search",countId:"file-count",
+      container:$(".file-grid",content),
+      textFor:d=>[d.title,d.asset_name,d.issue_title,d.repair_title,d.charge_name,d.purchase_title].filter(Boolean).join(" "),
+      unit:"file",plural:"files",emptyMessage:"No matching files",
+      onUpdate:()=>{if(!$(".file-card[aria-pressed=true]:not([hidden])",content))$(".file-card",content).forEach(card=>card.setAttribute("aria-pressed","false"))}
+    });
     $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
       const select=()=>$$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed",String(card===b)));
