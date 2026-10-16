@@ -1070,13 +1070,13 @@ function closeChat(fromHistory=false){
   if(!window.matchMedia("(min-width: 960px)").matches)state.chatReturnFocus?.focus();
   if(wasOpen&&!fromHistory&&history.state?.homelyChat)history.back();
 }
-$("#chat-open").onclick=openChat;
-$("#chat-trigger").onclick=openChat;
-$("#chat-close").onclick=closeChat;
-$("#assistant-collapse").onclick=closeChat;
+$("#chat-open").onclick=()=>openChat();
+$("#chat-trigger").onclick=()=>openChat();
+$("#chat-close").onclick=()=>closeChat();
+$("#assistant-collapse").onclick=()=>closeChat();
 $("#assistant-expand").onclick=()=>{workspaceLayout.assistant.expanded=!workspaceLayout.assistant.expanded;workspaceLayout.assistant.collapsed=false;saveWorkspaceLayout();syncAssistantAccessibility()};
 bindPanelResize({name:"assistant",container:$("#app-shell"),panel:chatRail,handle:$("#assistant-resizer"),variable:"--assistant-width",min:280,max:640,mainMin:480,breakpoint:960});
-$("#chat-backdrop").onclick=closeChat;
+$("#chat-backdrop").onclick=()=>closeChat();
 async function refreshVisibleView(force=false){
   if(!state.ready||document.hidden||state.viewRefreshPending||state.chatBusy||modal.open||viewer.open)return;
   if(!force&&Date.now()-state.viewLoadedAt<ACTIVE_REFRESH_MS)return;
