@@ -1012,7 +1012,15 @@ async function selectView(view){
 }
 function navigate(view,replace){view=normalizeView(view);const url=view==="home"?"/":"/?view="+encodeURIComponent(view);if(replace)history.replaceState({view:view},"",url);else history.pushState({view:view},"",url);void selectView(view)}
 nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.dataset.view,false)};
-window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
+window.onpopstate=function(){
+  const next=normalizeView(new URLSearchParams(location.search).get("view")||"home");
+  if(window.matchMedia("(max-width: 959px)").matches){
+    if(history.state?.homelyChat){
+      if(!chatRail.classList.contains("open"))openChat(true);
+    }else if(chatRail.classList.contains("open"))closeChat(true);
+  }
+  if(next!==state.view)void selectView(next);
+};
 function syncAssistantAccessibility(){
   const docked=window.matchMedia("(min-width: 960px)").matches;
   const visible=docked?!workspaceLayout.assistant.collapsed:chatRail.classList.contains("open");
@@ -1032,9 +1040,13 @@ function syncAssistantAccessibility(){
   if(!visible&&chatRail.contains(document.activeElement))(docked?$("#chat-trigger"):$("#chat-open")).focus();
 }
 window.addEventListener("resize",syncAssistantAccessibility);
-function openChat(){
+function openChat(fromHistory=false){
   if(window.matchMedia("(min-width: 960px)").matches){workspaceLayout.assistant.collapsed=false;saveWorkspaceLayout();syncAssistantAccessibility();$("#assistant-collapse").focus();return}
+  if(chatRail.classList.contains("open"))return;
   state.chatReturnFocus=document.activeElement;
+  if(!fromHistory&&!history.state?.homelyChat){
+    history.pushState({...history.state,view:state.view,homelyChat:true},"",location.href);
+  }
   document.body.classList.add("chat-visible");
   chatRail.classList.add("open");
   chatRail.setAttribute("aria-hidden","false");
@@ -1044,9 +1056,10 @@ function openChat(){
   syncAssistantAccessibility();
   requestAnimationFrame(()=>{if(chatRail.classList.contains("open"))(chatInput.disabled?$("#chat-close"):chatInput).focus()});
 }
-function closeChat(){
+function closeChat(fromHistory=false){
   if(state.stopVoice)state.stopVoice();
   if(window.matchMedia("(min-width: 960px)").matches){workspaceLayout.assistant.collapsed=true;chatRail.classList.remove("open");saveWorkspaceLayout();syncAssistantAccessibility();$("#chat-trigger").focus();return}
+  const wasOpen=chatRail.classList.contains("open");
   chatRail.classList.remove("open");
   document.body.classList.remove("chat-visible");
   chatRail.setAttribute("aria-hidden","true");
@@ -1055,6 +1068,7 @@ function closeChat(){
   $("#chat-trigger").setAttribute("aria-expanded","false");
   syncAssistantAccessibility();
   if(!window.matchMedia("(min-width: 960px)").matches)state.chatReturnFocus?.focus();
+  if(wasOpen&&!fromHistory&&history.state?.homelyChat)history.back();
 }
 $("#chat-open").onclick=openChat;
 $("#chat-trigger").onclick=openChat;
