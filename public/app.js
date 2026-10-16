@@ -970,13 +970,14 @@ function messageElement(m){
   }
   return message;
 }
+const pendingProposalActions=new Set();
 function renderChat(){
   chatBody.replaceChildren(...state.agentMessages.map(messageElement));
   if(!state.agentMessages.length){const empty=document.createElement("p");empty.className="chat-empty";empty.textContent="Ask Homely anything about your home.";chatBody.append(empty)}
-  const proposalBusy=new Set();
+
   async function actOnProposal(id,action){
-    if(proposalBusy.has(id))return;
-    proposalBusy.add(id);
+    if(pendingProposalActions.has(id))return;
+    pendingProposalActions.add(id);
     const controls=$("[data-approve],[data-reject]",chatBody).filter(b=>
       b.dataset.approve===id||b.dataset.reject===id);
     controls.forEach(b=>b.disabled=true);
@@ -990,7 +991,7 @@ function renderChat(){
       notify(action==="commit"?"Approved and committed.":"Proposal rejected.");
       if(action==="commit")await selectView(state.view);
     }catch(e){notify(e.message);controls.forEach(b=>{if(b.isConnected)b.disabled=false})}
-    finally{proposalBusy.delete(id)}
+    finally{pendingProposalActions.delete(id)}
   }
   $("[data-approve]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.approve,"commit"));
   $("[data-reject]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.reject,"reject"));
