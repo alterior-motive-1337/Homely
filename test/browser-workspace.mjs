@@ -249,6 +249,29 @@ try {
   await page.locator("#commit-preview").waitFor({state:"visible"});
   await page.locator("#reject-preview").click();
   await page.locator("#modal").waitFor({state:"hidden"});
+  // Closing an upload while its first chunk is held must abort further work.
+  let releaseChunk,chunkStartedResolve,finishRequests=0;
+  const chunkStarted=new Promise(resolve=>{chunkStartedResolve=resolve});
+  const holdChunk=new Promise(resolve=>{releaseChunk=resolve});
+  await page.route("**/api/uploads/*/finish",async route=>{finishRequests++;await route.continue()});
+  await page.route("**/api/uploads/*/chunks/*",async route=>{
+    chunkStartedResolve();await holdChunk;
+    try{await route.continue()}catch(_){}
+  });
+  await page.locator("#upload-file").click();
+  await page.locator('#link-evidence-form input[name="attachment"]').waitFor();
+  assert.equal(await page.locator('label[for="homely-attachment"]').count(),1,"upload chooser is labelled");
+  await page.locator('#link-evidence-form input[name="attachment"]').setInputFiles({
+    name:"cancelled-upload.txt",mimeType:"text/plain",buffer:Buffer.from("Cancelled upload transfer.")
+  });
+  await page.locator('#link-evidence-form button.primary-button').click();
+  await chunkStarted;
+  await page.locator("#modal-close").click();
+  releaseChunk();
+  await page.waitForTimeout(120);
+  assert.equal(finishRequests,0,"discarded uploads must not finish");
+  await page.unroute("**/api/uploads/*/chunks/*");
+  await page.unroute("**/api/uploads/*/finish");
   await page.locator("#save-link").click();
   await page.locator('#link-evidence-form input[name="sourceUrl"]').waitFor();
   await page.locator("#modal-close").click();
