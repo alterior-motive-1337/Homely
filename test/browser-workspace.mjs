@@ -48,10 +48,11 @@ try {
   await page.locator("[data-home-issue]").first().click();
   await page.locator("#issue-attach").waitFor();
   await page.locator("#modal-close").click();
-  assert.ok(await page.locator("[data-home-repair]").count()>0,"Home has repair shortcuts");
-  await page.locator("[data-home-repair]").first().click();
-  await page.locator("#repair-attach").waitFor();
-  await page.locator("#modal-close").click();
+  if(await page.locator("[data-home-repair]").count()){
+    await page.locator("[data-home-repair]").first().click();
+    await page.locator("#repair-attach").waitFor();
+    await page.locator("#modal-close").click();
+  }
   if(await page.locator("[data-home-maintenance]").count()){
     await page.locator("[data-home-maintenance]").first().click();
     await page.locator("#maintenance-complete").waitFor();
@@ -205,6 +206,11 @@ try {
   await page.locator("[data-repair-open]").filter({ hasText: "Browser repair record" }).click();
   await page.getByRole("heading", { name: "Work performed", exact: true }).waitFor();
   await page.locator("#modal-close").click();
+  await go("home");
+  await page.locator("[data-home-repair]").first().click();
+  await page.locator("#repair-attach").waitFor();
+  await page.locator("#modal-close").click();
+  await go("repairs");
   await page.locator(".search-toggle").click();
   await page.locator("#record-search").fill("no-such-repair-xyz");
   await page.getByText("No matching records", { exact: true }).waitFor();
