@@ -2051,3 +2051,40 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
 @media(prefers-reduced-motion:reduce){
   .ledger-entry,.file-grid > button.file-card{transition:none!important}
 }
+
+/* Summary entries navigate directly to their source record.
+   Keep the normal row rhythm and allow keyboard/touch affordances. */
+.home-overview button.home-action-row{
+  appearance:none;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  width:100%;max-width:100%;
+  min-width:0;
+  font:inherit;color:inherit;text-align:left;
+  cursor:pointer;
+}
+.home-overview button.home-action-row .home-action-copy{
+  display:flex;flex-direction:column;gap:3px;min-width:0;
+}
+.home-overview button.home-action-row .row-title,
+.home-overview button.home-action-row .row-meta{
+  display:block;min-width:0;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis;
+}
+.home-overview button.home-action-row:hover{
+  background:#1d1d20!important;
+  border-color:#65656a!important;
+}
+.home-overview button.home-action-row:focus-visible{
+  outline:2px solid #ededf0!important;outline-offset:2px;
+}
+@media(max-width:700px){
+  .home-overview button.home-action-row{
+    grid-template-columns:minmax(0,1fr) auto;
+    min-height:58px!important;
+  }
+  .home-overview button.home-action-row .row-actions{
+    max-width:40vw;justify-content:flex-end;
+  }
+}
