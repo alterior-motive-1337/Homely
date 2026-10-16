@@ -1805,3 +1805,6 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
 
 /* Keep the title readable next to history, new chat, and window controls. */
 .chat-head>.chat-toolbar{flex:0 0 auto!important;width:auto!important;min-width:0!important}
+
+/* Do not leave the read-only title over the rename field. */
+.chat-current-title[hidden]{display:none!important}
