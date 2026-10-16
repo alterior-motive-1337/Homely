@@ -685,7 +685,7 @@ async function openAsset(id){
     html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>',"",true)}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
     html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
     openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$("[data-file]",modalBody).forEach(function(b){b.onclick=function(){const doc=(a.documents||[]).find(d=>d.id===b.dataset.file);if(doc)void openFile(doc)}})
-  }catch(e){notify(e.message)}
+  }catch(e){modalLoadFailed(pending,e)}
 }
 
 function fileHref(d){const raw=String(d.web_view_link||d.local_path||d.source_url||"").trim();try{const url=new URL(raw,location.origin);return ["https:","http:"].includes(url.protocol)&&!url.username&&!url.password?url.href:""}catch(_){return""}}
@@ -839,7 +839,7 @@ async function openUploadEvidenceForm(defaults){
   const form=$("#link-evidence-form");
   if(!form)return;
   const source=$('input[name="sourceUrl"]',form);
-  source.closest(".field").innerHTML='<label>File (maximum 50 MB)</label><input type="file" name="attachment" required accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.zip">';
+  source.closest(".field").innerHTML='<label for="homely-attachment">File (maximum 50 MB)</label><input id="homely-attachment" type="file" name="attachment" required accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.zip">';
   $("h2",modalBody).textContent="Attach a file";
   $(".primary-button",form).textContent="Preview attachment";
   const d=defaults||{};
