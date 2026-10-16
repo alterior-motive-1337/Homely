@@ -97,6 +97,13 @@ function badge(v){
 function row(title,meta,right,note,fadeTitle=false){return '<div class="row"><div><div class="row-title'+(fadeTitle?' fade-title':'')+'">'+esc(title)+'</div>'+(meta?'<div class="row-meta">'+esc(meta)+'</div>':'')+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
 
+// Home summaries are shortcuts to their underlying records, not dead-end tiles.
+function homeActionRow(title,meta,right,kind,id){
+  return '<button type="button" class="row home-action-row" data-home-'+kind+'="'+esc(id)+'">'
+    +'<span class="home-action-copy"><span class="row-title">'+esc(title)+'</span>'
+    +(meta?'<span class="row-meta">'+esc(meta)+'</span>':'')+'</span>'
+    +(right?'<span class="row-actions">'+right+'</span>':'')+'</button>';
+}
 function emptyState(title,buttons,compact=false){
   return '<section class="empty-state'+(compact?' compact':'')+'"><div class="empty-symbol" aria-hidden="true">'+fileIcon()+'</div><h2>'+esc(title)+'</h2>'
     +(buttons?'<div class="hero-actions">'+buttons+'</div>':'')+'</section>';
@@ -481,8 +488,9 @@ async function showHome(){
     const memory=d.memory||{},repairs=memory.repairs||[],charges=memory.charges||[],purchases=memory.purchases||[];
     const upcoming=d.upcoming||[],recent=d.recent||[],summary=d.summary||{};
     state.currency=normalizeCurrency(d.currency);
-    const attention=(d.attention?.issues||[]).map(i=>row(i.title,i.asset_name,badge(i.severity)))
-      .concat((d.attention?.maintenance||[]).map(m=>row(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"))));
+    const issueShortcuts=d.attention?.issues||[];
+    const attention=issueShortcuts.map(i=>homeActionRow(i.title,i.asset_name,badge(i.severity),"issue",i.id))
+      .concat((d.attention?.maintenance||[]).map(m=>homeActionRow(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"),"asset",m.asset_id)));
     const homeName=d.home?.name||"My Home";
     pageTitle.textContent=homeName;
     document.title=homeName+" · Homely";
@@ -510,12 +518,12 @@ async function showHome(){
     if(attention.length||upcoming.length){
       html+='<div class="home-priority">';
       if(attention.length)html+='<section class="card"><div class="card-head"><h2>Needs attention</h2><button class="ghost-link" data-go="issues">View issues</button></div><div class="card-body rows">'+attention.slice(0,4).join("")+'</div></section>';
-      if(upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+upcoming.slice(0,4).map(m=>row(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>')).join("")+'</div></section>';
+      if(upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+upcoming.slice(0,4).map(m=>homeActionRow(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>',"asset",m.asset_id)).join("")+'</div></section>';
       html+='</div>';
     }
     if(repairs.length||charges.length||purchases.length){
       html+='<div class="home-memory">';
-      if(repairs.length)html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">View all</button></div><div class="card-body rows">'+repairs.slice(0,3).map(r=>row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>')).join("")+'</div></section>';
+      if(repairs.length)html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">View all</button></div><div class="card-body rows">'+repairs.slice(0,3).map(r=>homeActionRow(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>',"repair",r.id)).join("")+'</div></section>';
       if(charges.length)html+='<section class="card"><div class="card-head"><h2>Charges</h2><button class="ghost-link" id="view-charges">View all</button></div><div class="card-body rows">'+charges.slice(0,3).map(c=>row(c.name,c.billing_cycle,'<span class="money">'+money(c.amount_cents)+'</span>')).join("")+'</div></section>';
       if(purchases.length)html+='<section class="card"><div class="card-head"><h2>Saved purchases</h2><button class="ghost-link" id="view-purchases">View all</button></div><div class="card-body rows">'+purchases.slice(0,3).map(p=>row(p.title,p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>')).join("")+'</div></section>';
       html+='</div>';
@@ -528,7 +536,9 @@ async function showHome(){
     const purchasesShortcut=$("#view-purchases-shortcut");if(purchasesShortcut)purchasesShortcut.onclick=showPurchases;
     $("#view-history").onclick=showHistory;
     $$("[data-go]",content).forEach(b=>b.onclick=()=>navigate(b.dataset.go));
-    $$("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
+    $("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
+    $("[data-home-issue]",content).forEach(b=>b.onclick=()=>openIssue(issueShortcuts.find(i=>i.id===b.dataset.homeIssue)));
+    $("[data-home-repair]",content).forEach(b=>b.onclick=()=>openRepair(repairs.find(r=>r.id===b.dataset.homeRepair)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
