@@ -1,7 +1,7 @@
 import { createInteraction, createReview } from "./interactions.js";
 import { watchFadingTitles } from "./fading.js";
 import { normalizeCurrency, formatMinorAmount, majorToMinorAmount, minorToMajorAmount, localDateInput,
-  normalizeStatus, statusLabel, statusTone, matchesSearch, countLabel, matchesStatusFilter } from "./ui-normalization.js";
+  normalizeStatus, statusLabel, statusTone, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -58,8 +58,11 @@ function bindPanelResize({name,container,panel,handle,variable,min,max,mainMin,b
 }
 
 function esc(v){return String(v==null?"":v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
-function fmtDate(v){return v?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(v)):"—"}
-function assetAge(a){const value=a.acquired_at||a.purchase_date;if(!value)return"Unknown";const date=new Date(value),now=new Date();if(!Number.isFinite(date.getTime()))return"Unknown";let months=(now.getFullYear()-date.getFullYear())*12+now.getMonth()-date.getMonth();if(now.getDate()<date.getDate())months-=1;if(months<0)return"Not yet acquired";const years=Math.floor(months/12);return years?years+"y "+months%12+"m":months+"m"}
+function fmtDate(v){
+  const date=calendarDate(v);
+  return date?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(date):"—";
+}
+function assetAge(a){const value=a.acquired_at||a.purchase_date;if(!value)return"Unknown";const date=calendarDate(value),now=new Date();if(!date)return"Unknown";let months=(now.getFullYear()-date.getFullYear())*12+now.getMonth()-date.getMonth();if(now.getDate()<date.getDate())months-=1;if(months<0)return"Not yet acquired";const years=Math.floor(months/12);return years?years+"y "+months%12+"m":months+"m"}
 function money(c){return formatMinorAmount(c,state.currency)}
 function amountToCents(v){return majorToMinorAmount(v,state.currency)}
 function centsToAmount(v){return minorToMajorAmount(v,state.currency)}
@@ -78,7 +81,13 @@ async function api(path,options){
   if(!res.ok)throw new Error(data&&data.error?data.error:"Request failed: "+res.status);
   return data
 }
-function notify(message){toast.textContent=message;toast.classList.add("show");setTimeout(function(){toast.classList.remove("show")},2400)}
+let toastTimeout;
+function notify(message){
+  clearTimeout(toastTimeout);
+  toast.textContent=message;
+  toast.classList.add("show");
+  toastTimeout=setTimeout(()=>toast.classList.remove("show"),3000);
+}
 function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="loading">'+esc(label||"Loading…")+"</div>"}
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
 function badge(v){
@@ -171,7 +180,9 @@ async function refreshAlerts(){
   }catch(_){}
 }
 async function showAlerts(){
+  const pending=waitingModal("Loading alerts…");
   await refreshAlerts();
+  if(!modalPending(pending))return;
   openModal('<h2>Alerts</h2>'+(("Notification" in window&&Notification.permission!=="granted")?'<button class="button" id="enable-notifications" type="button">Enable notifications</button>':'')+'<div class="rows">'+(state.alerts.map(a=>row(a.title,a.detail,badge(a.severity)+'<button class="button" data-alert-open="'+esc(a.key)+'">Open</button><button class="button" data-alert-ack="'+esc(a.key)+'">Acknowledge</button>'+(a.kind==="MAINTENANCE"?'<button class="button" data-maintenance-complete="'+esc(a.recordId)+'">Complete</button>':''))).join('')||'<div class="empty">No alerts.</div>')+'</div>');
   const enable=$("#enable-notifications");if(enable)enable.onclick=async()=>{const permission=await Notification.requestPermission();if(permission==="granted"){enable.hidden=true;await refreshAlerts()}};
   $$("[data-alert-ack]",modalBody).forEach(b=>b.onclick=async()=>{try{await api("/api/alerts/acknowledge",{method:"POST",body:{key:b.dataset.alertAck}});await showAlerts()}catch(e){notify(e.message)}});
@@ -741,7 +752,7 @@ async function openFile(doc){
         if(!live())return;
         state.objectUrl=URL.createObjectURL(blob);
         viewerBody.innerHTML='<embed type="application/pdf" src="'+esc(state.objectUrl)+'" />'
-          +'<div class="viewer-file-action">'+action("Download PDF",href,true)+'</div>';
+          +'<div class="viewer-file-action">'+action("Open PDF",href)+action("Download PDF",href,true)+'</div>';
       }
     }catch(e){
       if(live())viewerBody.innerHTML='<div class="viewer-link"><strong>'+esc(e.message)+'</strong>'+action("Try opening file",href)+'</div>';
@@ -1003,7 +1014,31 @@ async function selectView(view){
 }
 function navigate(view,replace){view=normalizeView(view);const url=view==="home"?"/":"/?view="+encodeURIComponent(view);if(replace)history.replaceState({view:view},"",url);else history.pushState({view:view},"",url);void selectView(view)}
 nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.dataset.view,false)};
-window.onpopstate=function(){selectView(new URLSearchParams(location.search).get("view")||"home")};
+window.onpopstate=function(){
+  const next=normalizeView(new URLSearchParams(location.search).get("view")||"home");
+  if(window.matchMedia("(max-width: 959px)").matches){
+    if(history.state?.homelyChat){
+      if(!chatRail.classList.contains("open"))openChat(true);
+    }else if(chatRail.classList.contains("open"))closeChat(true);
+  }
+  if(next!==state.view)void selectView(next);
+};
+// Android's keyboard can shrink only the visual viewport; 100dvh alone may
+// leave the composer below the keyboard. This does not affect desktop docking.
+function syncMobileChatViewport(){
+  if(window.matchMedia("(min-width: 960px)").matches||!chatRail.classList.contains("open")){
+    chatRail.style.removeProperty("--homely-visual-height");
+    chatRail.style.removeProperty("--homely-visual-top");
+    return;
+  }
+  const viewport=window.visualViewport;
+  if(!viewport)return;
+  chatRail.style.setProperty("--homely-visual-height",Math.max(200,Math.round(viewport.height))+"px");
+  chatRail.style.setProperty("--homely-visual-top",Math.round(viewport.offsetTop)+"px");
+}
+window.visualViewport?.addEventListener("resize",syncMobileChatViewport);
+window.visualViewport?.addEventListener("scroll",syncMobileChatViewport);
+window.addEventListener("resize",syncMobileChatViewport);
 function syncAssistantAccessibility(){
   const docked=window.matchMedia("(min-width: 960px)").matches;
   const visible=docked?!workspaceLayout.assistant.collapsed:chatRail.classList.contains("open");
@@ -1013,6 +1048,7 @@ function syncAssistantAccessibility(){
   $("#assistant-expand").setAttribute("aria-label",workspaceLayout.assistant.expanded?"Restore chat width":"Expand chat");
   $("#assistant-expand").title=workspaceLayout.assistant.expanded?"Restore chat width":"Expand chat";
   chatRail.setAttribute("aria-hidden",String(!visible));chatRail.inert=!visible;
+  syncMobileChatViewport();
   const modalAssistant=!docked&&visible;
   $(".workspace").inert=modalAssistant;$(".sidebar").inert=modalAssistant;
   chatRail.setAttribute("role",modalAssistant?"dialog":"complementary");
@@ -1023,9 +1059,13 @@ function syncAssistantAccessibility(){
   if(!visible&&chatRail.contains(document.activeElement))(docked?$("#chat-trigger"):$("#chat-open")).focus();
 }
 window.addEventListener("resize",syncAssistantAccessibility);
-function openChat(){
+function openChat(fromHistory=false){
   if(window.matchMedia("(min-width: 960px)").matches){workspaceLayout.assistant.collapsed=false;saveWorkspaceLayout();syncAssistantAccessibility();$("#assistant-collapse").focus();return}
+  if(chatRail.classList.contains("open"))return;
   state.chatReturnFocus=document.activeElement;
+  if(!fromHistory&&!history.state?.homelyChat){
+    history.pushState({...history.state,view:state.view,homelyChat:true},"",location.href);
+  }
   document.body.classList.add("chat-visible");
   chatRail.classList.add("open");
   chatRail.setAttribute("aria-hidden","false");
@@ -1035,9 +1075,10 @@ function openChat(){
   syncAssistantAccessibility();
   requestAnimationFrame(()=>{if(chatRail.classList.contains("open"))(chatInput.disabled?$("#chat-close"):chatInput).focus()});
 }
-function closeChat(){
+function closeChat(fromHistory=false){
   if(state.stopVoice)state.stopVoice();
   if(window.matchMedia("(min-width: 960px)").matches){workspaceLayout.assistant.collapsed=true;chatRail.classList.remove("open");saveWorkspaceLayout();syncAssistantAccessibility();$("#chat-trigger").focus();return}
+  const wasOpen=chatRail.classList.contains("open");
   chatRail.classList.remove("open");
   document.body.classList.remove("chat-visible");
   chatRail.setAttribute("aria-hidden","true");
@@ -1046,14 +1087,15 @@ function closeChat(){
   $("#chat-trigger").setAttribute("aria-expanded","false");
   syncAssistantAccessibility();
   if(!window.matchMedia("(min-width: 960px)").matches)state.chatReturnFocus?.focus();
+  if(wasOpen&&!fromHistory&&history.state?.homelyChat)history.back();
 }
-$("#chat-open").onclick=openChat;
-$("#chat-trigger").onclick=openChat;
-$("#chat-close").onclick=closeChat;
-$("#assistant-collapse").onclick=closeChat;
+$("#chat-open").onclick=()=>openChat();
+$("#chat-trigger").onclick=()=>openChat();
+$("#chat-close").onclick=()=>closeChat();
+$("#assistant-collapse").onclick=()=>closeChat();
 $("#assistant-expand").onclick=()=>{workspaceLayout.assistant.expanded=!workspaceLayout.assistant.expanded;workspaceLayout.assistant.collapsed=false;saveWorkspaceLayout();syncAssistantAccessibility()};
 bindPanelResize({name:"assistant",container:$("#app-shell"),panel:chatRail,handle:$("#assistant-resizer"),variable:"--assistant-width",min:280,max:640,mainMin:480,breakpoint:960});
-$("#chat-backdrop").onclick=closeChat;
+$("#chat-backdrop").onclick=()=>closeChat();
 async function refreshVisibleView(force=false){
   if(!state.ready||document.hidden||state.viewRefreshPending||state.chatBusy||modal.open||viewer.open)return;
   if(!force&&Date.now()-state.viewLoadedAt<ACTIVE_REFRESH_MS)return;

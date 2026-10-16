@@ -544,6 +544,63 @@ try {
     assert.equal(await markdown.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false,"Markdown must not overflow on mobile");
     assert.equal(await markdown.locator("#chat-rail").evaluate(el=>el.scrollWidth>el.clientWidth+2),false,"Code and tables must scroll within the panel");
   }
+  // Exercise Android-like touch behavior separately from desktop mouse emulation.
+  const mobileContext=await browser.newContext({
+    viewport:{width:360,height:800},deviceScaleFactor:3,
+    hasTouch:true,isMobile:true
+  });
+  const android=await mobileContext.newPage();
+  android.on("pageerror",error=>errors.push("Android: "+String(error)));
+  await android.goto(base);
+  await android.locator(".metrics").waitFor();
+  assert.equal(await android.locator("#household-settings").isVisible(),true,"Android must retain household settings");
+  assert.equal(await android.locator("#sign-out").isVisible(),true,"Android must retain sign-out");
+  assert.equal(await android.locator("#chat-open").isVisible(),true,"Android must expose assistant launcher");
+  for(const id of ["household-settings","sign-out","modal-close"]){
+    if(id==="modal-close")continue;
+    const dimensions=await android.locator("#"+id).evaluate(el=>({
+      width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height
+    }));
+    assert.ok(dimensions.width>=43&&dimensions.height>=43,id+" must be touch sized");
+  }
+  for(const width of [320,360,390,412,768,959]){
+    await android.setViewportSize({width,height:800});
+    const actual=await android.evaluate(()=>({
+      window:innerWidth,page:document.documentElement.scrollWidth,
+      settings:getComputedStyle(document.querySelector("#household-settings")).display,
+      navItems:[...document.querySelectorAll(".nav-item")].filter(el=>el.getClientRects().length).length
+    }));
+    assert.equal(actual.page<=actual.window+2,true,"Android "+width+"px must not overflow horizontally");
+    assert.notEqual(actual.settings,"none","Settings must not disappear at "+width+"px");
+    assert.equal(actual.navItems,5,"All five navigation entries remain reachable at "+width+"px");
+  }
+  await android.setViewportSize({width:360,height:800});
+  await android.locator('[data-view="issues"]').tap();
+  await android.locator("#new-issue").tap();
+  await android.locator("#issue-form").waitFor();
+  const touchFont=await android.locator('#issue-form input[name="title"]').evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+  assert.ok(touchFont>=16,"Android form fields must not trigger text auto-zoom");
+  const modalCloseSize=await android.locator("#modal-close").evaluate(el=>el.getBoundingClientRect().width);
+  assert.ok(modalCloseSize>=43,"Android modal close must be touch sized");
+  await android.locator("#modal-close").tap();
+  await android.locator("#chat-open").tap();
+  await android.locator("#chat-rail").waitFor({state:"visible"});
+  assert.equal(await android.locator("#chat-rail").getAttribute("aria-hidden"),"false");
+  const chatHeight=await android.locator("#chat-rail").evaluate(el=>el.getBoundingClientRect().height);
+  assert.ok(chatHeight<=800&&chatHeight>300,"Android chat must fit the visual viewport");
+  await android.goBack();
+  assert.equal(await android.locator("#chat-rail").getAttribute("aria-hidden"),"true","Android Back closes chat, not the view");
+  assert.equal(new URL(android.url()).searchParams.get("view"),"issues","Back must preserve the current record view");
+  await android.goForward();
+  assert.equal(await android.locator("#chat-rail").getAttribute("aria-hidden"),"false","Android Forward can restore chat");
+  await android.locator("#chat-close").tap();
+  assert.equal(await android.locator("#chat-rail").getAttribute("aria-hidden"),"true");
+  await android.waitForFunction(()=>!history.state?.homelyChat);
+  await android.setViewportSize({width:960,height:800});
+  assert.equal(await android.locator("#chat-open").isVisible(),false,"Desktop view must not show Android floating launcher");
+  assert.equal(await android.locator("#chat-rail").getAttribute("aria-hidden"),"false","Desktop retains docked chat");
+  if(process.env.TEST_SCREENSHOT_DIR)await android.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/android-desktop-parity.png"});
+  await mobileContext.close();
   // The test link creates and opens a persistent private sample home.
   const sampleContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
   const sample=await sampleContext.newPage();
