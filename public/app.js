@@ -97,6 +97,13 @@ function badge(v){
 function row(title,meta,right,note,fadeTitle=false){return '<div class="row"><div><div class="row-title'+(fadeTitle?' fade-title':'')+'">'+esc(title)+'</div>'+(meta?'<div class="row-meta">'+esc(meta)+'</div>':'')+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
 
+// Home summaries are shortcuts to their underlying records, not dead-end tiles.
+function homeActionRow(title,meta,right,kind,id){
+  return '<button type="button" class="row home-action-row" data-home-'+kind+'="'+esc(id)+'">'
+    +'<span class="home-action-copy"><span class="row-title">'+esc(title)+'</span>'
+    +(meta?'<span class="row-meta">'+esc(meta)+'</span>':'')+'</span>'
+    +(right?'<span class="row-actions">'+right+'</span>':'')+'</button>';
+}
 function emptyState(title,buttons,compact=false){
   return '<section class="empty-state'+(compact?' compact':'')+'"><div class="empty-symbol" aria-hidden="true">'+fileIcon()+'</div><h2>'+esc(title)+'</h2>'
     +(buttons?'<div class="hero-actions">'+buttons+'</div>':'')+'</section>';
@@ -278,6 +285,7 @@ function bindCollectionSearch({items,entrySelector,searchId,countId,container,
   textFor,isOpen=null,unit="entry",plural=unit==="entry"?"entries":unit+"s",emptyMessage="No matching records",onUpdate}){
   const search=$("#"+searchId,content),counter=$("#"+countId,content),entries=$$(entrySelector,content);
   if(!search||!counter||entries.length!==items.length)return;
+  if(!items.length)return;
   const empty=document.createElement("div");empty.className="search-empty";empty.hidden=true;
   const emptyLabel=document.createElement("strong");emptyLabel.textContent=emptyMessage;empty.append(emptyLabel);
   container.append(empty);
@@ -323,7 +331,12 @@ async function refreshStatus(){
 }
 
 let modalGeneration=0;
+let activeUploadController=null;
+function cancelPendingUpload(){
+  if(activeUploadController){activeUploadController.abort();activeUploadController=null}
+}
 function openModal(html){
+  cancelPendingUpload();
   modalGeneration++;
   modalBody.innerHTML=html;
   modalBody.querySelectorAll(".field").forEach(function(field,index){
@@ -334,6 +347,7 @@ function openModal(html){
   return modalGeneration;
 }
 function closeModal(){
+  cancelPendingUpload();
   modalGeneration++;
   if(modal.open)modal.close();
   modalBody.innerHTML="";
@@ -472,6 +486,18 @@ async function openPurchaseForm(existing){
   },"Homeowner saved a potential household purchase."]);
 }
 
+function openMaintenanceSummary(rule){
+  if(!rule)return;
+  openModal('<p class="eyebrow">Maintenance</p><h2>'+esc(rule.title)+'</h2>'
+    +'<div class="detail-grid"><div class="detail"><span>Asset</span><strong>'+esc(rule.asset_name||"Home")+'</strong></div>'
+    +'<div class="detail"><span>Due</span><strong>'+esc(fmtDate(rule.next_due_at))+'</strong></div></div>'
+    +'<div class="form-actions"><button class="button" id="maintenance-asset" type="button">View asset</button>'
+    +'<button class="primary-button" id="maintenance-complete" type="button">Mark complete</button></div>');
+  $("#maintenance-asset").onclick=()=>openAsset(rule.asset_id);
+  $("#maintenance-complete").onclick=()=>previewAction("COMPLETE_MAINTENANCE",{
+    maintenanceId:rule.id,completedAt:today()
+  },"Homeowner completed scheduled household maintenance.");
+}
 async function showHome(){
   loading();const revision=state.viewRevision;
   try{
@@ -481,8 +507,10 @@ async function showHome(){
     const memory=d.memory||{},repairs=memory.repairs||[],charges=memory.charges||[],purchases=memory.purchases||[];
     const upcoming=d.upcoming||[],recent=d.recent||[],summary=d.summary||{};
     state.currency=normalizeCurrency(d.currency);
-    const attention=(d.attention?.issues||[]).map(i=>row(i.title,i.asset_name,badge(i.severity)))
-      .concat((d.attention?.maintenance||[]).map(m=>row(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"))));
+    const issueShortcuts=d.attention?.issues||[];
+    const maintenanceShortcuts=[...(d.attention?.maintenance||[]),...upcoming];
+    const attention=issueShortcuts.map(i=>homeActionRow(i.title,i.asset_name,badge(i.severity),"issue",i.id))
+      .concat((d.attention?.maintenance||[]).map(m=>homeActionRow(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"),"maintenance",m.id)));
     const homeName=d.home?.name||"My Home";
     pageTitle.textContent=homeName;
     document.title=homeName+" · Homely";
@@ -510,12 +538,12 @@ async function showHome(){
     if(attention.length||upcoming.length){
       html+='<div class="home-priority">';
       if(attention.length)html+='<section class="card"><div class="card-head"><h2>Needs attention</h2><button class="ghost-link" data-go="issues">View issues</button></div><div class="card-body rows">'+attention.slice(0,4).join("")+'</div></section>';
-      if(upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+upcoming.slice(0,4).map(m=>row(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>')).join("")+'</div></section>';
+      if(upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+upcoming.slice(0,4).map(m=>homeActionRow(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>',"maintenance",m.id)).join("")+'</div></section>';
       html+='</div>';
     }
     if(repairs.length||charges.length||purchases.length){
       html+='<div class="home-memory">';
-      if(repairs.length)html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">View all</button></div><div class="card-body rows">'+repairs.slice(0,3).map(r=>row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>')).join("")+'</div></section>';
+      if(repairs.length)html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">View all</button></div><div class="card-body rows">'+repairs.slice(0,3).map(r=>homeActionRow(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>',"repair",r.id)).join("")+'</div></section>';
       if(charges.length)html+='<section class="card"><div class="card-head"><h2>Charges</h2><button class="ghost-link" id="view-charges">View all</button></div><div class="card-body rows">'+charges.slice(0,3).map(c=>row(c.name,c.billing_cycle,'<span class="money">'+money(c.amount_cents)+'</span>')).join("")+'</div></section>';
       if(purchases.length)html+='<section class="card"><div class="card-head"><h2>Saved purchases</h2><button class="ghost-link" id="view-purchases">View all</button></div><div class="card-body rows">'+purchases.slice(0,3).map(p=>row(p.title,p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>')).join("")+'</div></section>';
       html+='</div>';
@@ -528,7 +556,10 @@ async function showHome(){
     const purchasesShortcut=$("#view-purchases-shortcut");if(purchasesShortcut)purchasesShortcut.onclick=showPurchases;
     $("#view-history").onclick=showHistory;
     $$("[data-go]",content).forEach(b=>b.onclick=()=>navigate(b.dataset.go));
+    $$("[data-home-maintenance]",content).forEach(b=>b.onclick=()=>openMaintenanceSummary(maintenanceShortcuts.find(m=>m.id===b.dataset.homeMaintenance)));
     $$("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
+    $$("[data-home-issue]",content).forEach(b=>b.onclick=()=>openIssue(issueShortcuts.find(i=>i.id===b.dataset.homeIssue)));
+    $$("[data-home-repair]",content).forEach(b=>b.onclick=()=>openRepair(repairs.find(r=>r.id===b.dataset.homeRepair)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -667,7 +698,9 @@ async function openAsset(id){
   try{
     const a=await api("/api/assets/"+encodeURIComponent(id));
     if(!modalPending(pending))return;
-    let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(a.condition||"UNKNOWN")+badge(a.health)+'</div><div class="detail-grid">';
+    const health=normalizeStatus(a.health),condition=normalizeStatus(a.condition);
+    const healthLabel=a.health&&health!=="UNKNOWN"&&health!==condition?badge(a.health):"";
+    let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(a.condition||"UNKNOWN")+healthLabel+'</div><div class="detail-grid">';
     [["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Age",assetAge(a)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]].forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
     html+="</div>";if(a.notes)html+='<div class="detail-section"><h3>Notes</h3><div class="row-note">'+esc(a.notes)+"</div></div>";
     html+='<div class="detail-section"><h3>Issues</h3><div class="rows">'+(a.issues.map(function(i){return row(i.title,fmtDate(i.detected_at)+" · "+i.severity,badge(i.status),i.description||"")}).join("")||'<div class="empty">No issues.</div>')+"</div></div>";
@@ -675,7 +708,7 @@ async function openAsset(id){
     html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>',"",true)}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
     html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
     openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$("[data-file]",modalBody).forEach(function(b){b.onclick=function(){const doc=(a.documents||[]).find(d=>d.id===b.dataset.file);if(doc)void openFile(doc)}})
-  }catch(e){notify(e.message)}
+  }catch(e){modalLoadFailed(pending,e)}
 }
 
 function fileHref(d){const raw=String(d.web_view_link||d.local_path||d.source_url||"").trim();try{const url=new URL(raw,location.origin);return ["https:","http:"].includes(url.protocol)&&!url.username&&!url.password?url.href:""}catch(_){return""}}
@@ -829,7 +862,7 @@ async function openUploadEvidenceForm(defaults){
   const form=$("#link-evidence-form");
   if(!form)return;
   const source=$('input[name="sourceUrl"]',form);
-  source.closest(".field").innerHTML='<label>File (maximum 50 MB)</label><input type="file" name="attachment" required accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.zip">';
+  source.closest(".field").innerHTML='<label for="homely-attachment">File (maximum 50 MB)</label><input id="homely-attachment" type="file" name="attachment" required accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.zip">';
   $("h2",modalBody).textContent="Attach a file";
   $(".primary-button",form).textContent="Preview attachment";
   const d=defaults||{};
@@ -851,21 +884,26 @@ async function openUploadEvidenceForm(defaults){
     if(!file)return notify("Select a file.");
     if(!file.size||file.size>50_000_000)return notify("Select a file of 50 MB or less.");
 
+    if(activeUploadController)return;
     const submit=$('button[type="submit"],button.primary-button',form);
     const uploadGeneration=modalGeneration;
+    const controller=new AbortController();
+    activeUploadController=controller;
     if(submit)submit.disabled=true;
     try{
-      const staged=await api("/api/uploads/start",{method:"POST",body:{name:file.name,mimeType:file.type||"application/octet-stream",size:file.size}});
+      const staged=await api("/api/uploads/start",{method:"POST",signal:controller.signal,body:{name:file.name,mimeType:file.type||"application/octet-stream",size:file.size}});
       const total=Math.ceil(file.size/staged.chunkSize);
       for(let index=0;index<total;index++){
+        if(controller.signal.aborted||!modalPending(uploadGeneration))return;
         const chunk=file.slice(index*staged.chunkSize,Math.min(file.size,(index+1)*staged.chunkSize));
         await api("/api/uploads/"+encodeURIComponent(staged.id)+"/chunks/"+index,
-          {method:"PUT",headers:{"content-type":"application/octet-stream"},body:chunk});
+          {method:"PUT",signal:controller.signal,headers:{"content-type":"application/octet-stream"},body:chunk});
         if(submit)submit.textContent="Uploading "+Math.round((index+1)/total*100)+"%";
       }
-      await api("/api/uploads/"+encodeURIComponent(staged.id)+"/finish",{method:"POST"});
+      await api("/api/uploads/"+encodeURIComponent(staged.id)+"/finish",{method:"POST",signal:controller.signal});
       if(!modalPending(uploadGeneration))return;
       if(submit){submit.disabled=false;submit.textContent="Preview attachment"}
+      activeUploadController=null;
       await previewAction("ATTACH_DOCUMENT",{
         assetId:data.get("assetId")||null,issueId:data.get("issueId")||null,
         repairId:data.get("repairId")||null,chargeId:data.get("chargeId")||null,
@@ -876,8 +914,11 @@ async function openUploadEvidenceForm(defaults){
         provenance:data.get("provenance"),occurredAt:data.get("occurredAt"),
         evidenceReason:data.get("evidenceReason"),evidenceStatus:data.get("evidenceStatus")
       },"Homeowner attached a file as household evidence.");
-    }catch(err){if(modalPending(uploadGeneration))notify(err.message)}
-    finally{if(submit?.isConnected){submit.disabled=false;submit.textContent="Preview attachment"}}
+    }catch(err){if(!controller.signal.aborted&&modalPending(uploadGeneration))notify(err.message)}
+    finally{
+      if(activeUploadController===controller)activeUploadController=null;
+      if(submit?.isConnected){submit.disabled=false;submit.textContent="Preview attachment"}
+    }
   };
 }
 
@@ -946,11 +987,34 @@ function messageElement(m){
   }
   return message;
 }
+const pendingProposalActions=new Set();
 function renderChat(){
   chatBody.replaceChildren(...state.agentMessages.map(messageElement));
   if(!state.agentMessages.length){const empty=document.createElement("p");empty.className="chat-empty";empty.textContent="Ask Homely anything about your home.";chatBody.append(empty)}
-  $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
-  $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
+
+  async function actOnProposal(id,action){
+    if(pendingProposalActions.has(id))return;
+    pendingProposalActions.add(id);
+    const controls=$$("[data-approve],[data-reject]",chatBody).filter(b=>
+      b.dataset.approve===id||b.dataset.reject===id);
+    controls.forEach(b=>b.disabled=true);
+    try{
+      await api("/api/transactions/"+encodeURIComponent(id)+"/"+action,{method:"POST"});
+      for(const message of state.agentMessages){
+        const proposal=(message.proposals||[]).find(p=>p.transactionId===id);
+        if(proposal)proposal.status=action==="commit"?"COMMITTED":"REJECTED";
+      }
+      renderChat();
+      notify(action==="commit"?"Approved and committed.":"Proposal rejected.");
+      if(action==="commit")await selectView(state.view);
+    }catch(e){notify(e.message);controls.forEach(b=>{if(b.isConnected)b.disabled=false})}
+    finally{pendingProposalActions.delete(id)}
+  }
+  $$("[data-approve]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.approve,"commit"));
+  $$("[data-reject]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.reject,"reject"));
+  $$("[data-approve],[data-reject]",chatBody).forEach(b=>{
+    if(pendingProposalActions.has(b.dataset.approve||b.dataset.reject))b.disabled=true;
+  });
   if(state.chatBusy){
     chatBody.appendChild(createInteraction("Working…",{pending:true}));
   }
@@ -1028,7 +1092,14 @@ async function selectView(view){
   viewPanels.delete(next);state.viewLoadedAt=Date.now();
   await views[next][1]();
 }
-function navigate(view,replace){view=normalizeView(view);const url=view==="home"?"/":"/?view="+encodeURIComponent(view);if(replace)history.replaceState({view:view},"",url);else history.pushState({view:view},"",url);void selectView(view)}
+function navigate(view,replace){
+  view=normalizeView(view);
+  if(!replace&&view===state.view&&!history.state?.homelyChat)return;
+  const url=view==="home"?"/":"/?view="+encodeURIComponent(view);
+  if(replace)history.replaceState({view},"",url);
+  else history.pushState({view},"",url);
+  void selectView(view);
+}
 nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.dataset.view,false)};
 window.onpopstate=function(){
   const next=normalizeView(new URLSearchParams(location.search).get("view")||"home");
@@ -1112,16 +1183,44 @@ $("#assistant-collapse").onclick=()=>closeChat();
 $("#assistant-expand").onclick=()=>{workspaceLayout.assistant.expanded=!workspaceLayout.assistant.expanded;workspaceLayout.assistant.collapsed=false;saveWorkspaceLayout();syncAssistantAccessibility()};
 bindPanelResize({name:"assistant",container:$("#app-shell"),panel:chatRail,handle:$("#assistant-resizer"),variable:"--assistant-width",min:280,max:640,mainMin:480,breakpoint:960});
 $("#chat-backdrop").onclick=()=>closeChat();
+// Preserve view-local controls when a background refresh replaces the DOM.
+function captureViewState(){
+  const search=content.querySelector(".quick-search input");
+  const toggle=content.querySelector(".search-toggle");
+  const selected=content.querySelector(".file-card[aria-pressed='true']");
+  const filter=content.querySelector(".register-filters [data-status][aria-pressed='true']");
+  return {
+    searchOpen:toggle?.getAttribute("aria-expanded")==="true",
+    query:search?.value||"",
+    status:filter?.dataset.status||"all",
+    selectedFile:selected?.dataset.file||null
+  };
+}
+function restoreViewState(saved){
+  if(!saved)return;
+  const toggle=content.querySelector(".search-toggle"),input=content.querySelector(".quick-search input");
+  if(saved.searchOpen&&toggle&&toggle.getAttribute("aria-expanded")!=="true")toggle.click();
+  if(input&&saved.query){input.value=saved.query;input.dispatchEvent(new Event("input",{bubbles:true}))}
+  if(saved.status!=="all")content.querySelector('.register-filters [data-status="'+saved.status+'"]')?.click();
+  if(saved.selectedFile){
+    const entry=Array.from(content.querySelectorAll(".file-card")).find(el=>el.dataset.file===saved.selectedFile&&!el.hidden);
+    entry?.click();
+  }
+}
 async function refreshVisibleView(force=false){
   if(!state.ready||document.hidden||state.viewRefreshPending||state.chatBusy||modal.open||viewer.open)return;
   if(!force&&Date.now()-state.viewLoadedAt<ACTIVE_REFRESH_MS)return;
   const focused=document.activeElement;
   if(focused&&content.contains(focused)&&focused.matches("input,select,textarea,[contenteditable],button"))return;
   const current=state.view,revision=++state.viewRevision;
+  const saved=captureViewState();
   state.viewRefreshPending=true;state.silentRefresh=true;
   try{
     await views[current][1]();
-    if(state.view===current&&state.viewRevision===revision)state.viewLoadedAt=Date.now();
+    if(state.view===current&&state.viewRevision===revision){
+      restoreViewState(saved);
+      state.viewLoadedAt=Date.now();
+    }
   }finally{state.silentRefresh=false;state.viewRefreshPending=false}
 }
 window.addEventListener("focus",()=>void refreshVisibleView());
