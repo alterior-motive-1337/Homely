@@ -978,7 +978,7 @@ function renderChat(){
   async function actOnProposal(id,action){
     if(pendingProposalActions.has(id))return;
     pendingProposalActions.add(id);
-    const controls=$("[data-approve],[data-reject]",chatBody).filter(b=>
+    const controls=$$("[data-approve],[data-reject]",chatBody).filter(b=>
       b.dataset.approve===id||b.dataset.reject===id);
     controls.forEach(b=>b.disabled=true);
     try{
@@ -993,8 +993,11 @@ function renderChat(){
     }catch(e){notify(e.message);controls.forEach(b=>{if(b.isConnected)b.disabled=false})}
     finally{pendingProposalActions.delete(id)}
   }
-  $("[data-approve]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.approve,"commit"));
-  $("[data-reject]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.reject,"reject"));
+  $$("[data-approve]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.approve,"commit"));
+  $$("[data-reject]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.reject,"reject"));
+  $("[data-approve],[data-reject]",chatBody).forEach(b=>{
+    if(pendingProposalActions.has(b.dataset.approve||b.dataset.reject))b.disabled=true;
+  });
   if(state.chatBusy){
     chatBody.appendChild(createInteraction("Working…",{pending:true}));
   }
