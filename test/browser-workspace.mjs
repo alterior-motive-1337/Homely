@@ -371,7 +371,7 @@ try {
   });
   await page.reload();
   await page.locator("#chat-open").click();
-  await page.getByText("Saved household chat",{exact:true}).waitFor();
+  await page.locator("#chat-body").getByText("Saved household chat",{exact:true}).waitFor();
   await page.getByRole("button", { name: "Dictate message", exact: true }).click();
   assert.equal(await page.locator("#chat-input").inputValue(), "check the kitchen tap");
   await page.getByRole("button", { name: "Stop listening", exact: true }).click();
@@ -379,10 +379,16 @@ try {
   await page.locator("#chat-close").click();
   await page.locator("#chat-open").click();
   await page.locator("#chat-new").click();
-  await page.getByText("Saved household chat",{exact:true}).waitFor({state:"hidden"});
+  await page.locator("#chat-body").getByText("Saved household chat",{exact:true}).waitFor({state:"hidden"});
   await page.locator("#chat-conversations-toggle").click();
   await page.locator('#chat-history-list .chat-history-item[aria-current="false"]').first().click();
-  await page.getByText("Saved household chat",{exact:true}).waitFor();
+  await page.locator("#chat-body").getByText("Saved household chat",{exact:true}).waitFor();
+  await page.locator("#chat-current-title").click();
+  await page.locator(".chat-title-editor").fill("Kitchen tap inspection");
+  await page.locator(".chat-title-editor").press("Enter");
+  await page.locator("#chat-current-title").filter({hasText:"Kitchen tap inspection"}).waitFor();
+  const renamedChats=await (await page.request.get(base+"/api/agent/conversations")).json();
+  assert.ok(renamedChats.conversations.some(c=>c.title==="Kitchen tap inspection"),"renaming chat persists per household");
   await page.locator("#chat-close").click();
 
   const fresh = await browser.newPage({ viewport: { width: 1366, height: 768 } });
@@ -456,9 +462,9 @@ try {
   await names.setViewportSize({width:1366,height:768});
   await names.locator('[data-view="appliances"]').click();
   await names.locator(".ledger-entry").first().waitFor();
-  assert.equal(await names.locator(".ledger-entry .ledger-details").first().textContent(),"UNKNOWN","missing purchase price adds no dash or empty value");
-  assert.match(await names.locator(".ledger-entry .money").first().textContent(),/R\s*0/,"a recorded zero price must remain visible");
+  assert.equal(await names.locator(".ledger-entry .ledger-details").first().count(),0,"routine or unknown condition should not add noise to the register");
   await names.locator("[data-asset]").first().click();
+  assert.match(await names.locator("#modal .detail").filter({hasText:"Purchase price"}).locator("strong").first().textContent(),/R\s*0/,"zero purchase price remains accessible in record details");
   await names.locator("#modal .row-title.is-overflowing").waitFor();
   assert.equal(await names.locator("#modal .row").filter({has:names.locator(".fade-title")}).first().evaluate(el=>{
     return el.querySelector(".fade-title").getBoundingClientRect().right<=el.querySelector(".row-actions").getBoundingClientRect().left;
