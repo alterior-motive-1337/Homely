@@ -43,6 +43,20 @@ try {
   assert.equal(await page.locator(".metrics").evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(" ").length),await page.locator(".metric").count(),"summary has no unused counter slots");
   assert.equal(await page.locator(".nav-item.active").evaluate(el => getComputedStyle(el).borderBottomWidth),"2px");
   assert.equal(await page.locator(".nav-item.active").evaluate(el => getComputedStyle(el).borderBottomColor), "rgba(0, 0, 0, 0)", "active navigation uses text emphasis rather than an accent line");
+  // Home records must navigate to the issue or repair, not dead-end summaries.
+  assert.ok(await page.locator("[data-home-issue]").count()>0,"Home has issue shortcuts");
+  await page.locator("[data-home-issue]").first().click();
+  await page.locator("#issue-attach").waitFor();
+  await page.locator("#modal-close").click();
+  assert.ok(await page.locator("[data-home-repair]").count()>0,"Home has repair shortcuts");
+  await page.locator("[data-home-repair]").first().click();
+  await page.locator("#repair-attach").waitFor();
+  await page.locator("#modal-close").click();
+  if(await page.locator("[data-home-asset]").count()){
+    await page.locator("[data-home-asset]").first().click();
+    await page.locator("#edit-asset").waitFor();
+    await page.locator("#modal-close").click();
+  }
   await page.locator("#assistant-expand").click();
   assert.ok(await page.locator("#chat-rail").evaluate(el=>el.getBoundingClientRect().width>1200),"expanded chat must fill the desktop workspace");
   await page.locator("#assistant-expand").click();
@@ -134,6 +148,18 @@ try {
   await page.locator('[data-status="all"]').click();
   await page.locator("#record-search").fill("Camera 4");
   assert.equal(await page.locator(".ledger-entry:visible").count(), 1);
+  // Automatic refresh retains view-local search and filter controls.
+  const refreshedIssues=page.waitForResponse(response=>new URL(response.url()).pathname==="/api/issues"&&response.request().method()==="GET");
+  await page.evaluate(()=>{
+    document.activeElement?.blur();
+    const original=Date.now;
+    Date.now=()=>original()+90_000;
+    window.dispatchEvent(new Event("focus"));
+    Date.now=original;
+  });
+  await refreshedIssues;
+  await page.waitForFunction(()=>document.querySelector("#record-search")?.value==="Camera 4" &&
+    document.querySelector(".quick-search .search-toggle")?.getAttribute("aria-expanded")==="true");
   const fetches = issueFetches;
   await go("appliances");
   assert.equal(await placement(".register-tools .search-toggle","#new-asset"),true,"asset search icon and action must share a row");
@@ -622,6 +648,19 @@ try {
   assert.equal(await android.locator("#chat-rail").getAttribute("aria-hidden"),"false","Desktop retains docked chat");
   if(process.env.TEST_SCREENSHOT_DIR)await android.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/android-desktop-parity.png"});
   await mobileContext.close();
+  // Slow AI approvals disable both action controls and issue one commit request.
+  let commitRequests=0,releaseProposal;
+  const holdProposal=new Promise(resolve=>releaseProposal=resolve);
+  await markdown.route("**/api/transactions/markdown-proposal/commit",async route=>{
+    commitRequests++;await holdProposal;await route.fulfill({json:{ok:true}});
+  });
+  await markdown.locator('[data-approve="markdown-proposal"]').click();
+  assert.equal(await markdown.locator('[data-approve="markdown-proposal"]').isDisabled(),true);
+  assert.equal(await markdown.locator('[data-reject="markdown-proposal"]').isDisabled(),true);
+  releaseProposal();
+  await markdown.getByText("Approved and committed.",{exact:true}).waitFor();
+  assert.equal(commitRequests,1,"approval must issue one commit request");
+  await markdown.unroute("**/api/transactions/markdown-proposal/commit");
   // The test link creates and opens a persistent private sample home.
   const sampleContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
   const sample=await sampleContext.newPage();
