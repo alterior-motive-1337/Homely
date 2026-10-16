@@ -1864,6 +1864,8 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   border-radius:10px!important;
   transition:background-color .12s ease,border-color .12s ease;
 }
+.ledger-entry[hidden]{display:none!important}
+.file-grid > button.file-card[hidden]{display:none!important}
 .ledger-entry:hover,.ledger-entry:focus-within{
   border-color:#55555c!important;
   background:#1b1b1e!important;
