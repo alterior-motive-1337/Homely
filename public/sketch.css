@@ -1813,10 +1813,19 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
    Keep register/tool semantics and the established narrow-screen interaction model. */
 :root{
   --homely-record-width:1080px;
-  --homely-card-border:#303034;
-  --homely-copy:#f0f0f2;
-  --homely-secondary:#a3a3ab;
-  --homely-row-bg:#151516;
+  --homely-card-border:#35353b;
+  --homely-copy:#f2f2f4;
+  --homely-secondary:#adadb5;
+  --homely-row-bg:#161618;
+  --ui-canvas:#101011;
+  --ui-surface:#18181a;
+  --ui-surface-raised:#202023;
+  --ui-field:#141416;
+  --ui-border:#38383f;
+  --ui-border-hover:#66666e;
+  --ui-focus:#ececf0;
+  --ui-radius:10px;
+  --ui-muted:#b1b1ba;
 }
 .content{
   width:100%;
