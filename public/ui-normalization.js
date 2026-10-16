@@ -30,7 +30,7 @@ export function calendarDate(value){
   if(value==null||value==="")return null;
   if(value instanceof Date)return Number.isFinite(value.getTime())?value:null;
   if(typeof value==="string"){
-    const match=/^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(value.trim());
+    const match=/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(value.trim());
     if(match){
       const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
       const result=new Date(year,month-1,day);
