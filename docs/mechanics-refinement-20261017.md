@@ -4,7 +4,7 @@ This pass reviews functionality rather than adding interface chrome. The same fi
 
 ## Confirmed defects and corrections
 
-1. **Home summaries were dead ends:** the issue/maintenance/repair rows displayed information but had no handler (the old `data-home-asset` click binding was unused). Render them as accessible, keyboard/touch actionable rows that open the original issue, asset or repair. Preserve section-level View all links.
+1. **Home summaries were dead ends:** the issue/maintenance/repair rows displayed information but had no handler (the old `data-home-asset` click binding was unused). Render them as accessible, keyboard/touch actionable rows that open the original issue, repair, or a dedicated maintenance detail with due date, linked asset and a transaction-previewed completion action. Preserve section-level View all links.
 2. **Automatic revalidation destroyed UI context:** a 45-second refresh replaced the DOM, clearing issue status filters, query text, expanded local search and selected evidence. Capture and restore these view-local values after a successful refresh; do not restore after the user changed tabs while the request was in flight.
 3. **Asset load failure stranded the modal:** the catch path only displayed a toast, leaving the `Opening asset…` dialog indefinitely. Use the standard pending-generation close/error path.
 4. **Upload cancellation did not cancel transmission:** closing a file form allowed staged chunks to continue uploading. Use an AbortController for start/chunk/finish, skip subsequent chunks on discard, and guard against duplicate submissions. Backend staged-upload expiration remains separate.
