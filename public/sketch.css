@@ -1730,3 +1730,40 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
 .file-grid > button.file-card[aria-pressed="false"]{
   border:1px solid #3e3e43!important;
 }
+
+/* Coarse-pointer parity: keep the existing desktop density, but make Android
+   fields readable at the system font scale and controls operable by touch. */
+@media (max-width:959px) and (pointer:coarse){
+  .field input,.field textarea,.field select,
+  .quick-search .search,.chat-form textarea,
+  .settings-content input,.settings-content select,
+  .chat-form #chat-input{
+    font-size:16px!important;
+  }
+  .account-menu .button,.sidebar-footer #alerts-trigger,
+  .chat-head .chat-toolbar .icon-button,
+  #modal-close,#viewer-close{
+    width:44px!important;min-width:44px!important;
+    height:44px!important;min-height:44px!important;
+    display:inline-grid;place-items:center;
+  }
+  .nav-item{min-height:44px!important}
+  .sidebar-footer{gap:3px!important}
+  .chat-head{height:52px!important;min-height:52px!important}
+  .chat-rail{grid-template-rows:52px minmax(0,1fr) auto!important}
+  .chat-history-panel{top:52px!important}
+  .modal,.viewer{max-height:calc(100dvh - 20px);overscroll-behavior:contain}
+  .modal{padding-bottom:max(22px,env(safe-area-inset-bottom))}
+  .chat-fab{
+    bottom:max(18px,env(safe-area-inset-bottom))!important;
+    right:max(16px,env(safe-area-inset-right))!important;
+    min-height:44px!important;
+  }
+}
+@media (max-width:959px){
+  .chat-rail.open{
+    height:var(--homely-visual-height,100dvh)!important;
+    top:var(--homely-visual-top,0px)!important;
+    bottom:auto!important;
+  }
+}
