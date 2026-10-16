@@ -624,11 +624,10 @@ try {
   const sampleAssets=await sample.evaluate(async()=>await(await fetch("/api/assets")).json());
   assert.equal(sampleAssets.length,9);
   await sample.locator('[data-view="appliances"]').click();
-  await sample.locator(".badge.GOOD").first().waitFor();
-  const stateColours=await sample.locator(".badge:is(.GOOD,.FAIR,.FAILED,.UNKNOWN)").evaluateAll(nodes=>Object.fromEntries(nodes.map(el=>[el.textContent,getComputedStyle(el).color])));
-  assert.equal(stateColours.GOOD,stateColours.UNKNOWN,"routine conditions use neutral text");
-  assert.equal(stateColours.FAIR,stateColours.GOOD,"fair condition is not an alarm");
-  assert.notEqual(stateColours.FAILED,stateColours.GOOD,"failed condition must be emphasized");
+  await sample.locator(".badge.FAILED").first().waitFor();
+  assert.equal(await sample.locator(".ledger-entry .badge.GOOD,.ledger-entry .badge.UNKNOWN").count(),0,"routine and unknown conditions do not clutter asset rows");
+  const stateColours=await sample.locator(".badge:is(.FAIR,.FAILED)").evaluateAll(nodes=>Object.fromEntries(nodes.map(el=>[el.textContent,getComputedStyle(el).color])));
+  assert.notEqual(stateColours.FAILED,stateColours.FAIR,"failed condition must be emphasized against fair condition");
   if(process.env.TEST_SCREENSHOT_DIR)await sample.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/sample-states-mobile.png"});
   await sample.locator('[data-view="files"]').click();
   const touchFile=sample.locator(".file-card").filter({hasText:"Washing machine warranty.txt"});
