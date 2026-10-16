@@ -1122,16 +1122,44 @@ $("#assistant-collapse").onclick=()=>closeChat();
 $("#assistant-expand").onclick=()=>{workspaceLayout.assistant.expanded=!workspaceLayout.assistant.expanded;workspaceLayout.assistant.collapsed=false;saveWorkspaceLayout();syncAssistantAccessibility()};
 bindPanelResize({name:"assistant",container:$("#app-shell"),panel:chatRail,handle:$("#assistant-resizer"),variable:"--assistant-width",min:280,max:640,mainMin:480,breakpoint:960});
 $("#chat-backdrop").onclick=()=>closeChat();
+// Preserve view-local controls when a background refresh replaces the DOM.
+function captureViewState(){
+  const search=content.querySelector(".quick-search input");
+  const toggle=content.querySelector(".search-toggle");
+  const selected=content.querySelector(".file-card[aria-pressed='true']");
+  const filter=content.querySelector(".register-filters [data-status][aria-pressed='true']");
+  return {
+    searchOpen:toggle?.getAttribute("aria-expanded")==="true",
+    query:search?.value||"",
+    status:filter?.dataset.status||"all",
+    selectedFile:selected?.dataset.file||null
+  };
+}
+function restoreViewState(saved){
+  if(!saved)return;
+  const toggle=content.querySelector(".search-toggle"),input=content.querySelector(".quick-search input");
+  if(saved.searchOpen&&toggle&&toggle.getAttribute("aria-expanded")!=="true")toggle.click();
+  if(input&&saved.query){input.value=saved.query;input.dispatchEvent(new Event("input",{bubbles:true}))}
+  if(saved.status!=="all")content.querySelector('.register-filters [data-status="'+saved.status+'"]')?.click();
+  if(saved.selectedFile){
+    const entry=Array.from(content.querySelectorAll(".file-card")).find(el=>el.dataset.file===saved.selectedFile&&!el.hidden);
+    entry?.click();
+  }
+}
 async function refreshVisibleView(force=false){
   if(!state.ready||document.hidden||state.viewRefreshPending||state.chatBusy||modal.open||viewer.open)return;
   if(!force&&Date.now()-state.viewLoadedAt<ACTIVE_REFRESH_MS)return;
   const focused=document.activeElement;
   if(focused&&content.contains(focused)&&focused.matches("input,select,textarea,[contenteditable],button"))return;
   const current=state.view,revision=++state.viewRevision;
+  const saved=captureViewState();
   state.viewRefreshPending=true;state.silentRefresh=true;
   try{
     await views[current][1]();
-    if(state.view===current&&state.viewRevision===revision)state.viewLoadedAt=Date.now();
+    if(state.view===current&&state.viewRevision===revision){
+      restoreViewState(saved);
+      state.viewLoadedAt=Date.now();
+    }
   }finally{state.silentRefresh=false;state.viewRefreshPending=false}
 }
 window.addEventListener("focus",()=>void refreshVisibleView());
