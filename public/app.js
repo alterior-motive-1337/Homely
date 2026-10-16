@@ -1,7 +1,7 @@
 import { createInteraction, createReview } from "./interactions.js";
 import { watchFadingTitles } from "./fading.js";
 import { normalizeCurrency, formatMinorAmount, majorToMinorAmount, minorToMajorAmount, localDateInput,
-  normalizeStatus, statusLabel, statusTone, matchesSearch, countLabel, matchesStatusFilter } from "./ui-normalization.js";
+  normalizeStatus, statusLabel, statusTone, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -58,8 +58,11 @@ function bindPanelResize({name,container,panel,handle,variable,min,max,mainMin,b
 }
 
 function esc(v){return String(v==null?"":v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
-function fmtDate(v){return v?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(v)):"—"}
-function assetAge(a){const value=a.acquired_at||a.purchase_date;if(!value)return"Unknown";const date=new Date(value),now=new Date();if(!Number.isFinite(date.getTime()))return"Unknown";let months=(now.getFullYear()-date.getFullYear())*12+now.getMonth()-date.getMonth();if(now.getDate()<date.getDate())months-=1;if(months<0)return"Not yet acquired";const years=Math.floor(months/12);return years?years+"y "+months%12+"m":months+"m"}
+function fmtDate(v){
+  const date=calendarDate(v);
+  return date?new Intl.DateTimeFormat("en-ZA",{day:"2-digit",month:"short",year:"numeric"}).format(date):"—";
+}
+function assetAge(a){const value=a.acquired_at||a.purchase_date;if(!value)return"Unknown";const date=calendarDate(value),now=new Date();if(!date)return"Unknown";let months=(now.getFullYear()-date.getFullYear())*12+now.getMonth()-date.getMonth();if(now.getDate()<date.getDate())months-=1;if(months<0)return"Not yet acquired";const years=Math.floor(months/12);return years?years+"y "+months%12+"m":months+"m"}
 function money(c){return formatMinorAmount(c,state.currency)}
 function amountToCents(v){return majorToMinorAmount(v,state.currency)}
 function centsToAmount(v){return minorToMajorAmount(v,state.currency)}
@@ -78,7 +81,13 @@ async function api(path,options){
   if(!res.ok)throw new Error(data&&data.error?data.error:"Request failed: "+res.status);
   return data
 }
-function notify(message){toast.textContent=message;toast.classList.add("show");setTimeout(function(){toast.classList.remove("show")},2400)}
+let toastTimeout;
+function notify(message){
+  clearTimeout(toastTimeout);
+  toast.textContent=message;
+  toast.classList.add("show");
+  toastTimeout=setTimeout(()=>toast.classList.remove("show"),3000);
+}
 function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="loading">'+esc(label||"Loading…")+"</div>"}
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
 function badge(v){
