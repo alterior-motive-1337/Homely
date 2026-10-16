@@ -2179,3 +2179,190 @@ button:disabled,.button:disabled,.primary-button:disabled{opacity:.55;cursor:not
   }
   .ledger-entry .ledger-details{max-width:min(43vw,170px)}
 }
+
+/* Dialogs, details, settings and viewer: one elevation and spacing model. */
+.modal,.viewer{
+  border:1px solid #494951!important;
+  border-radius:15px!important;
+  background:var(--ui-surface)!important;
+  color:var(--homely-copy)!important;
+}
+.modal::backdrop,.viewer::backdrop{
+  background:rgba(0,0,0,.76)!important;
+  backdrop-filter:blur(2px);
+}
+.modal{
+  width:min(760px,calc(100vw - 32px))!important;
+  max-height:calc(100dvh - 36px)!important;
+  padding:28px 30px!important;
+  overflow-x:hidden;overflow-y:auto;
+  scrollbar-gutter:stable;
+}
+#modal:has(.settings-content){width:min(820px,calc(100vw - 32px))!important}
+.modal #modal-body{min-width:0}
+.modal #modal-body>h2,.modal #modal-body>.settings-content>h2{
+  color:#f5f5f7!important;font-size:21px!important;
+  font-weight:650!important;line-height:1.32!important;
+  letter-spacing:-.025em;
+  margin:0 48px 19px 0!important;padding:0!important;
+  overflow-wrap:anywhere;
+}
+.modal .eyebrow{color:#a8a8b1!important;font-size:11px}
+.modal .modal-close,.modal:has(#modal-body>.card-head) .modal-close{
+  position:sticky!important;float:right!important;
+  top:0!important;right:auto!important;
+  margin:-5px -5px 0 10px!important;
+  width:40px!important;min-width:40px!important;
+  height:40px!important;min-height:40px!important;
+  padding:9px!important;border:0!important;
+  border-radius:9px!important;
+  background:#27272a!important;color:#dedee3!important;
+  z-index:4;
+}
+.modal .modal-close:hover{background:#37373c!important;color:#fff!important}
+.modal #modal-body>.card-head{
+  padding:0 0 13px!important;
+  min-height:44px!important;align-items:center!important;
+  gap:14px!important;
+}
+.modal #modal-body>.card-head h2{font-size:19px!important;line-height:1.35}
+.modal #modal-body>.card-head .button{white-space:nowrap}
+.modal .form{gap:18px!important}
+.modal .form-grid{gap:16px 14px!important}
+.modal .field{gap:7px!important;min-width:0}
+.modal .field label{
+  color:#c4c4cb!important;
+  font-size:12px!important;font-weight:560!important;
+  letter-spacing:0!important;text-transform:none!important;
+}
+.modal .field input,.modal .field select,.modal .field textarea,
+.settings-content input,.settings-content select{
+  width:100%;min-width:0;min-height:44px!important;
+  border:1px solid var(--ui-border)!important;border-radius:9px!important;
+  background:var(--ui-field)!important;color:#f2f2f4!important;
+  padding:10px 12px!important;font-size:14px!important;
+  line-height:1.45!important;
+}
+.modal .field textarea{min-height:106px!important;resize:vertical}
+.modal .field input:focus,.modal .field select:focus,.modal .field textarea:focus{
+  border-color:#9898a1!important;
+}
+.modal .field input::placeholder,.modal .field textarea::placeholder{color:#92929b!important}
+.modal .form-actions,.modal #modal-body>.form-actions,
+.settings-content .form-actions{
+  position:static!important;bottom:auto!important;
+  display:flex;flex-wrap:wrap;justify-content:flex-end;
+  min-height:0;border:0!important;box-shadow:none!important;
+  background:transparent!important;
+  margin:20px 0 0!important;padding:0!important;
+  gap:9px!important;
+}
+.modal .form-actions .button,.modal .form-actions .primary-button{
+  min-height:42px!important;border-radius:9px!important;
+  padding:10px 16px!important;font-size:13px!important;
+}
+.modal .detail-grid{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:2px 24px!important;
+  margin:18px 0!important;padding:0!important;
+}
+.modal .detail{
+  min-width:0;padding:11px 0!important;
+  border:0!important;background:transparent!important;
+}
+.modal .detail span{
+  color:#a7a7b0!important;font-size:11px!important;
+  line-height:1.4;letter-spacing:0!important;text-transform:none!important;
+}
+.modal .detail strong{
+  display:block;margin-top:4px;
+  font-size:14px!important;font-weight:575!important;
+  line-height:1.5!important;overflow-wrap:anywhere;
+}
+.modal .detail-section{margin-top:22px!important}
+.modal .detail-section h3{
+  margin-bottom:9px!important;font-size:13px!important;
+  font-weight:650!important;color:#d4d4da!important;
+}
+.modal .detail-section .row{
+  min-height:52px;padding:10px 0!important;
+  border:0!important;border-bottom:1px solid #303036!important;
+  border-radius:0!important;
+}
+.modal .detail-section .row:last-child{border-bottom:0!important}
+.modal .row-meta,.modal .row-note{color:var(--ui-muted)!important}
+.modal .row-title{color:#ebebef!important}
+.modal .hero-actions{flex-wrap:wrap;gap:11px!important}
+.modal .preview,.modal #action-review{
+  min-width:0;border-radius:10px;
+}
+.modal #action-review .message{max-width:100%!important}
+.settings-content>.row-meta{margin-bottom:18px!important}
+.settings-content>.detail-section{
+  margin-top:0!important;
+  padding:19px 0!important;
+  border-top:1px solid #333339;
+}
+.settings-content>.detail-section:last-child{padding-bottom:0!important}
+.settings-content>.detail-section h3{
+  color:#e3e3e7!important;font-size:13px!important;margin:0 0 12px!important;
+}
+.settings-content #rename-home-form,
+.settings-content #invite-home-form{align-items:end}
+.settings-content #invite-result input[readonly]{user-select:all}
+#delete-account{border-color:#777780!important}
+.viewer{
+  width:min(1160px,calc(100vw - 30px))!important;
+  max-height:calc(100dvh - 30px)!important;
+}
+.viewer-head{
+  min-height:60px!important;height:60px!important;
+  padding:11px 18px!important;background:#1b1b1d!important;
+  border-bottom:1px solid #38383e!important;gap:14px;
+}
+.viewer-head #viewer-title{
+  min-width:0;font-size:14px;font-weight:620;
+  color:#f2f2f4;
+}
+.viewer-controls{gap:9px!important}
+.viewer-controls #viewer-close{
+  min-width:40px!important;width:40px!important;
+  min-height:40px!important;height:40px!important;
+  border-radius:9px!important;
+}
+.viewer-controls #viewer-close:hover{background:#303035}
+.viewer-body{background:#0e0e10!important}
+.viewer-body .viewer-text{
+  color:#e7e7ea!important;font-size:13px!important;
+  line-height:1.65!important;overflow-wrap:anywhere;
+}
+.viewer-body .viewer-link{color:#e6e6eb!important}
+.viewer-insight{background:#1c1c20!important;border-top:1px solid #4a4a50!important}
+@media(max-width:700px){
+  .modal,#modal:has(.settings-content){
+    width:calc(100vw - 16px)!important;
+    max-height:calc(100dvh - 16px)!important;
+    padding:18px 17px max(24px,env(safe-area-inset-bottom))!important;
+    border-radius:12px!important;
+  }
+  .modal #modal-body>h2,.modal #modal-body>.settings-content>h2{
+    font-size:19px!important;margin-right:44px!important;
+  }
+  .modal .modal-close,.modal:has(#modal-body>.card-head) .modal-close{
+    width:44px!important;height:44px!important;
+    min-width:44px!important;min-height:44px!important;
+    margin:-6px -3px 0 8px!important;
+  }
+  .modal .form-grid{grid-template-columns:minmax(0,1fr)!important;gap:14px!important}
+  .modal .field.full{grid-column:1!important}
+  .modal .field input,.modal .field select,.modal .field textarea,
+  .settings-content input,.settings-content select{font-size:16px!important}
+  .modal .detail-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:4px 13px!important}
+  .modal .form-actions{gap:7px!important}
+  .modal .form-actions button{flex:0 1 auto}
+  .viewer{width:calc(100vw - 12px)!important;max-height:calc(100dvh - 12px)!important}
+  .viewer-head{padding:10px 12px!important}
+  .viewer-head #viewer-title{font-size:13px}
+  .viewer-body .viewer-text{font-size:13px!important;line-height:1.6!important}
+}
