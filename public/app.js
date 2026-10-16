@@ -285,6 +285,7 @@ function bindCollectionSearch({items,entrySelector,searchId,countId,container,
   textFor,isOpen=null,unit="entry",plural=unit==="entry"?"entries":unit+"s",emptyMessage="No matching records",onUpdate}){
   const search=$("#"+searchId,content),counter=$("#"+countId,content),entries=$$(entrySelector,content);
   if(!search||!counter||entries.length!==items.length)return;
+  if(!items.length)return;
   const empty=document.createElement("div");empty.className="search-empty";empty.hidden=true;
   const emptyLabel=document.createElement("strong");emptyLabel.textContent=emptyMessage;empty.append(emptyLabel);
   container.append(empty);
@@ -683,7 +684,9 @@ async function openAsset(id){
   try{
     const a=await api("/api/assets/"+encodeURIComponent(id));
     if(!modalPending(pending))return;
-    let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(a.condition||"UNKNOWN")+badge(a.health)+'</div><div class="detail-grid">';
+    const health=normalizeStatus(a.health),condition=normalizeStatus(a.condition);
+    const healthLabel=a.health&&health!=="UNKNOWN"&&health!==condition?badge(a.health):"";
+    let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(a.condition||"UNKNOWN")+healthLabel+'</div><div class="detail-grid">';
     [["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Age",assetAge(a)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]].forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
     html+="</div>";if(a.notes)html+='<div class="detail-section"><h3>Notes</h3><div class="row-note">'+esc(a.notes)+"</div></div>";
     html+='<div class="detail-section"><h3>Issues</h3><div class="rows">'+(a.issues.map(function(i){return row(i.title,fmtDate(i.detected_at)+" · "+i.severity,badge(i.status),i.description||"")}).join("")||'<div class="empty">No issues.</div>')+"</div></div>";
@@ -1075,7 +1078,14 @@ async function selectView(view){
   viewPanels.delete(next);state.viewLoadedAt=Date.now();
   await views[next][1]();
 }
-function navigate(view,replace){view=normalizeView(view);const url=view==="home"?"/":"/?view="+encodeURIComponent(view);if(replace)history.replaceState({view:view},"",url);else history.pushState({view:view},"",url);void selectView(view)}
+function navigate(view,replace){
+  view=normalizeView(view);
+  if(!replace&&view===state.view&&!history.state?.homelyChat)return;
+  const url=view==="home"?"/":"/?view="+encodeURIComponent(view);
+  if(replace)history.replaceState({view},"",url);
+  else history.pushState({view},"",url);
+  void selectView(view);
+}
 nav.onclick=function(e){const b=e.target.closest("[data-view]");if(b)navigate(b.dataset.view,false)};
 window.onpopstate=function(){
   const next=normalizeView(new URLSearchParams(location.search).get("view")||"home");
