@@ -1021,6 +1021,22 @@ window.onpopstate=function(){
   }
   if(next!==state.view)void selectView(next);
 };
+// Android's keyboard can shrink only the visual viewport; 100dvh alone may
+// leave the composer below the keyboard. This does not affect desktop docking.
+function syncMobileChatViewport(){
+  if(window.matchMedia("(min-width: 960px)").matches||!chatRail.classList.contains("open")){
+    chatRail.style.removeProperty("--homely-visual-height");
+    chatRail.style.removeProperty("--homely-visual-top");
+    return;
+  }
+  const viewport=window.visualViewport;
+  if(!viewport)return;
+  chatRail.style.setProperty("--homely-visual-height",Math.max(200,Math.round(viewport.height))+"px");
+  chatRail.style.setProperty("--homely-visual-top",Math.round(viewport.offsetTop)+"px");
+}
+window.visualViewport?.addEventListener("resize",syncMobileChatViewport);
+window.visualViewport?.addEventListener("scroll",syncMobileChatViewport);
+window.addEventListener("resize",syncMobileChatViewport);
 function syncAssistantAccessibility(){
   const docked=window.matchMedia("(min-width: 960px)").matches;
   const visible=docked?!workspaceLayout.assistant.collapsed:chatRail.classList.contains("open");
@@ -1030,6 +1046,7 @@ function syncAssistantAccessibility(){
   $("#assistant-expand").setAttribute("aria-label",workspaceLayout.assistant.expanded?"Restore chat width":"Expand chat");
   $("#assistant-expand").title=workspaceLayout.assistant.expanded?"Restore chat width":"Expand chat";
   chatRail.setAttribute("aria-hidden",String(!visible));chatRail.inert=!visible;
+  syncMobileChatViewport();
   const modalAssistant=!docked&&visible;
   $(".workspace").inert=modalAssistant;$(".sidebar").inert=modalAssistant;
   chatRail.setAttribute("role",modalAssistant?"dialog":"complementary");
