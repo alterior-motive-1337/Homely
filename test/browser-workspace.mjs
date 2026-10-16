@@ -39,6 +39,8 @@ try {
   }),true,"overview metrics must be centered in the workspace");
   assert.equal(await page.locator(".metrics").evaluate(el => getComputedStyle(el).borderTopWidth),"0px","overview metrics should have no enclosing border");
   assert.equal(await page.locator(".metric").first().evaluate(el => getComputedStyle(el).borderRightWidth),"0px","metrics should not be separated by visible dividers");
+  assert.equal(await page.locator(".metrics").evaluate(el=>el.classList.contains("metrics-"+el.children.length)),true,"summary columns match the number of visible metrics");
+  assert.equal(await page.locator(".metrics").evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(" ").length),await page.locator(".metric").count(),"summary has no unused counter slots");
   assert.equal(await page.locator(".nav-item.active").evaluate(el => getComputedStyle(el).borderBottomWidth),"2px");
   assert.equal(await page.locator(".nav-item.active").evaluate(el => getComputedStyle(el).borderBottomColor), "rgba(0, 0, 0, 0)", "active navigation uses text emphasis rather than an accent line");
   await page.locator("#assistant-expand").click();
@@ -122,6 +124,10 @@ try {
   assert.equal(await page.locator(".ledger-toolbar,.ledger-columns,.ledger-index").count(),0,"records must not have table headings, indexes or second toolbars");
   assert.equal(await page.locator(".ledger-rows [role=listitem]").count(),await page.locator(".ledger-entry").count(),"records should be represented as a simple list");
   const total = await page.locator(".ledger-entry").count();
+  assert.ok(await page.locator(".ledger-entry .ledger-details").first().evaluate(details=>{
+    const row=details.closest(".ledger-entry").getBoundingClientRect(),rect=details.getBoundingClientRect();
+    return rect.right>=row.right-36 && rect.left>row.left+row.width*.46;
+  }),"record status aligns to the trailing edge rather than a middle column");
   assert.equal(await page.locator(".ledger").evaluate(el => getComputedStyle(el).borderTopWidth),"0px","registers should not be boxed in");
   await page.locator('[data-status="resolved"]').click();
   assert.ok(await page.locator(".ledger-entry:visible").count() < total);
@@ -177,6 +183,10 @@ try {
   await page.locator("#record-search").fill("");
 
   await go("files");
+  assert.ok(await page.locator(".file-grid").evaluate(grid=>{
+    const box=grid.getBoundingClientRect(),view=document.querySelector(".workspace").getBoundingClientRect();
+    return box.width<=1088 && Math.abs((box.left+box.right)/2-(view.left+view.right)/2)<24;
+  }),"file records follow the same centered content alignment");
   assert.equal(await placement(".file-controls .search-toggle","#upload-file"),true,"file search icon and upload must share a row");
   assert.equal(await page.locator(".file-browser .ledger-toolbar,.file-inspector>.ledger-overline").count(),0,"file browser needs no secondary labels");
   assert.equal(await page.locator(".file-grid").evaluate(el=>getComputedStyle(el).flexDirection),"column","files should use a vertical list rather than tiles");
