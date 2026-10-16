@@ -330,7 +330,12 @@ async function refreshStatus(){
 }
 
 let modalGeneration=0;
+let activeUploadController=null;
+function cancelPendingUpload(){
+  if(activeUploadController){activeUploadController.abort();activeUploadController=null}
+}
 function openModal(html){
+  cancelPendingUpload();
   modalGeneration++;
   modalBody.innerHTML=html;
   modalBody.querySelectorAll(".field").forEach(function(field,index){
@@ -341,6 +346,7 @@ function openModal(html){
   return modalGeneration;
 }
 function closeModal(){
+  cancelPendingUpload();
   modalGeneration++;
   if(modal.open)modal.close();
   modalBody.innerHTML="";
@@ -861,21 +867,26 @@ async function openUploadEvidenceForm(defaults){
     if(!file)return notify("Select a file.");
     if(!file.size||file.size>50_000_000)return notify("Select a file of 50 MB or less.");
 
+    if(activeUploadController)return;
     const submit=$('button[type="submit"],button.primary-button',form);
     const uploadGeneration=modalGeneration;
+    const controller=new AbortController();
+    activeUploadController=controller;
     if(submit)submit.disabled=true;
     try{
-      const staged=await api("/api/uploads/start",{method:"POST",body:{name:file.name,mimeType:file.type||"application/octet-stream",size:file.size}});
+      const staged=await api("/api/uploads/start",{method:"POST",signal:controller.signal,body:{name:file.name,mimeType:file.type||"application/octet-stream",size:file.size}});
       const total=Math.ceil(file.size/staged.chunkSize);
       for(let index=0;index<total;index++){
+        if(controller.signal.aborted||!modalPending(uploadGeneration))return;
         const chunk=file.slice(index*staged.chunkSize,Math.min(file.size,(index+1)*staged.chunkSize));
         await api("/api/uploads/"+encodeURIComponent(staged.id)+"/chunks/"+index,
-          {method:"PUT",headers:{"content-type":"application/octet-stream"},body:chunk});
+          {method:"PUT",signal:controller.signal,headers:{"content-type":"application/octet-stream"},body:chunk});
         if(submit)submit.textContent="Uploading "+Math.round((index+1)/total*100)+"%";
       }
-      await api("/api/uploads/"+encodeURIComponent(staged.id)+"/finish",{method:"POST"});
+      await api("/api/uploads/"+encodeURIComponent(staged.id)+"/finish",{method:"POST",signal:controller.signal});
       if(!modalPending(uploadGeneration))return;
       if(submit){submit.disabled=false;submit.textContent="Preview attachment"}
+      activeUploadController=null;
       await previewAction("ATTACH_DOCUMENT",{
         assetId:data.get("assetId")||null,issueId:data.get("issueId")||null,
         repairId:data.get("repairId")||null,chargeId:data.get("chargeId")||null,
@@ -886,8 +897,11 @@ async function openUploadEvidenceForm(defaults){
         provenance:data.get("provenance"),occurredAt:data.get("occurredAt"),
         evidenceReason:data.get("evidenceReason"),evidenceStatus:data.get("evidenceStatus")
       },"Homeowner attached a file as household evidence.");
-    }catch(err){if(modalPending(uploadGeneration))notify(err.message)}
-    finally{if(submit?.isConnected){submit.disabled=false;submit.textContent="Preview attachment"}}
+    }catch(err){if(!controller.signal.aborted&&modalPending(uploadGeneration))notify(err.message)}
+    finally{
+      if(activeUploadController===controller)activeUploadController=null;
+      if(submit?.isConnected){submit.disabled=false;submit.textContent="Preview attachment"}
+    }
   };
 }
 
