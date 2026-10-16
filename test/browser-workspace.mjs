@@ -417,7 +417,7 @@ try {
   const names=await browser.newPage({viewport:{width:1366,height:768}});
   names.on("pageerror",error=>errors.push(String(error)));
   const longName="Household_receipt_"+"equipment_reference_".repeat(12)+"2026.pdf";
-  let longDocument;
+  let longDocument,zeroCostAssetId;
   await names.route("**/api/documents",async route=>{
     const response=await route.fetch(),docs=await response.json();
     longDocument={...docs[0],title:longName,mime_type:"text/plain",provider:"LOCAL",local_path:"/api/files/fade-test",web_view_link:null,source_url:null};
@@ -428,12 +428,12 @@ try {
   await names.route("**/api/assets",async route=>{
     const response=await route.fetch(),assets=await response.json();
     assets[0]={...assets[0],name:longName.slice(0,180),condition:"UNKNOWN",purchase_cost_cents:null};
-    if(assets[1])assets[1]={...assets[1],purchase_cost_cents:0};
+    if(assets[1]){zeroCostAssetId=assets[1].id;assets[1]={...assets[1],purchase_cost_cents:0};}
     await route.fulfill({response,json:assets});
   });
   await names.route("**/api/assets/*",async route=>{
     const response=await route.fetch(),asset=await response.json();
-    await route.fulfill({response,json:{...asset,documents:[longDocument]}});
+    await route.fulfill({response,json:{...asset,purchase_cost_cents:asset.id===zeroCostAssetId?0:asset.purchase_cost_cents,documents:[longDocument]}});
   });
   await names.goto(base);
   await names.locator('[data-view="files"]').click();
@@ -464,7 +464,6 @@ try {
   await names.locator(".ledger-entry").first().waitFor();
   assert.equal(await names.locator(".ledger-entry .ledger-details").first().count(),0,"routine or unknown condition should not add noise to the register");
   await names.locator("[data-asset]").first().click();
-  assert.match(await names.locator("#modal .detail").filter({hasText:"Purchase price"}).locator("strong").first().textContent(),/R\s*0/,"zero purchase price remains accessible in record details");
   await names.locator("#modal .row-title.is-overflowing").waitFor();
   assert.equal(await names.locator("#modal .row").filter({has:names.locator(".fade-title")}).first().evaluate(el=>{
     return el.querySelector(".fade-title").getBoundingClientRect().right<=el.querySelector(".row-actions").getBoundingClientRect().left;
@@ -472,6 +471,9 @@ try {
   await names.locator("#modal [data-file]").click();
   await names.locator("#viewer-body .viewer-text").waitFor();
   await names.locator("#viewer-close").click();await names.locator("#modal-close").click();
+  await names.locator("[data-asset]").nth(1).click();
+  assert.match(await names.locator("#modal .detail").filter({hasText:"Purchase price"}).locator("strong").first().textContent(),/R\s*0/,"zero purchase price remains accessible in record details");
+  await names.locator("#modal-close").click();
   assert.equal(await names.locator(".ledger-entry").first().evaluate(el=>getComputedStyle(el).borderTopWidth),"1px","entries have visible borders");
   await names.close();
   // Render saved and new replies using provider-free Markdown fixtures.
