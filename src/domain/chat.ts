@@ -6,15 +6,50 @@ import { DomainError } from "./transactions.js";
 
 type Conversation = { id:string; title:string; createdAt:string; updatedAt:string };
 
+// Titles are generated locally and never require an extra AI request.
+export function chatTitleFromMessage(message:string):string {
+  const clean=message.replace(/```[\s\S]*?```/g," ").replace(/https?:\/\/\S+/g," ")
+    .replace(/[\r\n\t]+/g," ").replace(/[#*_`>\[\]]/g," ").replace(/\s+/g," ").trim()
+    .replace(/^(?:(?:hi|hello|hey)[!,. ]+)?(?:please\s+)?(?:can you|could you|would you|help me(?: to)?|i need you to|tell me(?: about)?|show me)\s+/i,"")
+    .replace(/[.!?\s]+$/,"").trim();
+  if(!clean)return "New chat";
+  const first=clean.split(/(?<=[.!?])\s+/)[0]||clean;
+  if(first.length<=56)return first;
+  const clipped=first.slice(0,56).replace(/\s+\S*$/,"").trim();
+  return clipped.length>=12?clipped:first.slice(0,56).trim();
+}
+
 export function listChatConversations(db:HomelyDatabase,user:AuthUser):{conversations:Conversation[]} {
   const rows=db.prepare("SELECT id,title,created_at,updated_at FROM agent_conversations WHERE home_id=? AND user_id=? ORDER BY updated_at DESC,rowid DESC").all(user.homeId,user.id);
-  return {conversations:rows.map(row=>({id:String(row.id),title:String(row.title),createdAt:String(row.created_at),updatedAt:String(row.updated_at)}))};
+  return {conversations:rows.map(row=>{
+    let title=String(row.title);
+    // Presentation-only repair of old auto-titles and the legacy placeholder.
+    if(title==="Previous chat"||title.length>56){
+      const first=db.prepare("SELECT request_text FROM agent_turns WHERE home_id=? AND user_id=? AND conversation_id=? ORDER BY created_at,rowid LIMIT 1")
+        .get(user.homeId,user.id,String(row.id));
+      const initial=String(first?.request_text??"");
+      if(initial&&(title==="Previous chat"||title===initial.replace(/\s+/g," ").trim().slice(0,72)))
+        title=chatTitleFromMessage(initial);
+    }
+    return {id:String(row.id),title,createdAt:String(row.created_at),updatedAt:String(row.updated_at)};
+  })};
 }
 export function createChatConversation(db:HomelyDatabase,user:AuthUser):Conversation {
   const now=new Date().toISOString(),id=randomUUID();
   db.prepare("INSERT INTO agent_conversations(id,home_id,user_id,title,created_at,updated_at) VALUES(?,?,?,?,?,?)")
     .run(id,user.homeId,user.id,"New chat",now,now);
   return {id,title:"New chat",createdAt:now,updatedAt:now};
+}
+export function renameChatConversation(db:HomelyDatabase,user:AuthUser,conversationId:string,input:unknown):Conversation {
+  if(typeof input!=="string"||!input.trim()||/[\x00-\x1f\x7f]/.test(input)||input.trim().length>60)
+    throw new DomainError("Enter a chat name of 1–60 characters.");
+  const title=input.trim();
+  const existing=db.prepare("SELECT id,created_at,updated_at FROM agent_conversations WHERE id=? AND home_id=? AND user_id=?")
+    .get(conversationId,user.homeId,user.id);
+  if(!existing)throw new DomainError("Conversation not found.",404);
+  db.prepare("UPDATE agent_conversations SET title=? WHERE id=? AND home_id=? AND user_id=?")
+    .run(title,conversationId,user.homeId,user.id);
+  return {id:conversationId,title,createdAt:String(existing.created_at),updatedAt:String(existing.updated_at)};
 }
 export function resolveChatConversation(db:HomelyDatabase,user:AuthUser,conversationId?:string|null):string {
   if(conversationId){
@@ -36,7 +71,7 @@ export function saveChatTurn(db:HomelyDatabase,user:AuthUser,message:string,resp
     db.prepare("INSERT INTO agent_turns(id,home_id,user_id,conversation_id,request_text,reply_text,response_id,proposals_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)")
       .run(randomUUID(),user.homeId,user.id,id,message,response.text,response.responseId,JSON.stringify(response.proposals),now);
     db.prepare("UPDATE agent_conversations SET updated_at=?,title=CASE WHEN title='New chat' THEN ? ELSE title END WHERE id=? AND home_id=? AND user_id=?")
-      .run(now,message.replace(/\s+/g," ").trim().slice(0,72)||"New chat",id,user.homeId,user.id);
+      .run(now,chatTitleFromMessage(message),id,user.homeId,user.id);
     db.exec("COMMIT;");
   }catch(error){db.exec("ROLLBACK;");throw error}
 }

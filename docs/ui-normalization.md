@@ -44,3 +44,12 @@ No migrations, API schema changes, permission changes or altered retention rules
 ## Follow-up work
 
 The large `public/sketch.css` file still contains historical override blocks. A future design-system cleanup should consolidate those **with screenshot-based regression checks**, not add another stylesheet or wholesale delete overrides without testing. The same applies to splitting `public/app.js` into modules: only after the current contracts are covered.
+
+## Chat names and reduced information density (October 2026)
+
+- The narrow/mobile chat launcher is icon-only with an accessible name and a 52 px touch target.
+- The active conversation title is visible in the chat header and directly editable. Renaming is scoped to the signed-in user and household. Initial titles are derived locally from the first user message; historical generated titles receive a presentation-only cleanup.
+- Home shows only nonzero problem metrics and removes the redundant recent-record strip. Other home records remain reachable via their views or history.
+- Registers prioritize title and associated asset; issue urgency, repair cost, and exceptional condition remain visible when useful. Record dates, routine statuses, purchase prices, actions, and related files remain in the open-record detail views.
+- No record or audit data is deleted to simplify the interface. Search and filtering remain supported.
+

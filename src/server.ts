@@ -27,7 +27,7 @@ import { RequestLimiter } from "./security/traffic.js";
 import { streamHomeArchive } from "./domain/exportHome.js";
 import { deleteAccount } from "./domain/deleteAccount.js";
 import { listAlerts, acknowledgeAlert } from "./domain/alerts.js";
-import { chatHistory, clearChat, saveChatTurn, listChatConversations, createChatConversation, resolveChatConversation, belongsToConversation } from "./domain/chat.js";
+import { chatHistory, clearChat, saveChatTurn, listChatConversations, createChatConversation, renameChatConversation, resolveChatConversation, belongsToConversation } from "./domain/chat.js";
 import { acceptInvite, inviteMember, listHouseholds, listInvitations, listMembers, removeMember, renameHome, revokeInvite } from "./domain/households.js";
 import { openSampleHome } from "./domain/sampleHome.js";
 
@@ -204,7 +204,7 @@ export async function startServer(
           else if(url.pathname.includes("/chunks/"))limits.enforce("chunks:"+key,240,60_000);
           else limits.enforce("write:"+key,90,60_000);
         }
-        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept"||url.pathname==="/api/account/delete"||url.pathname==="/api/alerts/acknowledge"||url.pathname==="/api/agent/history"||url.pathname==="/api/agent/conversations";
+        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept"||url.pathname==="/api/account/delete"||url.pathname==="/api/alerts/acknowledge"||url.pathname==="/api/agent/history"||url.pathname.startsWith("/api/agent/conversations");
         if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET") && !selfServe)
           throw new DomainError("Your household membership is read-only.",403);
       }
@@ -294,6 +294,10 @@ export async function startServer(
       if(req.method==="POST"&&url.pathname==="/api/alerts/acknowledge")return sendJson(res,200,acknowledgeAlert(db,auth.requireUser(req),(await readJson(req)).key));
       if(req.method==="GET"&&url.pathname==="/api/agent/conversations")return sendJson(res,200,listChatConversations(db,auth.requireUser(req)),{"cache-control":"no-store"});
        if(req.method==="POST"&&url.pathname==="/api/agent/conversations")return sendJson(res,201,createChatConversation(db,auth.requireUser(req)),{"cache-control":"no-store"});
+       if(req.method==="PATCH"&&url.pathname.startsWith("/api/agent/conversations/")){
+         const id=decodeURIComponent(url.pathname.slice("/api/agent/conversations/".length));
+         return sendJson(res,200,renameChatConversation(db,auth.requireUser(req),id,(await readJson(req)).title),{"cache-control":"no-store"});
+       }
        if(req.method==="GET"&&url.pathname==="/api/agent/history")return sendJson(res,200,chatHistory(db,auth.requireUser(req),url.searchParams.get("conversationId")),{"cache-control":"no-store"});
       if(req.method==="DELETE"&&url.pathname==="/api/agent/history")return sendJson(res,200,clearChat(db,auth.requireUser(req)));
       if (req.method === "GET" && url.pathname === "/api/systems") return sendJson(res, 200, listSystems(db));

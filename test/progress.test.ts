@@ -10,7 +10,7 @@ import { seedDemo } from "../src/seed.js";
 import { runInHome } from "../src/security/homeScope.js";
 import { proposeTransaction,commitTransaction,undoTransaction } from "../src/domain/transactions.js";
 import { listAlerts,acknowledgeAlert } from "../src/domain/alerts.js";
-import { saveChatTurn,chatHistory,clearChat,createChatConversation,listChatConversations,belongsToConversation } from "../src/domain/chat.js";
+import { saveChatTurn,chatHistory,clearChat,createChatConversation,listChatConversations,renameChatConversation,chatTitleFromMessage,belongsToConversation } from "../src/domain/chat.js";
 import { GroqAgentProvider } from "../src/agent/groqProvider.js";
 import { extractDocument,DOCX_MIME } from "../src/evidence/extract.js";
 import { analyzeDocument } from "../src/evidence/analyze.js";
@@ -92,6 +92,15 @@ test("assistant conversations keep separate histories and never leak between ide
     assert.equal(listChatConversations(db,user).conversations.length,2);
     assert.equal(listChatConversations(db,user).conversations[0]?.title,"Question two");
     assert.equal(listChatConversations(db,user).conversations[1]?.title,"Question one");
+    const renamed=renameChatConversation(db,user,first.id,"Kitchen maintenance");
+    assert.equal(renamed.title,"Kitchen maintenance");
+    assert.equal(listChatConversations(db,user).conversations.find(c=>c.id===first.id)?.title,"Kitchen maintenance");
+    assert.equal(chatHistory(db,user,first.id).messages[0]?.text,"Question one");
+    assert.throws(()=>renameChatConversation(db,{...user,id:"second"},first.id,"Other title"),/Conversation not found/);
+    assert.throws(()=>renameChatConversation(db,user,first.id,""),/chat name/);
+    assert.throws(()=>renameChatConversation(db,user,first.id,"x".repeat(61)),/chat name/);
+    assert.equal(chatTitleFromMessage("Please check the solar inverter warranty."),"check the solar inverter warranty");
+    assert.ok(chatTitleFromMessage("Can you tell me about "+ "a ".repeat(80)).length<=56);
   }finally{db.close()}
 });
 test("real PDF and DOCX evidence extracts locally, rejecting damaged documents",async()=>{

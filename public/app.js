@@ -105,8 +105,36 @@ function fillForm(form,values){Object.entries(values).forEach(([name,value])=>{c
 
 function updateChatTitle(){
   const active=state.conversations.find(c=>c.id===state.conversationId);
-  $("#chat-current-title").textContent=active?.title||"New chat";
+  const title=$("#chat-current-title"),label=active?.title||"New chat";
+  title.textContent=label;
+  title.title=active?"Rename "+label:"Start a chat to name it";
+  title.setAttribute("aria-label",active?"Rename chat: "+label:"No chat selected");
+  title.disabled=!active||state.chatBusy||state.chatLoading;
 }
+$("#chat-current-title").addEventListener("click",()=>{
+  const conversation=state.conversations.find(c=>c.id===state.conversationId);
+  if(!conversation||state.chatBusy||state.chatLoading||$(".chat-title-editor"))return;
+  const title=$("#chat-current-title"),input=document.createElement("input");
+  input.type="text";input.className="chat-title-editor";input.maxLength=60;
+  input.setAttribute("aria-label","Conversation name");
+  input.value=conversation.title;
+  title.hidden=true;title.after(input);input.focus();input.select();
+  let finished=false;
+  async function finish(save){
+    if(finished)return;finished=true;
+    const name=input.value.trim();input.remove();title.hidden=false;
+    if(!save||!name||name===conversation.title){updateChatTitle();return}
+    try{
+      const renamed=await api("/api/agent/conversations/"+encodeURIComponent(conversation.id),{method:"PATCH",body:{title:name}});
+      conversation.title=renamed.title;renderConversationList();updateChatTitle();
+    }catch(e){notify(e.message);updateChatTitle()}
+  }
+  input.onkeydown=event=>{
+    if(event.key==="Enter"){event.preventDefault();void finish(true)}
+    if(event.key==="Escape"){event.preventDefault();void finish(false)}
+  };
+  input.onblur=()=>void finish(true);
+});
 function toggleConversationList(show){
   $("#chat-history-panel").hidden=!show;
   $("#chat-conversations-toggle").setAttribute("aria-expanded",String(Boolean(show)));
@@ -467,11 +495,13 @@ async function showHome(){
     }
     const quiet=!attention.length&&!upcoming.length&&!repairs.length&&!charges.length&&!purchases.length;
     let html='<div class="home-overview'+(quiet?' home-overview-quiet':'')+'">';
-    html+='<section class="metrics" aria-label="Household overview">'
-      +'<div class="metric"><span>Registered assets</span><strong>'+assets.length+'</strong></div>'
-      +'<div class="metric"><span>Open issues</span><strong>'+Number(summary.open_issues||0)+'</strong></div>'
-      +'<div class="metric"><span>Overdue</span><strong>'+Number(summary.overdue_maintenance||0)+'</strong></div>'
-      +'</section>';
+    const openIssues=Number(summary.open_issues||0),overdue=Number(summary.overdue_maintenance||0);
+    if(openIssues||overdue){
+      html+='<section class="metrics" aria-label="Items needing attention">'
+        +(openIssues?'<div class="metric"><span>Open issues</span><strong>'+openIssues+'</strong></div>':'')
+        +(overdue?'<div class="metric"><span>Overdue</span><strong>'+overdue+'</strong></div>':'')
+        +'</section>';
+    }
     if(Number(summary.systems_needing_attention||0)>0&&!attention.length){
       html+='<p class="home-attention-note">'+Number(summary.systems_needing_attention)+' systems need attention</p>';
     }
@@ -487,15 +517,6 @@ async function showHome(){
       if(charges.length)html+='<section class="card"><div class="card-head"><h2>Charges</h2><button class="ghost-link" id="view-charges">View all</button></div><div class="card-body rows">'+charges.slice(0,3).map(c=>row(c.name,c.billing_cycle,'<span class="money">'+money(c.amount_cents)+'</span>')).join("")+'</div></section>';
       if(purchases.length)html+='<section class="card"><div class="card-head"><h2>Saved purchases</h2><button class="ghost-link" id="view-purchases">View all</button></div><div class="card-body rows">'+purchases.slice(0,3).map(p=>row(p.title,p.status,'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>')).join("")+'</div></section>';
       html+='</div>';
-    }
-    if(recent.length||assets.length){
-      html+='<section class="home-recent" aria-label="Recent home records">';
-      if(recent.length){
-        html+='<div class="home-recent-list">'+recent.slice(0,3).map(e=>'<div class="home-recent-item"><span class="home-recent-name">'+esc(e.title)+'</span><span class="home-recent-detail">'+fmtDate(e.occurred_at)+'</span></div>').join("")+'</div>';
-      }else{
-        html+='<div class="home-recent-list">'+assets.slice(0,3).map(a=>'<button class="home-recent-item" type="button" data-home-asset="'+esc(a.id)+'"><span class="home-recent-name">'+esc(a.name)+'</span><span class="home-recent-detail">'+esc(a.category||"Asset")+'</span></button>').join("")+'</div>';
-      }
-      html+='</section>';
     }
     html+='<nav class="home-utilities" aria-label="Other home records"><div class="utility-links">'+(!charges.length?'<button class="ghost-link" id="view-charges-shortcut">Charges</button>':'')+(!purchases.length?'<button class="ghost-link" id="view-purchases-shortcut">Purchases</button>':'')+'<button class="ghost-link" id="view-history">History</button></div></nav></div>';
     content.innerHTML=html;
@@ -536,22 +557,17 @@ async function showIssues(){
     if(revision!==state.viewRevision)return;
     state.assets=assets;
     const action=assets.length?registerAction("new-issue","Report issue"):registerAction("new-asset","Register asset");
-    const body=items.map((item,index)=>{
-      const active=!["RESOLVED","CLOSED"].includes(item.status);
+    const body=items.map(item=>{
+      const severity=normalizeStatus(item.severity);
+      const urgent=severity==="CRITICAL"||severity==="HIGH";
       return '<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
-        +'<div class="ledger-details"><span>'+fmtDate(item.detected_at)+'</span>'+badge(item.status)+badge(item.severity)+'</div>'
-        +'<div class="ledger-actions">'+linkedFilesButton("issue-files",item.id)
-        +(active?'<button class="ledger-quiet-action" type="button" data-repair="'+esc(item.id)+'">Repair</button><button class="ledger-quiet-action" type="button" data-resolve="'+esc(item.id)+'">Resolve</button>':'')
-        +'</div></div>';
+        +'<div class="ledger-details">'+badge(item.status)+(urgent?badge(item.severity):'')+'</div></div>';
     }).join("");
     content.innerHTML=registerTools("issues",true,action,items.length)+ledger("Issues",items.length,"",body,"Issue");
     bindRegisterSearch(items,i=>[i.title,i.asset_name,i.description,i.status,i.severity].filter(Boolean).join(" "),i=>!["RESOLVED","CLOSED"].includes(i.status));
     const add=$("#new-issue");if(add)add.onclick=openIssueForm;
     const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
-    $$("[data-resolve]",content).forEach(b=>b.onclick=()=>openResolveForm(items.find(i=>i.id===b.dataset.resolve)));
-    $$("[data-repair]",content).forEach(b=>b.onclick=()=>openRepairForm(items.find(i=>i.id===b.dataset.repair)));
     $$("[data-issue-open]",content).forEach(b=>b.onclick=()=>openIssue(items.find(i=>i.id===b.dataset.issueOpen)));
-    $$("[data-issue-files]",content).forEach(b=>b.onclick=()=>openIssue(items.find(i=>i.id===b.dataset.issueFiles)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -563,13 +579,12 @@ async function showRepairs(){
     if(revision!==state.viewRevision)return;
     state.assets=assets;
     const action=assets.length?registerAction("new-repair","Record repair"):registerAction("new-asset","Register asset");
-    const body=items.map((r,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button><div class="ledger-details"><span>'+fmtDate(r.repair_date)+'</span><strong class="money">'+money(r.cost_cents)+'</strong></div><div class="ledger-actions">'+linkedFilesButton("repair-files",r.id)+'</div></div>').join("");
+    const body=items.map(r=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-repair-open="'+esc(r.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(r.title)+'</strong><small>'+esc(r.asset_name||"Home")+'</small></span></button>'+(r.cost_cents!=null?'<div class="ledger-details"><strong class="money">'+money(r.cost_cents)+'</strong></div>':'')+'</div>').join("");
     content.innerHTML=registerTools("repairs",false,action,items.length)+ledger("Repairs",items.length,"",body,"Repair");
     bindRegisterSearch(items,r=>[r.title,r.asset_name,r.contractor,r.description,r.outcome].filter(Boolean).join(" "));
     const add=$("#new-repair");if(add)add.onclick=()=>openRepairForm();
     const register=$("#new-asset");if(register)register.onclick=()=>openAssetForm();
     $$("[data-repair-open]",content).forEach(b=>b.onclick=()=>openRepair(items.find(r=>r.id===b.dataset.repairOpen)));
-    $$("[data-repair-files]",content).forEach(b=>b.onclick=()=>openRepair(items.find(r=>r.id===b.dataset.repairFiles)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -629,10 +644,9 @@ async function openAssetForm(existing){
 function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
-  const body=items.map((a,index)=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+badge(a.condition||"UNKNOWN")+(a.purchase_cost_cents!=null?'<span class="money">'+money(a.purchase_cost_cents)+'</span>':'')+'</div><div class="ledger-actions">'+linkedFilesButton("asset-file",a.id)+'</div></div>').join("");
+  const body=items.map(a=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button>'+((a.condition&&!["UNKNOWN","GOOD","HEALTHY","WORKING"].includes(normalizeStatus(a.condition)))?'<div class="ledger-details">'+badge(a.condition)+'</div>':'')+'</div>').join("");
   target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
   $$("[data-asset]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.asset));
-  $$("[data-asset-file]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.assetFile));
 }
 async function showAppliances(){
   loading();const revision=state.viewRevision;
@@ -875,7 +889,7 @@ async function showFiles(){
     const cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
       return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false">'
-        +'<span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-entry-copy"><strong class="fade-title">'+esc(d.title)+'</strong>'+(links.length?'<small>'+esc(links.join(" · "))+'</small>':'')+'</span></button>';
+        +'<span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-entry-copy"><strong class="fade-title">'+esc(d.title)+'</strong>'+(links.length?'<small>'+esc(links[0])+'</small>':'')+'</span></button>';
     }).join("")||'<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
     content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading">'+quickSearch("files","file-search")+'</div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+actions+'</div></div>'
       +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-grid">'+cards+'</div></div></div></section>';
