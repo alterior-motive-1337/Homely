@@ -52,8 +52,10 @@ try {
   await page.locator("[data-home-repair]").first().click();
   await page.locator("#repair-attach").waitFor();
   await page.locator("#modal-close").click();
-  if(await page.locator("[data-home-asset]").count()){
-    await page.locator("[data-home-asset]").first().click();
+  if(await page.locator("[data-home-maintenance]").count()){
+    await page.locator("[data-home-maintenance]").first().click();
+    await page.locator("#maintenance-complete").waitFor();
+    await page.locator("#maintenance-asset").click();
     await page.locator("#edit-asset").waitFor();
     await page.locator("#modal-close").click();
   }
