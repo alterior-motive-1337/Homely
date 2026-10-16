@@ -2097,3 +2097,85 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
     max-width:40vw;justify-content:flex-end;
   }
 }
+
+/* Unified component refinement: consistent hierarchy across all workspaces.
+   This section owns only visible components, not interaction or data state. */
+.nav-item{color:#b3b3bb!important}
+.nav-item:hover{color:#f4f4f6!important}
+.nav-item.active,.nav-item[aria-current="page"]{color:#fff!important}
+.nav-item .nav-icon{opacity:.85}
+.nav-item.active .nav-icon{opacity:1}
+.sidebar-footer .account-menu .button{
+  border-radius:8px!important;
+  color:#c2c2c9!important;
+}
+.sidebar-footer .account-menu .button:hover{
+  color:#fff!important;background:var(--ui-surface-raised)!important;
+}
+.page-controls .search-count{font-size:12px!important;color:var(--ui-muted)!important}
+.page-controls .search-toggle{border-radius:9px!important}
+.page-controls .search-toggle:hover{background:var(--ui-surface-raised)!important}
+.register-filters{gap:4px!important}
+.register-filters button{border-radius:8px!important}
+.register-filters button[aria-pressed="true"]{
+  background:#29292c!important;color:#f5f5f7!important;
+}
+.ledger-entry,.file-grid > button.file-card,
+.home-overview .card-body.rows > .row{
+  border-color:var(--ui-border)!important;
+  background:var(--ui-surface)!important;
+  border-radius:var(--ui-radius)!important;
+}
+.ledger-entry:hover,.file-grid > button.file-card:hover,
+.home-overview .card-body.rows > .row:hover{
+  border-color:var(--ui-border-hover)!important;
+  background:#1d1d20!important;
+}
+.ledger-entry .ledger-main{
+  min-height:40px;display:flex;align-items:center;
+}
+.ledger-entry .ledger-entry-content small,
+.file-grid > button.file-card .file-entry-copy small{
+  color:var(--ui-muted)!important;
+}
+.ledger-entry .ledger-details{margin-left:auto;min-width:0}
+.ledger-entry .ledger-details .badge{white-space:nowrap}
+.file-grid > button.file-card .file-glyph{color:#c3c3c9!important}
+.file-grid > button.file-card[aria-pressed="true"]{
+  border-color:var(--ui-focus)!important;
+  background:#202023!important;
+}
+.file-grid > button.file-card[hidden],.ledger-entry[hidden]{display:none!important}
+.home-overview .metric span{color:var(--ui-muted)!important}
+.home-overview .card-head h2{color:#c4c4cc!important}
+.home-overview .home-utilities .ghost-link,
+.home-overview .card-head .ghost-link{
+  color:#c1c1c9!important;
+  text-decoration:none;
+}
+.home-overview .home-utilities .ghost-link:hover,
+.home-overview .card-head .ghost-link:hover{
+  color:#fff!important;text-decoration:underline;text-underline-offset:4px;
+}
+.loading,.empty,.error,.search-empty,.ledger-zero,.files-empty{
+  color:var(--ui-muted);
+  border:0!important;background:transparent!important;
+  box-shadow:none!important;
+}
+.loading{min-height:96px;display:flex;align-items:center;justify-content:center}
+button:disabled,.button:disabled,.primary-button:disabled{opacity:.55;cursor:not-allowed}
+:where(button,a,input,select,textarea,[role="separator"]):focus-visible{
+  outline:2px solid var(--ui-focus)!important;outline-offset:3px!important;
+}
+@media(max-width:700px){
+  .page-controls{gap:8px!important}
+  .controls-leading{gap:6px!important}
+  .page-controls .controls-actions .icon-action{
+    width:44px!important;height:44px!important;min-width:44px!important;
+  }
+  .ledger-entry .ledger-entry-content strong,
+  .file-grid > button.file-card .file-entry-copy strong{
+    line-height:1.4!important;
+  }
+  .ledger-entry .ledger-details{max-width:min(43vw,170px)}
+}
