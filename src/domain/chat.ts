@@ -10,13 +10,14 @@ type Conversation = { id:string; title:string; createdAt:string; updatedAt:strin
 export function chatTitleFromMessage(message:string):string {
   const clean=message.replace(/```[\s\S]*?```/g," ").replace(/https?:\/\/\S+/g," ")
     .replace(/[\r\n\t]+/g," ").replace(/[#*_`>\[\]]/g," ").replace(/\s+/g," ").trim()
-    .replace(/^(?:(?:hi|hello|hey)[!,. ]+)?(?:please\s+)?(?:can you|could you|would you|help me(?: to)?|i need you to|tell me(?: about)?|show me)\s+/i,"")
+    .replace(/^(?:(?:hi|hello|hey)[!,. ]+)?(?:please\s+)?(?:(?:can|could|would) you (?:please\s+)?|help me(?: to)?\s+|i need you to\s+)?(?:tell me(?: about)?|explain(?: to me)?|show me)\s+/i,"")
+    .replace(/^(?:(?:can|could|would) you (?:please\s+)?|please\s+|help me(?: to)?\s+|i need you to\s+)/i,"")
     .replace(/[.!?\s]+$/,"").trim();
   if(!clean)return "New chat";
   const first=clean.split(/(?<=[.!?])\s+/)[0]||clean;
-  if(first.length<=56)return first;
-  const clipped=first.slice(0,56).replace(/\s+\S*$/,"").trim();
-  return clipped.length>=12?clipped:first.slice(0,56).trim();
+  const clipped=first.length<=56?first:first.slice(0,56).replace(/\s+\S*$/,"").trim();
+  const title=clipped.length>=12?clipped:first.slice(0,56).trim();
+  return title.charAt(0).toLocaleUpperCase("en")+title.slice(1);
 }
 
 export function listChatConversations(db:HomelyDatabase,user:AuthUser):{conversations:Conversation[]} {

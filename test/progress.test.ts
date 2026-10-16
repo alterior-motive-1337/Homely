@@ -99,7 +99,8 @@ test("assistant conversations keep separate histories and never leak between ide
     assert.throws(()=>renameChatConversation(db,{...user,id:"second"},first.id,"Other title"),/Conversation not found/);
     assert.throws(()=>renameChatConversation(db,user,first.id,""),/chat name/);
     assert.throws(()=>renameChatConversation(db,user,first.id,"x".repeat(61)),/chat name/);
-    assert.equal(chatTitleFromMessage("Please check the solar inverter warranty."),"check the solar inverter warranty");
+    assert.equal(chatTitleFromMessage("Please check the solar inverter warranty."),"Check the solar inverter warranty");
+    assert.equal(chatTitleFromMessage("Can you tell me about the hot water system?"),"The hot water system");
     assert.ok(chatTitleFromMessage("Can you tell me about "+ "a ".repeat(80)).length<=56);
   }finally{db.close()}
 });

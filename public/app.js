@@ -109,7 +109,7 @@ function updateChatTitle(){
   title.textContent=label;
   title.title=active?"Rename "+label:"Start a chat to name it";
   title.setAttribute("aria-label",active?"Rename chat: "+label:"No chat selected");
-  title.disabled=!active||state.chatBusy||state.chatLoading;
+  title.disabled=!active;
 }
 $("#chat-current-title").addEventListener("click",()=>{
   const conversation=state.conversations.find(c=>c.id===state.conversationId);
