@@ -486,6 +486,18 @@ async function openPurchaseForm(existing){
   },"Homeowner saved a potential household purchase."]);
 }
 
+function openMaintenanceSummary(rule){
+  if(!rule)return;
+  openModal('<p class="eyebrow">Maintenance</p><h2>'+esc(rule.title)+'</h2>'
+    +'<div class="detail-grid"><div class="detail"><span>Asset</span><strong>'+esc(rule.asset_name||"Home")+'</strong></div>'
+    +'<div class="detail"><span>Due</span><strong>'+esc(fmtDate(rule.next_due_at))+'</strong></div></div>'
+    +'<div class="form-actions"><button class="button" id="maintenance-asset" type="button">View asset</button>'
+    +'<button class="primary-button" id="maintenance-complete" type="button">Mark complete</button></div>');
+  $("#maintenance-asset").onclick=()=>openAsset(rule.asset_id);
+  $("#maintenance-complete").onclick=()=>previewAction("COMPLETE_MAINTENANCE",{
+    maintenanceId:rule.id,completedAt:today()
+  },"Homeowner completed scheduled household maintenance.");
+}
 async function showHome(){
   loading();const revision=state.viewRevision;
   try{
@@ -496,8 +508,9 @@ async function showHome(){
     const upcoming=d.upcoming||[],recent=d.recent||[],summary=d.summary||{};
     state.currency=normalizeCurrency(d.currency);
     const issueShortcuts=d.attention?.issues||[];
+    const maintenanceShortcuts=[...(d.attention?.maintenance||[]),...upcoming];
     const attention=issueShortcuts.map(i=>homeActionRow(i.title,i.asset_name,badge(i.severity),"issue",i.id))
-      .concat((d.attention?.maintenance||[]).map(m=>homeActionRow(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"),"asset",m.asset_id)));
+      .concat((d.attention?.maintenance||[]).map(m=>homeActionRow(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"),"maintenance",m.id)));
     const homeName=d.home?.name||"My Home";
     pageTitle.textContent=homeName;
     document.title=homeName+" · Homely";
@@ -525,7 +538,7 @@ async function showHome(){
     if(attention.length||upcoming.length){
       html+='<div class="home-priority">';
       if(attention.length)html+='<section class="card"><div class="card-head"><h2>Needs attention</h2><button class="ghost-link" data-go="issues">View issues</button></div><div class="card-body rows">'+attention.slice(0,4).join("")+'</div></section>';
-      if(upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+upcoming.slice(0,4).map(m=>homeActionRow(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>',"asset",m.asset_id)).join("")+'</div></section>';
+      if(upcoming.length)html+='<section class="card"><div class="card-head"><h2>Coming up</h2><span class="row-meta">Next 30 days</span></div><div class="card-body rows">'+upcoming.slice(0,4).map(m=>homeActionRow(m.title,m.asset_name+' · '+fmtDate(m.next_due_at),'<span class="badge">'+Number(m.days_until)+'d</span>',"maintenance",m.id)).join("")+'</div></section>';
       html+='</div>';
     }
     if(repairs.length||charges.length||purchases.length){
@@ -543,6 +556,7 @@ async function showHome(){
     const purchasesShortcut=$("#view-purchases-shortcut");if(purchasesShortcut)purchasesShortcut.onclick=showPurchases;
     $("#view-history").onclick=showHistory;
     $$("[data-go]",content).forEach(b=>b.onclick=()=>navigate(b.dataset.go));
+    $$("[data-home-maintenance]",content).forEach(b=>b.onclick=()=>openMaintenanceSummary(maintenanceShortcuts.find(m=>m.id===b.dataset.homeMaintenance)));
     $$("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
     $$("[data-home-issue]",content).forEach(b=>b.onclick=()=>openIssue(issueShortcuts.find(i=>i.id===b.dataset.homeIssue)));
     $$("[data-home-repair]",content).forEach(b=>b.onclick=()=>openRepair(repairs.find(r=>r.id===b.dataset.homeRepair)));
