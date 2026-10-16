@@ -607,6 +607,7 @@ try {
   assert.equal(await android.locator("#chat-rail").getAttribute("aria-hidden"),"true");
   await android.waitForFunction(()=>!history.state?.homelyChat);
   await android.setViewportSize({width:960,height:800});
+  await android.waitForFunction(()=>window.matchMedia("(min-width: 960px)").matches && document.querySelector("#chat-rail").getAttribute("aria-hidden")==="false");
   assert.equal(await android.locator("#chat-open").isVisible(),false,"Desktop view must not show Android floating launcher");
   assert.equal(await android.locator("#chat-rail").getAttribute("aria-hidden"),"false","Desktop retains docked chat");
   if(process.env.TEST_SCREENSHOT_DIR)await android.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/android-desktop-parity.png"});
