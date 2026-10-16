@@ -1881,13 +1881,13 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
 }
 .ledger-entry .ledger-entry-content strong{
   color:var(--homely-copy)!important;
-  font-size:13px!important;
+  font-size:14px!important;
   font-weight:590!important;
   line-height:1.35!important;
 }
 .ledger-entry .ledger-entry-content small{
   color:var(--homely-secondary)!important;
-  font-size:11px!important;
+  font-size:12px!important;
   line-height:1.4!important;
 }
 .ledger-entry .ledger-details{
@@ -1925,12 +1925,12 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
 }
 .file-grid > button.file-card .file-entry-copy{min-width:0;gap:4px!important}
 .file-grid > button.file-card .file-entry-copy strong{
-  font-size:13px!important;
+  font-size:14px!important;
   font-weight:590!important;
   color:var(--homely-copy)!important;
 }
 .file-grid > button.file-card .file-entry-copy small{
-  font-size:11px!important;
+  font-size:12px!important;
   color:var(--homely-secondary)!important;
 }
 .file-grid > button.file-card .file-glyph{color:#bcbcc4!important}
@@ -2005,7 +2005,7 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   border-color:#4c4c53!important;
 }
 .home-overview .row-title{
-  font-size:12px!important;
+  font-size:13px!important;
   line-height:1.4!important;
   font-weight:570!important;
   color:var(--homely-copy)!important;
