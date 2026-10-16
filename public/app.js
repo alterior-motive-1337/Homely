@@ -973,8 +973,27 @@ function messageElement(m){
 function renderChat(){
   chatBody.replaceChildren(...state.agentMessages.map(messageElement));
   if(!state.agentMessages.length){const empty=document.createElement("p");empty.className="chat-empty";empty.textContent="Ask Homely anything about your home.";chatBody.append(empty)}
-  $$("[data-approve]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.approve)+"/commit",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.approve});if(p)p.status="COMMITTED"});renderChat();notify("Approved and committed.");await selectView(state.view)}catch(e){notify(e.message)}}});
-  $$("[data-reject]",chatBody).forEach(function(b){b.onclick=async function(){try{await api("/api/transactions/"+encodeURIComponent(b.dataset.reject)+"/reject",{method:"POST"});state.agentMessages.forEach(function(m){const p=m.proposals&&m.proposals.find(function(x){return x.transactionId===b.dataset.reject});if(p)p.status="REJECTED"});renderChat();notify("Proposal rejected.")}catch(e){notify(e.message)}}});
+  const proposalBusy=new Set();
+  async function actOnProposal(id,action){
+    if(proposalBusy.has(id))return;
+    proposalBusy.add(id);
+    const controls=$("[data-approve],[data-reject]",chatBody).filter(b=>
+      b.dataset.approve===id||b.dataset.reject===id);
+    controls.forEach(b=>b.disabled=true);
+    try{
+      await api("/api/transactions/"+encodeURIComponent(id)+"/"+action,{method:"POST"});
+      for(const message of state.agentMessages){
+        const proposal=(message.proposals||[]).find(p=>p.transactionId===id);
+        if(proposal)proposal.status=action==="commit"?"COMMITTED":"REJECTED";
+      }
+      renderChat();
+      notify(action==="commit"?"Approved and committed.":"Proposal rejected.");
+      if(action==="commit")await selectView(state.view);
+    }catch(e){notify(e.message);controls.forEach(b=>{if(b.isConnected)b.disabled=false})}
+    finally{proposalBusy.delete(id)}
+  }
+  $("[data-approve]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.approve,"commit"));
+  $("[data-reject]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.reject,"reject"));
   if(state.chatBusy){
     chatBody.appendChild(createInteraction("Working…",{pending:true}));
   }
