@@ -180,7 +180,9 @@ async function refreshAlerts(){
   }catch(_){}
 }
 async function showAlerts(){
+  const pending=waitingModal("Loading alerts…");
   await refreshAlerts();
+  if(!modalPending(pending))return;
   openModal('<h2>Alerts</h2>'+(("Notification" in window&&Notification.permission!=="granted")?'<button class="button" id="enable-notifications" type="button">Enable notifications</button>':'')+'<div class="rows">'+(state.alerts.map(a=>row(a.title,a.detail,badge(a.severity)+'<button class="button" data-alert-open="'+esc(a.key)+'">Open</button><button class="button" data-alert-ack="'+esc(a.key)+'">Acknowledge</button>'+(a.kind==="MAINTENANCE"?'<button class="button" data-maintenance-complete="'+esc(a.recordId)+'">Complete</button>':''))).join('')||'<div class="empty">No alerts.</div>')+'</div>');
   const enable=$("#enable-notifications");if(enable)enable.onclick=async()=>{const permission=await Notification.requestPermission();if(permission==="granted"){enable.hidden=true;await refreshAlerts()}};
   $$("[data-alert-ack]",modalBody).forEach(b=>b.onclick=async()=>{try{await api("/api/alerts/acknowledge",{method:"POST",body:{key:b.dataset.alertAck}});await showAlerts()}catch(e){notify(e.message)}});
@@ -750,7 +752,7 @@ async function openFile(doc){
         if(!live())return;
         state.objectUrl=URL.createObjectURL(blob);
         viewerBody.innerHTML='<embed type="application/pdf" src="'+esc(state.objectUrl)+'" />'
-          +'<div class="viewer-file-action">'+action("Download PDF",href,true)+'</div>';
+          +'<div class="viewer-file-action">'+action("Open PDF",href)+action("Download PDF",href,true)+'</div>';
       }
     }catch(e){
       if(live())viewerBody.innerHTML='<div class="viewer-link"><strong>'+esc(e.message)+'</strong>'+action("Try opening file",href)+'</div>';
