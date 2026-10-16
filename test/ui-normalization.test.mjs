@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_CURRENCY,normalizeCurrency,formatMinorAmount,majorToMinorAmount,
-  minorToMajorAmount,localDateInput,normalizeStatus,statusLabel,statusTone,
+  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,
   matchesSearch,countLabel,matchesStatusFilter
 } from "../public/ui-normalization.js";
 
@@ -25,6 +25,18 @@ test("currency formatting and editing preserve minor units and empty values",()=
 test("local dates use calendar fields, never an ISO UTC slice",()=>{
   assert.equal(localDateInput(new Date(2026,9,16,1,5)),"2026-10-16");
   assert.equal(localDateInput(new Date(2026,0,1,23,55)),"2026-01-01");
+});
+
+test("date-only values stay on their recorded calendar day across time zones",()=>{
+  const date=calendarDate("2026-10-10");
+  assert.equal(date.getFullYear(),2026);
+  assert.equal(date.getMonth(),9);
+  assert.equal(date.getDate(),10);
+  assert.equal(calendarDate("2026-02-30"),null);
+  assert.equal(calendarDate("invalid"),null);
+  assert.equal(calendarDate(""),null);
+  const moment=calendarDate("2026-10-10T18:30:00Z");
+  assert.ok(moment instanceof Date);
 });
 
 test("status is semantic, not one decorative color per state",()=>{
