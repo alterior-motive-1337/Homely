@@ -496,8 +496,9 @@ async function showHome(){
     const quiet=!attention.length&&!upcoming.length&&!repairs.length&&!charges.length&&!purchases.length;
     let html='<div class="home-overview'+(quiet?' home-overview-quiet':'')+'">';
     const openIssues=Number(summary.open_issues||0),overdue=Number(summary.overdue_maintenance||0);
-    if(openIssues||overdue){
-      html+='<section class="metrics" aria-label="Items needing attention">'
+    {
+      html+='<section class="metrics" aria-label="Household overview">'
+        +'<div class="metric"><span>Registered assets</span><strong>'+assets.length+'</strong></div>'
         +(openIssues?'<div class="metric"><span>Open issues</span><strong>'+openIssues+'</strong></div>':'')
         +(overdue?'<div class="metric"><span>Overdue</span><strong>'+overdue+'</strong></div>':'')
         +'</section>';

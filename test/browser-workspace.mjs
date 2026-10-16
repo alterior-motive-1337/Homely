@@ -23,7 +23,7 @@ try {
   assert.equal(await page.locator("#chat-current-title").count(),1,"assistant must label the active conversation");
   assert.equal(await page.locator(".chat-rail").evaluate(el=>getComputedStyle(el).borderLeftWidth),"0px","assistant should not have a decorative divider");
   assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"), "false", "desktop assistant must be docked");
-  await page.getByText("Saved household chat",{exact:true}).waitFor();
+  await page.locator("#chat-body").getByText("Saved household chat",{exact:true}).waitFor();
   await noOverflow();
   // Visual hierarchy and sizing: navigation must be labeled and use a single top row.
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "desktop tabs need visible text labels");
@@ -31,7 +31,7 @@ try {
   assert.ok(await page.locator(".metric").first().evaluate(el => el.getBoundingClientRect().height <= 125), "overview counters should not become oversized cards");
   assert.equal(await page.locator(".metric").first().locator("strong").textContent(), "16", "home must show registered assets rather than unrelated empty counts");
   assert.equal(await page.locator("#home-repair,#home-issue").count(),0,"home must not duplicate issue/repair actions already in their own tabs");
-  assert.equal(await page.locator(".home-recent").count(),1,"overview should expose household records");
+  assert.equal(await page.locator(".home-recent").count(),0,"do not duplicate the same household records as a recent-record strip");
   assert.equal(await page.locator(".home-recent-title").count(),0,"do not label an obvious recent-record list");
   assert.equal(await page.locator(".metrics").evaluate(el=>{
     const view=document.querySelector(".workspace").getBoundingClientRect(),box=el.getBoundingClientRect();
@@ -66,6 +66,8 @@ try {
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "mobile tabs retain labels");
   await noOverflow();
+  assert.equal(await page.locator("#chat-open").getAttribute("aria-label"),"Open chat","mobile launcher must have an accessible label");
+  assert.equal((await page.locator("#chat-open").textContent()).trim(),"","mobile launcher should be icon-only");
   await page.locator("#chat-open").click();
   assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"),"false","mobile drawer must open even with desktop chat collapsed");
   await page.locator("#chat-close").click();
