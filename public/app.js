@@ -543,9 +543,9 @@ async function showHome(){
     const purchasesShortcut=$("#view-purchases-shortcut");if(purchasesShortcut)purchasesShortcut.onclick=showPurchases;
     $("#view-history").onclick=showHistory;
     $$("[data-go]",content).forEach(b=>b.onclick=()=>navigate(b.dataset.go));
-    $("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
-    $("[data-home-issue]",content).forEach(b=>b.onclick=()=>openIssue(issueShortcuts.find(i=>i.id===b.dataset.homeIssue)));
-    $("[data-home-repair]",content).forEach(b=>b.onclick=()=>openRepair(repairs.find(r=>r.id===b.dataset.homeRepair)));
+    $$("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
+    $$("[data-home-issue]",content).forEach(b=>b.onclick=()=>openIssue(issueShortcuts.find(i=>i.id===b.dataset.homeIssue)));
+    $$("[data-home-repair]",content).forEach(b=>b.onclick=()=>openRepair(repairs.find(r=>r.id===b.dataset.homeRepair)));
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
@@ -998,7 +998,7 @@ function renderChat(){
   }
   $$("[data-approve]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.approve,"commit"));
   $$("[data-reject]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.reject,"reject"));
-  $("[data-approve],[data-reject]",chatBody).forEach(b=>{
+  $$("[data-approve],[data-reject]",chatBody).forEach(b=>{
     if(pendingProposalActions.has(b.dataset.approve||b.dataset.reject))b.disabled=true;
   });
   if(state.chatBusy){
