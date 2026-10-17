@@ -808,7 +808,13 @@ try {
   assert.match(await sample.locator("#viewer-insight").textContent(),/SAMPLE-WASHER/,"sample file analysis reads stored bytes");
   await sample.locator("#viewer-close").click();
   const sampleDocs=await sample.evaluate(async()=>await(await fetch("/api/documents")).json());
-  assert.equal(sampleDocs.length,6);
+  assert.equal(sampleDocs.length,7);
+  const imageDoc=sampleDocs.find(d=>d.mime_type==="image/svg+xml");
+  assert.ok(imageDoc,"sample home contains a real image for visual preview testing");
+  await sample.locator(".file-card").filter({hasText:"Reading corner reference"}).waitFor();
+  const loadedImage=sample.locator(".file-card").filter({hasText:"Reading corner reference"}).locator(".file-preview-image");
+  await loadedImage.waitFor();
+  assert.equal(await loadedImage.evaluate(el=>el.complete&&el.naturalWidth>0),true,"real image thumbnails render from protected stored files");
   const videoDoc=sampleDocs.find(d=>d.mime_type==="video/webm");
   const sampleRange=await sample.request.get(base+videoDoc.local_path,{headers:{Range:"bytes=0-3"}});
   assert.equal(sampleRange.status(),206);assert.equal((await sampleRange.body()).toString("hex"),"1a45dfa3");
