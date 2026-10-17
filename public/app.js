@@ -1045,7 +1045,7 @@ async function showFiles(){
       onUpdate:()=>{if(!$(".file-card[aria-pressed=true]:not([hidden])",content))for(const card of document.querySelectorAll(".file-card"))card.setAttribute("aria-pressed","false")}
     });
     // An unavailable thumbnail falls back to the file's format cover.
-    $(".file-preview img,.file-preview video",content).forEach(media=>{
+    $$(".file-preview img,.file-preview video",content).forEach(media=>{
       media.addEventListener("error",()=>{media.hidden=true},{once:true});
       if(media.tagName==="VIDEO"){
         media.addEventListener("loadedmetadata",()=>{
