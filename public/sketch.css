@@ -2477,3 +2477,44 @@ button:disabled,.button:disabled,.primary-button:disabled{opacity:.55;cursor:not
     min-width:36px!important;width:36px!important;
   }
 }
+
+/* One practical color rule across every view.
+   Gray = ordinary state; amber = action needed; red = urgent or failed.
+   Only state text is colored: never tint whole rows, cards or primary actions. */
+:root{
+  --status-neutral:#adb0b9;
+  --status-attention:#e7b16c;
+  --status-urgent:#f1a0a5;
+}
+.badge[data-tone]{
+  display:inline-flex!important;
+  align-items:center!important;
+  min-height:0!important;
+  padding:0!important;
+  margin:0!important;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  border-radius:0!important;
+  font-size:11px!important;
+  font-weight:600!important;
+  letter-spacing:0!important;
+  text-transform:none!important;
+  line-height:1.5!important;
+  white-space:nowrap!important;
+}
+.badge[data-tone="neutral"],
+.ledger-entry .badge[data-tone="neutral"]{
+  color:var(--status-neutral)!important;
+  font-weight:560!important;
+}
+.badge[data-tone="attention"],
+.ledger-entry .badge[data-tone="attention"]{
+  color:var(--status-attention)!important;
+  font-weight:650!important;
+}
+.badge[data-tone="urgent"],
+.ledger-entry .badge[data-tone="urgent"]{
+  color:var(--status-urgent)!important;
+  font-weight:700!important;
+}

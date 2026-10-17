@@ -46,16 +46,43 @@ export function localDateInput(date=new Date()){
   const pad=x=>String(x).padStart(2,"0");
   return date.getFullYear()+"-"+pad(date.getMonth()+1)+"-"+pad(date.getDate());
 }
+// Display strings are separate from stored codes; never rewrite API payload values.
 export function normalizeStatus(value){
-  return String(value??"UNKNOWN").trim().toUpperCase().replaceAll(" ","_")||"UNKNOWN";
+  return String(value??"UNKNOWN").trim().replace(/([a-z])([A-Z])/g,"$1_$2")
+    .replace(/[^A-Za-z0-9]+/g,"_").toUpperCase()||"UNKNOWN";
 }
+// Three semantic tones, including the default neutral. Colors describe urgency,
+// not arbitrary workflow stages such as OPEN, SAVED or IN_PROGRESS.
+const URGENT_STATES=new Set(["CRITICAL","FAILED","OVERDUE","EMERGENCY","PAST_DUE"]);
+const ATTENTION_STATES=new Set(["HIGH","MEDIUM","POOR","DEGRADED","DUE_SOON","AT_RISK"]);
 export function statusTone(value){
-  const v=normalizeStatus(value);
-  if(["CRITICAL","OVERDUE","FAILED"].includes(v))return "urgent";
-  if(["HIGH","POOR","DEGRADED"].includes(v))return "attention";
-  return "neutral";
+  const state=normalizeStatus(value);
+  return URGENT_STATES.has(state)?"urgent":ATTENTION_STATES.has(state)?"attention":"neutral";
 }
-export function statusLabel(value){return normalizeStatus(value).replaceAll("_"," ")}
+export function statusLabel(value){
+  const normalized=normalizeStatus(value);
+  return normalized.split("_").filter(Boolean).join(" ").toLocaleLowerCase("en-ZA")
+    .replace(/^./,first=>first.toLocaleUpperCase("en-ZA"));
+}
+// Free-text names are left alone. Only machine-style codes gain display casing.
+export function displayLabel(value){
+  const raw=String(value??"").trim();
+  if(!raw)return "";
+  if(["AI","API","CCTV","HVAC","LED","PDF","TV","URL","USB"].includes(raw))return raw;
+  return /^[A-Z][A-Z0-9_ -]*$/.test(raw)&&raw.length>3?statusLabel(raw):raw;
+}
+const ACTION_LABELS=Object.freeze({
+  REPORT_ISSUE:"Issue reported",RESOLVE_ISSUE:"Issue resolved",
+  RECORD_REPAIR:"Repair recorded",CREATE_ASSET:"Asset registered",
+  UPDATE_ASSET:"Asset updated",CREATE_CHARGE:"Charge created",
+  UPDATE_CHARGE:"Charge updated",SAVE_PURCHASE:"Purchase saved",
+  UPDATE_PURCHASE:"Purchase updated",ATTACH_DOCUMENT:"File attached",
+  COMPLETE_MAINTENANCE:"Maintenance completed"
+});
+export function actionLabel(value){
+  const state=normalizeStatus(value);
+  return ACTION_LABELS[state]??statusLabel(state);
+}
 export function matchesSearch(text,query){
   const norm=x=>String(x??"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase().trim();
   return norm(text).includes(norm(query));
