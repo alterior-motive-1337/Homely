@@ -25,6 +25,10 @@ try {
   assert.equal(await page.locator("#chat-rail").getAttribute("aria-hidden"), "false", "desktop assistant must be docked");
   await page.locator("#chat-body").getByText("Saved household chat",{exact:true}).waitFor();
   await noOverflow();
+  assert.ok(await page.locator(".nav-item").first().evaluate(el=>{
+    const rgb=getComputedStyle(el).color.match(/\d+/g)?.map(Number);
+    return rgb?.every(channel=>channel>=160);
+  }),"inactive navigation labels must be legible on the dark surface");
   // Visual hierarchy and sizing: navigation must be labeled and use a single top row.
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "desktop tabs need visible text labels");
   assert.ok(await page.locator(".sidebar").evaluate(el => { const r=el.getBoundingClientRect(); return r.width > 1100 && r.height <= 72; }), "desktop navigation must fit a compact header");
@@ -101,6 +105,11 @@ try {
   assert.match(await page.locator("#modal-body").textContent(),/Opening settings/,"slow settings must acknowledge the click immediately");
   releaseHomes();
   await page.getByRole("link", { name: "Export household" }).waitFor();
+  assert.equal(await page.locator("#modal").getAttribute("aria-labelledby"),"modal-title","open dialogs must be labelled by their visible heading");
+  assert.equal(await page.locator("#modal-title").textContent(),"Household settings");
+  assert.ok(await page.locator("#modal").evaluate(el=>{
+    const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;
+  }),"settings dialog must stay inside the viewport");
   await page.unroute("**/api/homes");
   const inlineSettings=await page.locator("#rename-home-form").evaluate(form=>{
     const input=form.querySelector("input").getBoundingClientRect();
@@ -189,6 +198,12 @@ try {
   await page.locator("#record-search").waitFor({state:"attached"});
   assert.equal(issueFetches, fetches + 1);
   await page.locator("#new-issue").click();
+  assert.equal(await page.locator("#modal").getAttribute("aria-labelledby"),"modal-title");
+  assert.equal(await page.locator("#modal-title").textContent(),"Report a problem");
+  const controls=await page.locator('#issue-form .field input,#issue-form .field select').evaluateAll(elements=>
+    elements.map(el=>({height:el.getBoundingClientRect().height,font:parseFloat(getComputedStyle(el).fontSize)}))
+  );
+  assert.ok(controls.every(el=>el.height>=40&&el.font>=13),"record forms share readable input dimensions");
   await page.locator('#issue-form select[name="assetId"]').selectOption("asset-tap");
   await page.locator('#issue-form input[name="title"]').fill("Browser transaction issue");
   await page.getByRole("button", { name: "Preview", exact: true }).click();
@@ -293,6 +308,7 @@ try {
   await page.getByText("Opening file…",{exact:true}).waitFor();
   releaseText();
   await page.locator("#viewer-body .viewer-text").waitFor();
+  assert.ok(await page.locator("#viewer-head,#viewer-controls").count()===0 || await page.locator(".viewer-head").evaluate(el=>getComputedStyle(el).height==="60px"),"file preview header uses the shared compact toolbar");
   assert.match(await page.locator("#viewer-body .viewer-text").textContent(),/20 January 2030/);
   await page.locator("#viewer-close").click();
   await page.unroute("**/demo-documents/inverter-warranty.txt");
