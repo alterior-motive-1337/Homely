@@ -549,7 +549,7 @@ try {
   await names.setViewportSize({width:1366,height:768});
   await names.locator('[data-view="appliances"]').click();
   await names.locator(".ledger-entry").first().waitFor();
-  assert.equal(await names.locator(".ledger-entry .ledger-details").first().count(),0,"routine or unknown condition should not add noise to the register");
+  assert.equal(await names.locator(".ledger-entry .ledger-details .badge.operational").first().count(),1,"every appliance shows one actionable operational label");
   await names.locator("[data-asset]").first().click();
   await names.locator("#modal .row-title.is-overflowing").waitFor();
   assert.equal(await names.locator("#modal .row").filter({has:names.locator(".fade-title")}).first().evaluate(el=>{
