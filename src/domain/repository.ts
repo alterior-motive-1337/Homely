@@ -61,10 +61,11 @@ export function getAsset(db: HomelyDatabase, assetId: string) {
   ).get(assetId,activeHomeId() ?? "");
   if (!asset) return null;
 
+  const health=healthForAsset(db,assetId,asset.health_observed_at);
   return {
     ...asset,
-    health: healthForAsset(db, assetId, asset.health_observed_at),
-    operational_state: classifyAssetState(asset.condition,healthForAsset(db,assetId,asset.health_observed_at)),
+    health,
+    operational_state:classifyAssetState(asset.condition,health),
     issues: db.prepare("SELECT * FROM issues WHERE asset_id = ? ORDER BY detected_at DESC").all(assetId),
     maintenance: db.prepare("SELECT * FROM maintenance_rules WHERE asset_id = ? ORDER BY next_due_at").all(assetId),
     repairs: db.prepare("SELECT * FROM repairs WHERE asset_id = ? ORDER BY repair_date DESC, created_at DESC").all(assetId),
