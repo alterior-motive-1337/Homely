@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_CURRENCY,normalizeCurrency,formatMinorAmount,majorToMinorAmount,
-  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,priorityLabel,priorityTone,actionLabel,displayLabel,
+  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,priorityLabel,priorityTone,conditionLabel,issueStageLabel,purchaseStageLabel,healthLevelLabel,actionLabel,displayLabel,
   matchesSearch,countLabel,matchesStatusFilter
 } from "../public/ui-normalization.js";
 
@@ -73,6 +73,25 @@ test("priorities have only three levels and no separate Critical tier",()=>{
     "OPEN","RESOLVED","SAVED","GOOD","FAIR","IN_PROGRESS","COMMITTED"]){
     assert.equal(statusTone(status),"neutral",status+" must not imply status-specific colors");
   }
+});
+
+test("ranked labels use three states with unassessed data left ungraded",()=>{
+  assert.deepEqual(["GOOD","FAIR","POOR"].map(conditionLabel),["Good","Fair","Poor"]);
+  assert.equal(conditionLabel("FAILED"),"Poor");
+  assert.equal(conditionLabel("NEW"),"Not assessed");
+  assert.equal(conditionLabel("UNKNOWN"),"Not assessed");
+  assert.deepEqual(["HEALTHY","ATTENTION","FAILED"].map(healthLevelLabel),["Good","Fair","Poor"]);
+  assert.equal(healthLevelLabel("DEGRADED"),"Fair");
+  assert.equal(healthLevelLabel("UNKNOWN"),"Not assessed");
+});
+test("issue progress and purchase results each have three user-visible states",()=>{
+  for(const [input,output] of Object.entries({
+    OPEN:"Open",PLANNED:"Open",MONITORING:"In progress",
+    IN_PROGRESS:"In progress",RESOLVED:"Resolved",CLOSED:"Resolved"
+  })) assert.equal(issueStageLabel(input),output,input);
+  for(const [input,output] of Object.entries({
+    SAVED:"Saved",SHORTLISTED:"Saved",PURCHASED:"Purchased",DISMISSED:"Dismissed"
+  })) assert.equal(purchaseStageLabel(input),output,input);
 });
 
 test("search, status and result counts obey the same contract in every list",()=>{
