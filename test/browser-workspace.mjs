@@ -814,6 +814,8 @@ try {
   await sample.locator(".file-card").filter({hasText:"Reading corner reference"}).waitFor();
   const loadedImage=sample.locator(".file-card").filter({hasText:"Reading corner reference"}).locator(".file-preview-image");
   await loadedImage.waitFor();
+  await loadedImage.scrollIntoViewIfNeeded();
+  await sample.waitForFunction(()=>[...document.querySelectorAll(".file-preview-image")].some(el=>el.complete&&el.naturalWidth>0));
   assert.equal(await loadedImage.evaluate(el=>el.complete&&el.naturalWidth>0),true,"real image thumbnails render from protected stored files");
   const videoDoc=sampleDocs.find(d=>d.mime_type==="video/webm");
   const sampleRange=await sample.request.get(base+videoDoc.local_path,{headers:{Range:"bytes=0-3"}});
