@@ -565,6 +565,33 @@ async function showHome(){
         +(overdue?'<div class="metric"><span>Overdue</span><strong>'+overdue+'</strong></div>':'')
         +'</section>';
     }
+    const insights=d.insights;
+    if(insights){
+      const metrics=[];
+      const service=insights.service||{},repairData=insights.repairs||{},expense=insights.charges||{};
+      const affected=Number(service.needing_attention||0)+Number(service.out_of_service||0);
+      if(affected||Number(service.unassessed||0)){
+        const note=[affected+" requiring a check",
+          Number(service.out_of_service||0)?service.out_of_service+" out of service":null,
+          Number(service.unassessed||0)?service.unassessed+" not assessed":null].filter(Boolean).join(" · ");
+        metrics.push(analysisMetric("Appliance attention",affected+" / "+assets.length,note,"appliances"));
+      }
+      if(Number(repairData.count_12m||0)){
+        const known=Number(repairData.cost_count_12m||0);
+        metrics.push(analysisMetric("Repairs · last 365 days",
+          known?money(repairData.recorded_cost_cents_12m):"No costs entered",
+          repairData.count_12m+" repairs · "+known+" with a recorded cost","repairs"));
+      }
+      if(Number(expense.active_count||0)){
+        const estimated=Number(expense.estimated_count||0);
+        const missing=Number(expense.unspecified_cycle_count||0);
+        metrics.push(analysisMetric("Estimated monthly charges",
+          estimated?money(expense.estimated_monthly_cents):"Not estimable",
+          estimated+" of "+expense.active_count+" active charges included"+(missing?" · "+missing+" excluded (unspecified cycle)":""),
+          "charges"));
+      }
+      if(metrics.length)html+='<section class="home-insights" aria-label="Home insights"><div class="card-head"><h2>Insights</h2></div><div class="insight-rows">'+metrics.join("")+'</div></section>';
+    }
     if(Number(summary.systems_needing_attention||0)>0&&!attention.length){
       html+='<p class="home-attention-note">'+Number(summary.systems_needing_attention)+' systems need attention</p>';
     }
@@ -588,6 +615,11 @@ async function showHome(){
     const chargesShortcut=$("#view-charges-shortcut");if(chargesShortcut)chargesShortcut.onclick=showCharges;
     const purchasesShortcut=$("#view-purchases-shortcut");if(purchasesShortcut)purchasesShortcut.onclick=showPurchases;
     $("#view-history").onclick=showHistory;
+    $$("[data-insight-action]",content).forEach(button=>button.onclick=()=>{
+      const target=button.dataset.insightAction;
+      if(target==="charges")void showCharges();
+      else if(target==="repairs"||target==="appliances")navigate(target);
+    });
     $$("[data-go]",content).forEach(b=>b.onclick=()=>navigate(b.dataset.go));
     $$("[data-home-maintenance]",content).forEach(b=>b.onclick=()=>openMaintenanceSummary(maintenanceShortcuts.find(m=>m.id===b.dataset.homeMaintenance)));
     $$("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
@@ -732,10 +764,19 @@ async function openAsset(id){
   try{
     const a=await api("/api/assets/"+encodeURIComponent(id));
     if(!modalPending(pending))return;
-    const conditionDisplay=conditionLabel(a.condition),healthDisplay=healthLevelLabel(a.health);
-    let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(conditionDisplay)+'</div><div class="detail-grid">';
-    (healthDisplay!=="Not assessed"&&healthDisplay!==conditionDisplay?[["Health",healthDisplay]]:[])
-      .concat([["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Age",assetAge(a)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]]).forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
+    const activeIssues=(a.issues||[]).filter(i=>!["RESOLVED","CLOSED"].includes(normalizeStatus(i.status)));
+    const overdueRules=(a.maintenance||[]).filter(m=>Number(m.active)===1&&String(m.next_due_at||"")<today());
+    const pricedRepairs=(a.repairs||[]).filter(r=>r.cost_cents!=null&&Number.isSafeInteger(Number(r.cost_cents))&&Number(r.cost_cents)>=0);
+    const repairSpend=pricedRepairs.reduce((total,r)=>total+Number(r.cost_cents),0);
+    let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+operationalBadge(a)+'</div>'
+      +'<p class="asset-assessment-note">Based on the recorded condition, unresolved issues and overdue maintenance.</p>'
+      +'<div class="asset-facts">'
+      +'<span>'+activeIssues.length+' unresolved '+(activeIssues.length===1?'issue':'issues')+'</span>'
+      +'<span>'+(a.repairs||[]).length+' recorded '+((a.repairs||[]).length===1?'repair':'repairs')+'</span>'
+      +(pricedRepairs.length?'<span>'+money(repairSpend)+' recorded repair costs</span>':'')
+      +(overdueRules.length?'<span>'+overdueRules.length+' overdue '+(overdueRules.length===1?'service task':'service tasks')+'</span>':'')
+      +'</div><div class="detail-grid">';
+    [["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Age",assetAge(a)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]].forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
     html+="</div>";if(a.notes)html+='<div class="detail-section"><h3>Notes</h3><div class="row-note">'+esc(a.notes)+"</div></div>";
     html+='<div class="detail-section"><h3>Issues</h3><div class="rows">'+(a.issues.map(function(i){return row(i.title,fmtDate(i.detected_at)+" · "+priorityLabel(i.severity),badge(issueStageLabel(i.status)),i.description||"")}).join("")||'<div class="empty">No issues.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
