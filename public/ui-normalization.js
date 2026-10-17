@@ -51,13 +51,18 @@ export function normalizeStatus(value){
   return String(value??"UNKNOWN").trim().replace(/([a-z])([A-Z])/g,"$1_$2")
     .replace(/[^A-Za-z0-9]+/g,"_").toUpperCase()||"UNKNOWN";
 }
-// Three semantic tones, including the default neutral. Colors describe urgency,
-// not arbitrary workflow stages such as OPEN, SAVED or IN_PROGRESS.
-const URGENT_STATES=new Set(["CRITICAL","FAILED","OVERDUE","EMERGENCY","PAST_DUE"]);
-const ATTENTION_STATES=new Set(["HIGH","MEDIUM","POOR","DEGRADED","DUE_SOON","AT_RISK"]);
-export function statusTone(value){
-  const state=normalizeStatus(value);
-  return URGENT_STATES.has(state)?"urgent":ATTENTION_STATES.has(state)?"attention":"neutral";
+// Color represents priority only. Routine statuses and conditions stay monochrome.
+export function statusTone(_value){return "neutral"}
+export function priorityLabel(value){
+  // Historical CRITICAL values remain in storage but appear as High.
+  const priority=normalizeStatus(value);
+  return priority==="CRITICAL"?"High":statusLabel(priority);
+}
+export function priorityTone(value){
+  const priority=normalizeStatus(value);
+  if(priority==="HIGH"||priority==="CRITICAL")return "urgent";
+  if(priority==="MEDIUM")return "attention";
+  return "neutral";
 }
 export function statusLabel(value){
   const normalized=normalizeStatus(value);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_CURRENCY,normalizeCurrency,formatMinorAmount,majorToMinorAmount,
-  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,actionLabel,displayLabel,
+  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,priorityLabel,priorityTone,actionLabel,displayLabel,
   matchesSearch,countLabel,matchesStatusFilter
 } from "../public/ui-normalization.js";
 
@@ -64,14 +64,14 @@ test("labels are human-readable without changing stored enum values",()=>{
   assert.equal(actionLabel("CUSTOM_ACTION"),"Custom action");
 });
 
-test("neutral, amber attention and red urgent tones are the only state categories",()=>{
-  const groups={
-    neutral:["UNKNOWN","NEW","GOOD","FAIR","LOW","OPEN","IN_PROGRESS","PLANNED","MONITORING","RESOLVED","CLOSED","ACTIVE","INACTIVE","COMMITTED","REJECTED","SAVED","SHORTLISTED","PURCHASED","MONTHLY","OWNER"],
-    attention:["MEDIUM","HIGH","POOR","DEGRADED","DUE_SOON","AT_RISK"],
-    urgent:["CRITICAL","FAILED","OVERDUE","PAST_DUE","EMERGENCY"]
-  };
-  for(const [tone,states] of Object.entries(groups)){
-    for(const state of states)assert.equal(statusTone(state),tone,state);
+test("priorities have only three levels and no separate Critical tier",()=>{
+  assert.deepEqual(["LOW","MEDIUM","HIGH"].map(priorityLabel),["Low","Medium","High"]);
+  assert.deepEqual(["LOW","MEDIUM","HIGH"].map(priorityTone),["neutral","attention","urgent"]);
+  assert.equal(priorityLabel("CRITICAL"),"High","legacy Critical displays as High");
+  assert.equal(priorityTone("CRITICAL"),"urgent","legacy priority remains visible as High");
+  for(const status of ["CRITICAL","FAILED","OVERDUE","POOR","DEGRADED","HIGH","MEDIUM",
+    "OPEN","RESOLVED","SAVED","GOOD","FAIR","IN_PROGRESS","COMMITTED"]){
+    assert.equal(statusTone(status),"neutral",status+" must not imply status-specific colors");
   }
 });
 
