@@ -1,7 +1,7 @@
 import { createInteraction, createReview } from "./interactions.js";
 import { watchFadingTitles } from "./fading.js";
 import { normalizeCurrency, formatMinorAmount, majorToMinorAmount, minorToMajorAmount, localDateInput,
-  normalizeStatus, statusLabel, priorityLabel, priorityTone, actionLabel, displayLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
+  normalizeStatus, statusLabel, priorityLabel, priorityTone, conditionLabel, issueStageLabel, purchaseStageLabel, healthLevelLabel, actionLabel, displayLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -93,6 +93,17 @@ function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&
 function badge(v){
   const status=normalizeStatus(v);
   return '<span class="badge '+esc(status)+'" data-tone="neutral">'+esc(statusLabel(status))+'</span>';
+}
+function conditionOptions(previous){
+  const code=normalizeStatus(previous);
+  const unrated=code==="NEW"?"NEW":"UNKNOWN";
+  const poor=code==="FAILED"?"FAILED":"POOR";
+  return [["Not assessed",unrated],["Good","GOOD"],["Fair","FAIR"],["Poor",poor]]
+    .map(([label,value])=>'<option value="'+value+'">'+label+'</option>').join("");
+}
+function purchaseOptions(previous){
+  const saved=normalizeStatus(previous)==="SHORTLISTED"?"SHORTLISTED":"SAVED";
+  return '<option value="'+saved+'">Saved</option><option value="PURCHASED">Purchased</option><option value="DISMISSED">Dismissed</option>';
 }
 function priorityBadge(v){
   const code=normalizeStatus(v);
@@ -281,7 +292,7 @@ function registerAction(id,label,kind="plus",primary=true){
 }
 function registerTools(label,status=false,action="",count=0){
   return '<div class="register-tools page-controls"><div class="controls-leading">'+quickSearch(label,"record-search")
-    +(status?'<div class="register-filters" aria-label="Issue status"><button type="button" data-status="all" aria-pressed="true">All</button><button type="button" data-status="open" aria-pressed="false">Open</button><button type="button" data-status="resolved" aria-pressed="false">Resolved</button></div>':'')
+    +(status?'<div class="register-filters" aria-label="Issue status"><button type="button" data-status="all" aria-pressed="true">All</button><button type="button" data-status="open" aria-pressed="false">Active</button><button type="button" data-status="resolved" aria-pressed="false">Resolved</button></div>':'')
     +'</div><span class="search-count" id="search-count" role="status">'+count+' '+(count===1?'entry':'entries')+'</span>'
     +'<div class="controls-actions">'+action+'</div></div>';
 }
@@ -558,7 +569,7 @@ async function showHome(){
       html+='<div class="home-memory">';
       if(repairs.length)html+='<section class="card"><div class="card-head"><h2>Recent repairs</h2><button class="ghost-link" data-go="repairs">View all</button></div><div class="card-body rows">'+repairs.slice(0,3).map(r=>homeActionRow(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+'</span>',"repair",r.id)).join("")+'</div></section>';
       if(charges.length)html+='<section class="card"><div class="card-head"><h2>Charges</h2><button class="ghost-link" id="view-charges">View all</button></div><div class="card-body rows">'+charges.slice(0,3).map(c=>row(c.name,statusLabel(c.billing_cycle),'<span class="money">'+money(c.amount_cents)+'</span>')).join("")+'</div></section>';
-      if(purchases.length)html+='<section class="card"><div class="card-head"><h2>Saved purchases</h2><button class="ghost-link" id="view-purchases">View all</button></div><div class="card-body rows">'+purchases.slice(0,3).map(p=>row(p.title,statusLabel(p.status),'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>')).join("")+'</div></section>';
+      if(purchases.length)html+='<section class="card"><div class="card-head"><h2>Saved purchases</h2><button class="ghost-link" id="view-purchases">View all</button></div><div class="card-body rows">'+purchases.slice(0,3).map(p=>row(p.title,purchaseStageLabel(p.status),'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span>')).join("")+'</div></section>';
       html+='</div>';
     }
     html+='<nav class="home-utilities" aria-label="Other home records"><div class="utility-links">'+(!charges.length?'<button class="ghost-link" id="view-charges-shortcut">Charges</button>':'')+(!purchases.length?'<button class="ghost-link" id="view-purchases-shortcut">Purchases</button>':'')+'<button class="ghost-link" id="view-history">History</button></div></nav></div>';
@@ -582,7 +593,7 @@ async function showCharges(){
 }
 async function showPurchases(){
   const pending=waitingModal("Loading records…");
-  try{const items=await api("/api/purchases");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">Save purchase</button></div><div class="rows">'+(items.map(function(p){return row(p.title,displayLabel(p.category)+" · "+statusLabel(p.status),'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)))}catch(e){modalLoadFailed(pending,e)}
+  try{const items=await api("/api/purchases");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">Save purchase</button></div><div class="rows">'+(items.map(function(p){return row(p.title,displayLabel(p.category)+" · "+purchaseStageLabel(p.status),'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)))}catch(e){modalLoadFailed(pending,e)}
 }
 async function showHistory(){
   const pending=waitingModal("Loading records…");
@@ -608,7 +619,7 @@ async function showIssues(){
       const unresolved=!["RESOLVED","CLOSED"].includes(normalizeStatus(item.status));
       const emphasize=unresolved;
       return '<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
-        +'<div class="ledger-details">'+badge(item.status)+(emphasize?priorityBadge(item.severity):'')+'</div></div>';
+        +'<div class="ledger-details">'+badge(issueStageLabel(item.status))+(emphasize?priorityBadge(item.severity):'')+'</div></div>';
     }).join("");
     content.innerHTML=registerTools("issues",true,action,items.length)+ledger("Issues",items.length,"",body,"Issue");
     bindRegisterSearch(items,i=>[i.title,i.asset_name,i.description,i.status,i.severity].filter(Boolean).join(" "),i=>!["RESOLVED","CLOSED"].includes(i.status));
@@ -643,7 +654,7 @@ async function openIssue(issue){
   try{const results=await Promise.all([api("/api/documents"),api("/api/assets/"+encodeURIComponent(issue.asset_id))]);
     if(!modalPending(pending))return;
     const docs=results[0].filter(function(d){return d.issue_id===issue.id}),history=(results[1].history||[]).filter(function(e){return e.issue_id===issue.id});
-    openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issue.status)+priorityBadge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"—")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-attach">Attach file</button><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
+    openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issueStageLabel(issue.status))+priorityBadge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"—")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-attach">Attach file</button><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
     bindEvidence(docs);$("#issue-attach").onclick=function(){openUploadEvidenceForm({assetId:issue.asset_id,issueId:issue.id})};$("#issue-asset").onclick=function(){openAsset(issue.asset_id)};if($("#issue-repair"))$("#issue-repair").onclick=function(){openRepairForm(issue)};if($("#issue-resolve"))$("#issue-resolve").onclick=function(){openResolveForm(issue)};
   }catch(e){modalLoadFailed(pending,e)}
 }
