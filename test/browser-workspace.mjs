@@ -723,6 +723,14 @@ try {
   assert.equal(sampleHome.homes.length,2,"existing home is retained");
   const sampleAssets=await sample.evaluate(async()=>await(await fetch("/api/assets")).json());
   assert.equal(sampleAssets.length,9);
+  assert.ok(sampleAssets.every(a=>typeof a.operational_state==="string"));
+  const overview=await sample.evaluate(async()=>await(await fetch("/api/overview")).json());
+  assert.ok(overview.insights&&overview.insights.service,"Home reports computed insights from the selected household");
+  assert.equal(overview.insights.service.out_of_service,1,"sample has one explicitly failed appliance");
+  await sample.locator(".home-insights .insight-row").first().waitFor();
+  assert.ok(await sample.locator(".home-insights .insight-row").count()>=2);
+  await sample.locator('[data-insight-action="appliances"]').click();
+  await sample.locator(".ledger-entry .badge.operational").first().waitFor();
   await sample.locator('[data-view="issues"]').click();
   await sample.locator(".ledger-entry .badge.IN_PROGRESS").first().waitFor();
   assert.equal(await sample.locator(".badge.IN_PROGRESS").first().textContent(),"In progress");
@@ -743,18 +751,27 @@ try {
   assert.equal(await sample.locator('#issue-form select[name="severity"]').inputValue(),"MEDIUM");
   await sample.locator("#modal-close").click();
   await sample.locator('[data-view="appliances"]').click();
-  await sample.locator(".ledger-entry .badge.POOR").first().waitFor();
-  assert.equal(await sample.locator(".ledger-entry .badge.GOOD,.ledger-entry .badge.UNKNOWN,.ledger-entry .badge.NEW,.ledger-entry .badge.FAILED").count(),0,
-    "condition list contains only three meaningful ratings");
-  const conditions=await sample.locator(".ledger-entry .badge").evaluateAll(nodes=>
+  await sample.locator(".ledger-entry .badge.operational").first().waitFor();
+  const states=await sample.locator(".ledger-entry .badge.operational").evaluateAll(nodes=>
     [...new Set(nodes.map(el=>el.textContent))].sort());
-  assert.deepEqual(conditions,["Fair","Poor"],"legacy Failed is shown as Poor");
+  assert.deepEqual(states,["Needs attention","Not assessed","Out of service","Working"]);
+  const stateStyles=await sample.locator(".ledger-entry .badge.operational").evaluateAll(nodes=>
+    Object.fromEntries(nodes.map(el=>[el.textContent,{tone:el.dataset.tone,color:getComputedStyle(el).color,
+      border:getComputedStyle(el).borderTopWidth,background:getComputedStyle(el).backgroundColor}])));
+  assert.equal(stateStyles["Working"].tone,"positive");
+  assert.equal(stateStyles["Needs attention"].tone,"attention");
+  assert.equal(stateStyles["Out of service"].tone,"urgent");
+  assert.equal(stateStyles["Not assessed"].tone,"neutral");
+  assert.ok(Object.values(stateStyles).every(v=>v.border==="1px"&&v.background!=="rgba(0, 0, 0, 0)"),
+    "every operational label has a visible border and light fill");
   await sample.locator("[data-asset]").filter({hasText:"Washing machine"}).first().click();
-  await sample.locator(".hero-actions .badge").filter({hasText:"Poor"}).waitFor();
+  await sample.locator(".hero-actions .badge").filter({hasText:"Out of service"}).waitFor();
+  await sample.locator(".asset-facts").waitFor();
+  assert.match(await sample.locator(".asset-assessment-note").textContent(),/recorded condition/);
   await sample.locator("#edit-asset").click();
   await sample.locator('#asset-form select[name="condition"]').waitFor();
   assert.deepEqual(await sample.locator('#asset-form select[name="condition"] option').allTextContents(),
-    ["Not assessed","Good","Fair","Poor"]);
+    ["Not assessed","Working","Needs attention","Out of service"]);
   assert.equal(await sample.locator('#asset-form select[name="condition"]').inputValue(),"FAILED",
     "editing other asset details must preserve historical Failed without rewriting it");
   await sample.locator("#modal-close").click();
