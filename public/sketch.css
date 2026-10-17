@@ -2678,7 +2678,7 @@ section.file-browser .file-grid > button.file-card[aria-pressed="true"]{
   overflow:hidden!important;
   box-shadow:none!important;
   cursor:pointer;
-  transition:border-color .15s ease,background-color .15s ease!important;
+  transition:none!important;
 }
 section.file-browser .file-grid > button.file-card:hover{
   border-color:#777780!important;
