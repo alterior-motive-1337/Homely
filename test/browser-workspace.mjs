@@ -344,7 +344,7 @@ try {
   await page.getByRole("button", {name:"Approve & commit"}).click();
   await page.locator("#modal").waitFor({state:"hidden"});
   await page.locator("#view-charges,#view-charges-shortcut").click();
-  await page.getByText("INACTIVE",{exact:true}).waitFor();
+  await page.getByText("Inactive",{exact:true}).waitFor();
   await page.locator("#modal-close").click();
   await page.locator("#view-purchases,#view-purchases-shortcut").click();
   await page.locator("#add-purchase").click();
