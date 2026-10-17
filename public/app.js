@@ -263,6 +263,27 @@ function fileIcon(doc={}){
   return '<svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+paths+'</svg>';
 }
 
+// A lightweight visual cover for every format. Only same-origin media is
+// loaded into tiles; external links never initiate third-party requests.
+function filePreview(doc){
+  const mime=String(doc.mime_type||doc.mimeType||"").toLowerCase();
+  const name=String(doc.title||"").toLowerCase();
+  const type=mime.startsWith("image/")?"Image":mime.startsWith("video/")?"Video":
+    mime.startsWith("audio/")?"Audio":mime==="application/pdf"||name.endsWith(".pdf")?"PDF":
+    mime.startsWith("text/")||mime==="application/json"?"Text":
+    mime.includes("wordprocessingml")||name.endsWith(".doc")||name.endsWith(".docx")?"Document":
+    name.endsWith(".zip")?"Archive":"File";
+  const href=fileHref(doc);
+  let local=false;
+  try{local=Boolean(href)&&new URL(href).origin===location.origin}catch(_){}
+  const image=local&&mime.startsWith("image/")?'<img class="file-preview-image" src="'+esc(href)+'" alt="" loading="lazy" decoding="async">':"";
+  const video=local&&mime.startsWith("video/")?'<video class="file-preview-video" src="'+esc(href)+'" preload="metadata" muted playsinline tabindex="-1" aria-hidden="true"></video>':"";
+  return '<span class="file-preview file-preview-'+type.toLowerCase()+'" aria-hidden="true">'
+    +'<span class="file-preview-fallback">'+fileIcon(doc)+'</span>'
+    +image+video
+    +(type==="Video"?'<span class="file-preview-play">'+fileIcon({mime_type:"video/mp4"})+'</span>':"")
+    +'<span class="file-preview-kind">'+esc(type)+'</span></span>';
+}
 function quickSearch(label,id){
   return '<div class="quick-search">'
     +'<button type="button" class="icon-button search-toggle" title="Search '+esc(label)+'" aria-label="Search '+esc(label)+'" aria-expanded="false" aria-controls="'+id+'">'
@@ -1007,7 +1028,9 @@ async function showFiles(){
     const cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
       return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false">'
-        +'<span class="file-glyph" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-entry-copy"><strong class="fade-title">'+esc(d.title)+'</strong>'+(links.length?'<small>'+esc(links[0])+'</small>':'')+'</span></button>';
+        +filePreview(d)
+        +'<span class="file-entry-copy"><strong class="fade-title">'+esc(d.title)+'</strong>'
+        +'<small>'+esc(links[0]||"Household file")+'</small></span></button>';
     }).join("")||'<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
     content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading">'+quickSearch("files","file-search")+'</div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+actions+'</div></div>'
       +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-grid">'+cards+'</div></div></div></section>';
@@ -1020,6 +1043,17 @@ async function showFiles(){
       textFor:d=>[d.title,d.asset_name,d.issue_title,d.repair_title,d.charge_name,d.purchase_title].filter(Boolean).join(" "),
       unit:"file",plural:"files",emptyMessage:"No matching files",
       onUpdate:()=>{if(!$(".file-card[aria-pressed=true]:not([hidden])",content))for(const card of document.querySelectorAll(".file-card"))card.setAttribute("aria-pressed","false")}
+    });
+    // An unavailable thumbnail falls back to the file's format cover.
+    $$(".file-preview img,.file-preview video",content).forEach(media=>{
+      media.addEventListener("error",()=>{media.hidden=true},{once:true});
+      if(media.tagName==="VIDEO"){
+        media.addEventListener("loadedmetadata",()=>{
+          if(Number.isFinite(media.duration)&&media.duration>0){
+            try{media.currentTime=Math.min(.15,media.duration*.08)}catch(_){}
+          }
+        },{once:true});
+      }
     });
     $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
