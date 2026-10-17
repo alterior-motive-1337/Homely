@@ -2801,3 +2801,61 @@ section.file-browser .file-grid > .files-empty{min-height:160px}
   section.file-browser .file-grid > button.file-card{transition:none!important}
 }
 
+
+
+/* Files: return to a compact, single-column list. No preview tiles. */
+section.file-browser .file-browser-body,
+section.file-browser .file-browser-main{
+  width:100%!important;min-width:0!important;display:block!important;
+}
+section.file-browser .file-browser-main{padding:0 0 20px!important}
+section.file-browser .file-list{
+  display:flex!important;flex-direction:column!important;
+  width:100%!important;gap:0!important;padding:0!important;
+  border-top:1px solid #34343a!important;
+}
+section.file-browser .file-list > button.file-card,
+section.file-browser .file-list > button.file-card:hover,
+section.file-browser .file-list > button.file-card[aria-pressed="true"]{
+  display:flex!important;flex-direction:row!important;align-items:center!important;
+  gap:13px!important;width:100%!important;max-width:none!important;
+  min-width:0!important;min-height:62px!important;height:auto!important;
+  padding:10px 12px!important;margin:0!important;
+  text-align:left!important;border:0!important;
+  border-bottom:1px solid #34343a!important;border-radius:0!important;
+  background:transparent!important;box-shadow:none!important;
+}
+section.file-browser .file-list > button.file-card:hover{background:#1d1d20!important}
+section.file-browser .file-list > button.file-card[aria-pressed="true"]{
+  background:#242428!important;box-shadow:inset 2px 0 #e2e2e8!important;
+}
+section.file-browser .file-list .file-preview{display:none!important}
+section.file-browser .file-list .file-row-icon{
+  display:grid!important;place-items:center!important;flex:0 0 36px!important;
+  width:36px!important;height:40px!important;color:#c7c7d0!important;
+}
+section.file-browser .file-list .file-row-icon .ui-icon{
+  display:block!important;width:23px!important;height:23px!important;
+}
+section.file-browser .file-list .file-entry-copy{
+  display:flex!important;flex-direction:column!important;justify-content:center!important;
+  gap:4px!important;min-width:0!important;flex:1 1 auto!important;
+  padding:0!important;overflow:hidden!important;
+}
+section.file-browser .file-list .file-entry-copy strong{
+  display:block!important;min-width:0!important;max-width:100%!important;
+  color:#ededf1!important;font-size:13px!important;font-weight:590!important;
+  line-height:1.4!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+section.file-browser .file-list .file-entry-copy small{
+  display:block!important;min-width:0!important;color:#a9a9b3!important;
+  font-size:11px!important;line-height:1.4!important;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+section.file-browser .file-list > .files-empty,
+section.file-browser .file-list > .search-empty{width:100%!important;grid-column:auto!important}
+section.file-browser .file-list > .files-empty{min-height:120px}
+@media(max-width:700px){
+  section.file-browser .file-list > button.file-card{min-height:60px!important;padding:10px 8px!important;gap:11px!important}
+  section.file-browser .file-list .file-row-icon{flex-basis:32px!important;width:32px!important}
+}
