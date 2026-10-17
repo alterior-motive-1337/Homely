@@ -46,6 +46,25 @@ test("committed issue reports are permanent history", () => {
   db.close();
 });
 
+test("new issues have three priorities and legacy Critical inputs are mapped to High", () => {
+  const db=demoDb();
+  try {
+    for (const severity of ["LOW","MEDIUM","HIGH","CRITICAL"]) {
+      const proposal=proposeTransaction(db, {
+        actionType:"REPORT_ISSUE",reason:"Verify issue priorities",
+        payload:{assetId:"asset-tap",title:"Priority "+severity,severity}
+      });
+      commitTransaction(db,String(proposal.transaction?.id));
+      const row=db.prepare("SELECT severity FROM issues WHERE title=?").get("Priority "+severity);
+      assert.equal(row?.severity,severity==="CRITICAL"?"HIGH":severity);
+    }
+    assert.throws(()=>proposeTransaction(db, {
+      actionType:"REPORT_ISSUE",reason:"Out of range",
+      payload:{assetId:"asset-tap",title:"Invalid priority",severity:"EMERGENCY"}
+    }),/Low, Medium or High/);
+  } finally {db.close()}
+});
+
 test("repair records are permanent history", () => {
   const db = demoDb();
   const proposal = proposeTransaction(db, {
