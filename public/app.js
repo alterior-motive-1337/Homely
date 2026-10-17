@@ -1,7 +1,7 @@
 import { createInteraction, createReview } from "./interactions.js";
 import { watchFadingTitles } from "./fading.js";
 import { normalizeCurrency, formatMinorAmount, majorToMinorAmount, minorToMajorAmount, localDateInput,
-  normalizeStatus, statusLabel, statusTone, actionLabel, displayLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
+  normalizeStatus, statusLabel, statusTone, priorityLabel, priorityTone, actionLabel, displayLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -92,7 +92,11 @@ function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="l
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
 function badge(v){
   const status=normalizeStatus(v);
-  return '<span class="badge '+esc(status)+'" data-tone="'+statusTone(status)+'">'+esc(statusLabel(status))+'</span>';
+  return '<span class="badge '+esc(status)+'" data-tone="neutral">'+esc(statusLabel(status))+'</span>';
+}
+function priorityBadge(v){
+  const code=normalizeStatus(v);
+  return '<span class="badge priority '+esc(code)+'" data-tone="'+priorityTone(code)+'">'+esc(priorityLabel(code))+'</span>';
 }
 function row(title,meta,right,note,fadeTitle=false){return '<div class="row"><div><div class="row-title'+(fadeTitle?' fade-title':'')+'">'+esc(title)+'</div>'+(meta?'<div class="row-meta">'+esc(meta)+'</div>':'')+(note?'<div class="row-note">'+esc(note)+"</div>":"")+'</div><div class="row-actions">'+(right||"")+"</div></div>"}
 
@@ -218,7 +222,7 @@ async function showAlerts(){
   const pending=waitingModal("Loading alerts…");
   await refreshAlerts();
   if(!modalPending(pending))return;
-  openModal('<h2>Alerts</h2>'+(("Notification" in window&&Notification.permission!=="granted")?'<button class="button" id="enable-notifications" type="button">Enable notifications</button>':'')+'<div class="rows">'+(state.alerts.map(a=>row(a.title,a.detail,badge(a.severity)+'<button class="button" data-alert-open="'+esc(a.key)+'">Open</button><button class="button" data-alert-ack="'+esc(a.key)+'">Acknowledge</button>'+(a.kind==="MAINTENANCE"?'<button class="button" data-maintenance-complete="'+esc(a.recordId)+'">Complete</button>':''))).join('')||'<div class="empty">No alerts.</div>')+'</div>');
+  openModal('<h2>Alerts</h2>'+(("Notification" in window&&Notification.permission!=="granted")?'<button class="button" id="enable-notifications" type="button">Enable notifications</button>':'')+'<div class="rows">'+(state.alerts.map(a=>row(a.title,a.detail,(a.kind==="ISSUE"?priorityBadge(a.severity):badge(a.severity))+'<button class="button" data-alert-open="'+esc(a.key)+'">Open</button><button class="button" data-alert-ack="'+esc(a.key)+'">Acknowledge</button>'+(a.kind==="MAINTENANCE"?'<button class="button" data-maintenance-complete="'+esc(a.recordId)+'">Complete</button>':''))).join('')||'<div class="empty">No alerts.</div>')+'</div>');
   const enable=$("#enable-notifications");if(enable)enable.onclick=async()=>{const permission=await Notification.requestPermission();if(permission==="granted"){enable.hidden=true;await refreshAlerts()}};
   $$("[data-alert-ack]",modalBody).forEach(b=>b.onclick=async()=>{try{await api("/api/alerts/acknowledge",{method:"POST",body:{key:b.dataset.alertAck}});await showAlerts()}catch(e){notify(e.message)}});
   $$("[data-alert-open]",modalBody).forEach(b=>b.onclick=()=>{const alert=state.alerts.find(a=>a.key===b.dataset.alertOpen);if(alert)void openAsset(alert.assetId)});
@@ -431,7 +435,7 @@ async function openIssueForm(){
   let options;
   try{options=await assetOptions("")}catch(error){modalLoadFailed(pending,error);return}
   if(!modalPending(pending))return;
-  openModal('<h2>Report a problem</h2><form class="form" id="issue-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>Title</label><input name="title" maxlength="160" required></div><div class="field"><label>Severity</label><select name="severity"><option value="LOW">Low</option><option value="MEDIUM" selected>Medium</option><option value="HIGH">High</option><option value="CRITICAL">Critical</option></select></div><div class="field"><label>Date detected</label><input type="date" name="detectedAt" value="'+today()+'" required></div><div class="field full"><label>Description</label><textarea name="description"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>Report a problem</h2><form class="form" id="issue-form"><div class="form-grid"><div class="field full"><label>Asset</label><select name="assetId" required>'+options+'</select></div><div class="field"><label>Title</label><input name="title" maxlength="160" required></div><div class="field"><label>Severity</label><select name="severity"><option value="LOW">Low</option><option value="MEDIUM" selected>Medium</option><option value="HIGH">High</option></select></div><div class="field"><label>Date detected</label><input type="date" name="detectedAt" value="'+today()+'" required></div><div class="field full"><label>Description</label><textarea name="description"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   $("[data-cancel]",modalBody).onclick=closeModal;
   bindPreviewForm("#issue-form",d=>["REPORT_ISSUE",{
     assetId:d.get("assetId"),title:d.get("title"),severity:d.get("severity"),
@@ -518,7 +522,7 @@ async function showHome(){
     state.currency=normalizeCurrency(d.currency);
     const issueShortcuts=d.attention?.issues||[];
     const maintenanceShortcuts=[...(d.attention?.maintenance||[]),...upcoming];
-    const attention=issueShortcuts.map(i=>homeActionRow(i.title,i.asset_name,badge(i.severity),"issue",i.id))
+    const attention=issueShortcuts.map(i=>homeActionRow(i.title,i.asset_name,priorityBadge(i.severity),"issue",i.id))
       .concat((d.attention?.maintenance||[]).map(m=>homeActionRow(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"),"maintenance",m.id)));
     const homeName=d.home?.name||"My Home";
     pageTitle.textContent=homeName;
@@ -602,9 +606,9 @@ async function showIssues(){
     const body=items.map(item=>{
       const severity=normalizeStatus(item.severity);
       const unresolved=!["RESOLVED","CLOSED"].includes(normalizeStatus(item.status));
-      const emphasize=unresolved&&statusTone(severity)!=="neutral";
+      const emphasize=unresolved;
       return '<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-issue-open="'+esc(item.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(item.title)+'</strong><small>'+esc(item.asset_name||"Home")+'</small></span></button>'
-        +'<div class="ledger-details">'+badge(item.status)+(emphasize?badge(item.severity):'')+'</div></div>';
+        +'<div class="ledger-details">'+badge(item.status)+(emphasize?priorityBadge(item.severity):'')+'</div></div>';
     }).join("");
     content.innerHTML=registerTools("issues",true,action,items.length)+ledger("Issues",items.length,"",body,"Issue");
     bindRegisterSearch(items,i=>[i.title,i.asset_name,i.description,i.status,i.severity].filter(Boolean).join(" "),i=>!["RESOLVED","CLOSED"].includes(i.status));
@@ -639,7 +643,7 @@ async function openIssue(issue){
   try{const results=await Promise.all([api("/api/documents"),api("/api/assets/"+encodeURIComponent(issue.asset_id))]);
     if(!modalPending(pending))return;
     const docs=results[0].filter(function(d){return d.issue_id===issue.id}),history=(results[1].history||[]).filter(function(e){return e.issue_id===issue.id});
-    openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issue.status)+badge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"—")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-attach">Attach file</button><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
+    openModal('<p class="eyebrow">Issue · '+esc(issue.asset_name)+'</p><h2>'+esc(issue.title)+'</h2><div class="hero-actions">'+badge(issue.status)+priorityBadge(issue.severity)+'</div><div class="detail-grid"><div class="detail"><span>Detected</span><strong>'+fmtDate(issue.detected_at)+'</strong></div><div class="detail"><span>Resolved</span><strong>'+fmtDate(issue.resolved_at)+'</strong></div></div><p>'+esc(issue.description||"—")+'</p>'+(history.length?'<div class="detail-section"><h3>History</h3><div class="rows">'+history.map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div></div>':"")+evidenceMarkup(docs)+'<div class="form-actions"><button class="button" id="issue-attach">Attach file</button><button class="button" id="issue-asset">View asset</button>'+(!["RESOLVED","CLOSED"].includes(issue.status)?'<button class="button" id="issue-repair">Record repair</button><button class="primary-button" id="issue-resolve">Resolve</button>':"")+'</div>');
     bindEvidence(docs);$("#issue-attach").onclick=function(){openUploadEvidenceForm({assetId:issue.asset_id,issueId:issue.id})};$("#issue-asset").onclick=function(){openAsset(issue.asset_id)};if($("#issue-repair"))$("#issue-repair").onclick=function(){openRepairForm(issue)};if($("#issue-resolve"))$("#issue-resolve").onclick=function(){openResolveForm(issue)};
   }catch(e){modalLoadFailed(pending,e)}
 }
@@ -713,7 +717,7 @@ async function openAsset(id){
     let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(a.condition||"UNKNOWN")+healthLabel+'</div><div class="detail-grid">';
     [["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Age",assetAge(a)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]].forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
     html+="</div>";if(a.notes)html+='<div class="detail-section"><h3>Notes</h3><div class="row-note">'+esc(a.notes)+"</div></div>";
-    html+='<div class="detail-section"><h3>Issues</h3><div class="rows">'+(a.issues.map(function(i){return row(i.title,fmtDate(i.detected_at)+" · "+statusLabel(i.severity),badge(i.status),i.description||"")}).join("")||'<div class="empty">No issues.</div>')+"</div></div>";
+    html+='<div class="detail-section"><h3>Issues</h3><div class="rows">'+(a.issues.map(function(i){return row(i.title,fmtDate(i.detected_at)+" · "+priorityLabel(i.severity),badge(i.status),i.description||"")}).join("")||'<div class="empty">No issues.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>',"",true)}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
     html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
