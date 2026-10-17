@@ -2636,3 +2636,167 @@ button:disabled,.button:disabled,.primary-button:disabled{opacity:.55;cursor:not
   .insight-action{grid-column:2;justify-self:end;min-height:33px}
   .insight-value{grid-column:2;grid-row:1}
 }
+
+/* Visual files workspace — actual media previews; lightweight covers otherwise.
+   Scoped to Files so record lists, forms, and the assistant keep their rhythm. */
+section.file-browser{
+  width:100%!important;
+  max-width:var(--homely-record-width,1080px)!important;
+  margin-inline:auto!important;
+}
+section.file-browser .file-browser-body,
+section.file-browser .file-browser-main{
+  width:100%!important;min-width:0!important;
+  display:block!important;
+}
+section.file-browser .file-browser-main{padding:0 0 24px!important}
+section.file-browser .file-grid{
+  display:grid!important;
+  grid-template-columns:repeat(auto-fill,minmax(190px,1fr))!important;
+  align-items:start!important;
+  gap:16px!important;
+  padding:2px 0 22px!important;
+  width:100%!important;
+}
+section.file-browser .file-grid > button.file-card,
+section.file-browser .file-grid > button.file-card:hover,
+section.file-browser .file-grid > button.file-card[aria-pressed="true"]{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  grid-template-rows:auto minmax(0,auto)!important;
+  align-content:stretch!important;
+  align-items:stretch!important;
+  text-align:left!important;
+  gap:0!important;
+  min-width:0!important;max-width:none!important;
+  min-height:0!important;max-height:none!important;
+  width:100%!important;height:auto!important;
+  padding:0!important;
+  border:1px solid #3b3b41!important;
+  border-radius:12px!important;
+  background:#171719!important;
+  overflow:hidden!important;
+  box-shadow:none!important;
+  cursor:pointer;
+  transition:border-color .15s ease,background-color .15s ease!important;
+}
+section.file-browser .file-grid > button.file-card:hover{
+  border-color:#777780!important;
+  background:#1d1d20!important;
+}
+section.file-browser .file-grid > button.file-card[aria-pressed="true"]{
+  border-color:#e4e4ea!important;
+  background:#232326!important;
+  box-shadow:inset 0 0 0 1px #9c9ca6!important;
+}
+section.file-browser .file-grid > button.file-card[hidden]{display:none!important}
+section.file-browser .file-preview{
+  grid-column:1!important;grid-row:1!important;
+  position:relative;display:grid;place-items:center;
+  width:100%;min-width:0;aspect-ratio:4/3;
+  overflow:hidden;
+  background:radial-gradient(ellipse at 50% 24%,#2e2e34,#1c1c20 69%,#18181b);
+  border:0!important;border-bottom:1px solid #2d2d33!important;
+  pointer-events:none;
+}
+section.file-browser .file-preview-image,
+section.file-browser .file-preview-video{
+  display:block;position:absolute;inset:0;
+  width:100%;height:100%;
+  object-fit:cover;
+  border:0!important;
+  background:#171719;
+  pointer-events:none;
+}
+section.file-browser .file-preview-image[hidden],
+section.file-browser .file-preview-video[hidden]{display:none!important}
+section.file-browser .file-preview-fallback{
+  position:relative;display:grid;place-items:center;
+  width:72px;height:86px;
+  color:#c8c8d0;
+  filter:drop-shadow(0 5px 14px #0004);
+}
+section.file-browser .file-preview-fallback .ui-icon{
+  width:54px!important;height:54px!important;
+  stroke-width:1.2px;
+}
+section.file-browser .file-preview-pdf .file-preview-fallback,
+section.file-browser .file-preview-document .file-preview-fallback,
+section.file-browser .file-preview-text .file-preview-fallback{
+  background:#34343b;
+  border:1px solid #54545e;
+  border-radius:5px;
+}
+section.file-browser .file-preview-pdf .file-preview-fallback .ui-icon,
+section.file-browser .file-preview-document .file-preview-fallback .ui-icon,
+section.file-browser .file-preview-text .file-preview-fallback .ui-icon{
+  width:38px!important;height:38px!important;
+}
+section.file-browser .file-preview-kind{
+  display:block;position:absolute;right:10px;top:10px;
+  padding:4px 7px;
+  border:1px solid #777781;
+  border-radius:5px;
+  color:#f2f2f4;background:#17171bc9;
+  font-size:10px;font-weight:680;letter-spacing:.025em;
+  text-transform:uppercase;
+}
+section.file-browser .file-preview-play{
+  position:absolute;display:grid;place-items:center;
+  width:42px;height:42px;
+  color:#f3f3f6;
+  background:#17171bab;
+  border:1px solid #dddde3aa;
+  border-radius:50%;
+}
+section.file-browser .file-preview-play .ui-icon{width:25px;height:25px}
+section.file-browser .file-grid > button.file-card .file-entry-copy{
+  grid-column:1!important;grid-row:2!important;
+  display:flex!important;flex-direction:column!important;
+  align-items:stretch!important;justify-content:center!important;
+  gap:5px!important;
+  min-width:0!important;
+  width:100%!important;
+  padding:12px 13px 14px!important;
+  overflow:hidden;
+}
+section.file-browser .file-grid > button.file-card .file-entry-copy strong{
+  display:block!important;
+  min-width:0!important;max-width:100%!important;
+  font-size:13px!important;line-height:1.38!important;
+  font-weight:630!important;color:#f0f0f3!important;
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+}
+section.file-browser .file-grid > button.file-card .file-entry-copy small{
+  display:block!important;
+  min-width:0!important;
+  font-size:11px!important;line-height:1.35!important;
+  color:#aaaab3!important;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+section.file-browser .file-grid > .files-empty,
+section.file-browser .file-grid > .search-empty{
+  grid-column:1/-1!important;
+  width:100%;
+}
+section.file-browser .file-grid > .files-empty{min-height:160px}
+@media(max-width:700px){
+  section.file-browser .file-grid{
+    grid-template-columns:repeat(auto-fill,minmax(152px,1fr))!important;
+    gap:11px!important;
+  }
+  section.file-browser .file-grid > button.file-card .file-entry-copy{
+    padding:10px 10px 12px!important;
+  }
+  section.file-browser .file-preview-kind{top:7px;right:7px;font-size:9px}
+  section.file-browser .file-preview-play{width:34px;height:34px}
+}
+@media(max-width:340px){
+  section.file-browser .file-grid{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  section.file-browser .file-preview{aspect-ratio:16/9}
+}
+@media(prefers-reduced-motion:reduce){
+  section.file-browser .file-grid > button.file-card{transition:none!important}
+}
