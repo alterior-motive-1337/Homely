@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_CURRENCY,normalizeCurrency,formatMinorAmount,majorToMinorAmount,
-  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,
+  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,actionLabel,
   matchesSearch,countLabel,matchesStatusFilter
 } from "../public/ui-normalization.js";
 
@@ -39,15 +39,34 @@ test("date-only values stay on their recorded calendar day across time zones",()
   assert.ok(moment instanceof Date);
 });
 
-test("status is semantic, not one decorative color per state",()=>{
-  assert.equal(normalizeStatus("in progress"),"IN_PROGRESS");
-  assert.equal(statusLabel("IN_PROGRESS"),"IN PROGRESS");
-  assert.equal(statusTone("CRITICAL"),"urgent");
-  assert.equal(statusTone("OVERDUE"),"urgent");
-  assert.equal(statusTone("FAILED"),"urgent");
-  assert.equal(statusTone("HIGH"),"attention");
-  for(const status of ["GOOD","FAIR","UNKNOWN","OPEN","MEDIUM","LOW","RESOLVED"]){
-    assert.equal(statusTone(status),"neutral",status);
+test("labels are human-readable without changing stored enum values",()=>{
+  for(const [raw,code,label] of [
+    ["in progress","IN_PROGRESS","In progress"],
+    ["IN_PROGRESS","IN_PROGRESS","In progress"],
+    ["due-soon","DUE_SOON","Due soon"],
+    ["SHORTLISTED","SHORTLISTED","Shortlisted"],
+    ["monthly","MONTHLY","Monthly"],
+    ["MEDIUM","MEDIUM","Medium"],
+    ["UNKNOWN","UNKNOWN","Unknown"],
+    ["  past due  ","PAST_DUE","Past due"]
+  ]){
+    assert.equal(normalizeStatus(raw),code,raw);
+    assert.equal(statusLabel(raw),label,raw);
+  }
+  assert.equal(actionLabel("REPORT_ISSUE"),"Issue reported");
+  assert.equal(actionLabel("RECORD_REPAIR"),"Repair recorded");
+  assert.equal(actionLabel("COMPLETE_MAINTENANCE"),"Maintenance completed");
+  assert.equal(actionLabel("CUSTOM_ACTION"),"Custom action");
+});
+
+test("neutral, amber attention and red urgent tones are the only state categories",()=>{
+  const groups={
+    neutral:["UNKNOWN","NEW","GOOD","FAIR","LOW","OPEN","IN_PROGRESS","PLANNED","MONITORING","RESOLVED","CLOSED","ACTIVE","INACTIVE","COMMITTED","REJECTED","SAVED","SHORTLISTED","PURCHASED","MONTHLY","OWNER"],
+    attention:["MEDIUM","HIGH","POOR","DEGRADED","DUE_SOON","AT_RISK"],
+    urgent:["CRITICAL","FAILED","OVERDUE","PAST_DUE","EMERGENCY"]
+  };
+  for(const [tone,states] of Object.entries(groups)){
+    for(const state of states)assert.equal(statusTone(state),tone,state);
   }
 });
 
