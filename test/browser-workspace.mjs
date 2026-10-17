@@ -752,6 +752,7 @@ try {
   await sample.locator("[data-asset]").filter({hasText:"Washing machine"}).first().click();
   await sample.locator(".hero-actions .badge").filter({hasText:"Poor"}).waitFor();
   await sample.locator("#edit-asset").click();
+  await sample.locator('#asset-form select[name="condition"]').waitFor();
   assert.deepEqual(await sample.locator('#asset-form select[name="condition"] option').allTextContents(),
     ["Not assessed","Good","Fair","Poor"]);
   assert.equal(await sample.locator('#asset-form select[name="condition"]').inputValue(),"FAILED",
