@@ -1028,32 +1028,20 @@ async function showFiles(){
     const cards=docs.map(d=>{
       const links=[d.asset_name,d.issue_title&&"Issue: "+d.issue_title,d.repair_title&&"Repair: "+d.repair_title,d.charge_name&&"Charge: "+d.charge_name,d.purchase_title&&"Purchase: "+d.purchase_title].filter(Boolean);
       return '<button class="file-card" type="button" data-file="'+esc(d.id)+'" aria-label="Select '+esc(d.title)+'" aria-pressed="false">'
-        +filePreview(d)
-        +'<span class="file-entry-copy"><strong class="fade-title">'+esc(d.title)+'</strong>'
+        +'<span class="file-row-icon" aria-hidden="true">'+fileIcon(d)+'</span><span class="file-entry-copy"><strong class="fade-title">'+esc(d.title)+'</strong>'
         +'<small>'+esc(links[0]||"Household file")+'</small></span></button>';
     }).join("")||'<div class="files-empty"><span class="file-glyph" aria-hidden="true">'+fileIcon()+'</span><strong>No files</strong></div>';
     content.innerHTML='<div class="file-controls page-controls"><div class="controls-leading">'+quickSearch("files","file-search")+'</div><span class="search-count" id="file-count">'+docs.length+' '+(docs.length===1?'file':'files')+'</span><div class="controls-actions">'+actions+'</div></div>'
-      +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-grid">'+cards+'</div></div></div></section>';
+      +'<section class="file-browser"><div class="file-browser-body"><div class="file-browser-main"><div class="file-list">'+cards+'</div></div></div></section>';
     $("#save-link").onclick=()=>openLinkEvidenceForm();
     $("#upload-file").onclick=()=>openUploadEvidenceForm();
     state.syncFileInfo=null;
     bindCollectionSearch({
       items:docs,entrySelector:".file-card",searchId:"file-search",countId:"file-count",
-      container:$(".file-grid",content),
+      container:$(".file-list",content),
       textFor:d=>[d.title,d.asset_name,d.issue_title,d.repair_title,d.charge_name,d.purchase_title].filter(Boolean).join(" "),
       unit:"file",plural:"files",emptyMessage:"No matching files",
       onUpdate:()=>{if(!$(".file-card[aria-pressed=true]:not([hidden])",content))for(const card of document.querySelectorAll(".file-card"))card.setAttribute("aria-pressed","false")}
-    });
-    // An unavailable thumbnail falls back to the file's format cover.
-    $$(".file-preview img,.file-preview video",content).forEach(media=>{
-      media.addEventListener("error",()=>{media.hidden=true},{once:true});
-      if(media.tagName==="VIDEO"){
-        media.addEventListener("loadedmetadata",()=>{
-          if(Number.isFinite(media.duration)&&media.duration>0){
-            try{media.currentTime=Math.min(.15,media.duration*.08)}catch(_){}
-          }
-        },{once:true});
-      }
     });
     $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
