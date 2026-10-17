@@ -269,10 +269,10 @@ function filePreview(doc){
   const mime=String(doc.mime_type||doc.mimeType||"").toLowerCase();
   const name=String(doc.title||"").toLowerCase();
   const type=mime.startsWith("image/")?"Image":mime.startsWith("video/")?"Video":
-    mime.startsWith("audio/")?"Audio":mime==="application/pdf"||/\\.pdf$/.test(name)?"PDF":
+    mime.startsWith("audio/")?"Audio":mime==="application/pdf"||name.endsWith(".pdf")?"PDF":
     mime.startsWith("text/")||mime==="application/json"?"Text":
-    mime.includes("wordprocessingml")||/\\.docx?$/.test(name)?"Document":
-    /\\.zip$/.test(name)?"Archive":"File";
+    mime.includes("wordprocessingml")||name.endsWith(".doc")||name.endsWith(".docx")?"Document":
+    name.endsWith(".zip")?"Archive":"File";
   const href=fileHref(doc);
   let local=false;
   try{local=Boolean(href)&&new URL(href).origin===location.origin}catch(_){}
