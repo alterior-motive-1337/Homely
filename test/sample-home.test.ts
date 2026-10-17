@@ -30,7 +30,7 @@ test("sample homes preserve real records, are private, and retain edits on repea
     assert.equal(sample.created,true);
     assert.notEqual(sample.homeId,user.homeId);
     const data=runInHome(sample.homeId,()=>({assets:listAssets(db) as Record<string,unknown>[],issues:listIssues(db),documents:listDocuments(db)}));
-    assert.equal(data.assets.length,9);assert.equal(data.issues.length,6);assert.equal(data.documents.length,6);
+    assert.equal(data.assets.length,9);assert.equal(data.issues.length,6);assert.equal(data.documents.length,7);
     assert.equal(new Set(data.assets.map(a=>a.condition)).size,6);
     assert.equal(new Set(data.issues.map(i=>i.status)).size,6);
     for(const document of data.documents){
