@@ -1,7 +1,7 @@
 import { createInteraction, createReview } from "./interactions.js";
 import { watchFadingTitles } from "./fading.js";
 import { normalizeCurrency, formatMinorAmount, majorToMinorAmount, minorToMajorAmount, localDateInput,
-  normalizeStatus, statusLabel, statusTone, actionLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
+  normalizeStatus, statusLabel, statusTone, actionLabel, displayLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -574,11 +574,11 @@ async function showHome(){
 
 async function showCharges(){
   const pending=waitingModal("Loading records…");
-  try{const items=await api("/api/charges");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">Add charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,statusLabel(c.billing_cycle)+" · "+(c.provider||c.category),'<span class="money">'+money(c.amount_cents)+'</span>'+badge(Number(c.active)?'ACTIVE':'INACTIVE')+'<button class="button" data-charge-edit="'+esc(c.id)+'">Edit</button>',c.notes||"")}).join("")||'<div class="empty">No charges.</div>')+'</div>');$("#add-charge").onclick=()=>openChargeForm();$$("[data-charge-edit]",modalBody).forEach(b=>b.onclick=()=>openChargeForm(items.find(c=>c.id===b.dataset.chargeEdit)))}catch(e){modalLoadFailed(pending,e)}
+  try{const items=await api("/api/charges");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">Add charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,statusLabel(c.billing_cycle)+" · "+(c.provider||displayLabel(c.category)),'<span class="money">'+money(c.amount_cents)+'</span>'+badge(Number(c.active)?'ACTIVE':'INACTIVE')+'<button class="button" data-charge-edit="'+esc(c.id)+'">Edit</button>',c.notes||"")}).join("")||'<div class="empty">No charges.</div>')+'</div>');$("#add-charge").onclick=()=>openChargeForm();$$("[data-charge-edit]",modalBody).forEach(b=>b.onclick=()=>openChargeForm(items.find(c=>c.id===b.dataset.chargeEdit)))}catch(e){modalLoadFailed(pending,e)}
 }
 async function showPurchases(){
   const pending=waitingModal("Loading records…");
-  try{const items=await api("/api/purchases");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">Save purchase</button></div><div class="rows">'+(items.map(function(p){return row(p.title,p.category+" · "+statusLabel(p.status),'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)))}catch(e){modalLoadFailed(pending,e)}
+  try{const items=await api("/api/purchases");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">Save purchase</button></div><div class="rows">'+(items.map(function(p){return row(p.title,displayLabel(p.category)+" · "+statusLabel(p.status),'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)))}catch(e){modalLoadFailed(pending,e)}
 }
 async function showHistory(){
   const pending=waitingModal("Loading records…");
@@ -687,7 +687,7 @@ async function openAssetForm(existing){
 function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
-  const body=items.map(a=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([a.category,a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button>'+((a.condition&&!["UNKNOWN","GOOD","HEALTHY","WORKING"].includes(normalizeStatus(a.condition)))?'<div class="ledger-details">'+badge(a.condition)+'</div>':'')+'</div>').join("");
+  const body=items.map(a=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([displayLabel(a.category),a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button>'+((a.condition&&!["UNKNOWN","GOOD","HEALTHY","WORKING"].includes(normalizeStatus(a.condition)))?'<div class="ledger-details">'+badge(a.condition)+'</div>':'')+'</div>').join("");
   target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
   $$("[data-asset]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.asset));
 }
