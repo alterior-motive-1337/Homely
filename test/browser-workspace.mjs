@@ -724,8 +724,9 @@ try {
   const sampleAssets=await sample.evaluate(async()=>await(await fetch("/api/assets")).json());
   assert.equal(sampleAssets.length,9);
   await sample.locator('[data-view="issues"]').click();
-  await sample.locator(".ledger-entry .badge.IN_PROGRESS").waitFor();
+  await sample.locator(".ledger-entry .badge.IN_PROGRESS").first().waitFor();
   assert.equal(await sample.locator(".badge.IN_PROGRESS").first().textContent(),"In progress");
+  assert.equal(await sample.locator(".ledger-entry .badge.IN_PROGRESS").count(),2,"Monitoring and In progress share one display stage");
   assert.equal(await sample.locator(".badge.CRITICAL").first().textContent(),"High","historical Critical renders as High");
   const priorities=await sample.locator(".ledger-entry .badge.priority").evaluateAll(nodes=>
     Object.fromEntries(nodes.map(el=>[el.classList[2],{label:el.textContent,tone:el.dataset.tone,color:getComputedStyle(el).color}])));
