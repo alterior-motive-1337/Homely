@@ -52,7 +52,25 @@ export function normalizeStatus(value){
     .replace(/[^A-Za-z0-9]+/g,"_").toUpperCase()||"UNKNOWN";
 }
 // Color represents priority only. Routine statuses and conditions stay monochrome.
-export function statusTone(_value){return "neutral"}
+export function statusTone(value){
+  const code=normalizeStatus(value);
+  if(["RESOLVED","CLOSED","COMMITTED","PURCHASED","COMPLETE","ACTIVE"].includes(code))return "positive";
+  if(["FAILED","OVERDUE","OUT_OF_SERVICE"].includes(code))return "urgent";
+  if(["UPCOMING","NEEDS_ATTENTION","DEGRADED","ATTENTION","DUE_SOON"].includes(code))return "attention";
+  return "neutral";
+}
+export function operationalLabel(value){
+  const code=normalizeStatus(value);
+  return {
+    WORKING:"Working",NEEDS_ATTENTION:"Needs attention",
+    OUT_OF_SERVICE:"Out of service",UNASSESSED:"Not assessed"
+  }[code]||"Not assessed";
+}
+export function operationalTone(value){
+  const code=normalizeStatus(value);
+  return code==="WORKING"?"positive":code==="OUT_OF_SERVICE"?"urgent":
+    code==="NEEDS_ATTENTION"?"attention":"neutral";
+}
 export function priorityLabel(value){
   // Historical CRITICAL values remain in storage but appear as High.
   const priority=normalizeStatus(value);

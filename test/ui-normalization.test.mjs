@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_CURRENCY,normalizeCurrency,formatMinorAmount,majorToMinorAmount,
-  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,priorityLabel,priorityTone,conditionLabel,issueStageLabel,purchaseStageLabel,healthLevelLabel,actionLabel,displayLabel,
+  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,priorityLabel,priorityTone,operationalLabel,operationalTone,conditionLabel,issueStageLabel,purchaseStageLabel,healthLevelLabel,actionLabel,displayLabel,
   matchesSearch,countLabel,matchesStatusFilter
 } from "../public/ui-normalization.js";
 
@@ -69,10 +69,16 @@ test("priorities have only three levels and no separate Critical tier",()=>{
   assert.deepEqual(["LOW","MEDIUM","HIGH"].map(priorityTone),["neutral","attention","urgent"]);
   assert.equal(priorityLabel("CRITICAL"),"High","legacy Critical displays as High");
   assert.equal(priorityTone("CRITICAL"),"urgent","legacy priority remains visible as High");
-  for(const status of ["CRITICAL","FAILED","OVERDUE","POOR","DEGRADED","HIGH","MEDIUM",
-    "OPEN","RESOLVED","SAVED","GOOD","FAIR","IN_PROGRESS","COMMITTED"]){
-    assert.equal(statusTone(status),"neutral",status+" must not imply status-specific colors");
+  for(const status of ["CRITICAL","HIGH","MEDIUM","LOW","OPEN","SAVED","UNKNOWN","IN_PROGRESS"]){
+    assert.equal(statusTone(status),"neutral",status+" remains neutral without a factual outcome");
   }
+  for(const status of ["RESOLVED","COMMITTED","PURCHASED","ACTIVE"])assert.equal(statusTone(status),"positive");
+  for(const status of ["OVERDUE","FAILED"])assert.equal(statusTone(status),"urgent");
+  for(const status of ["UPCOMING","DEGRADED","ATTENTION"])assert.equal(statusTone(status),"attention");
+  assert.deepEqual(["WORKING","NEEDS_ATTENTION","OUT_OF_SERVICE","UNASSESSED"].map(operationalLabel),
+    ["Working","Needs attention","Out of service","Not assessed"]);
+  assert.deepEqual(["WORKING","NEEDS_ATTENTION","OUT_OF_SERVICE","UNASSESSED"].map(operationalTone),
+    ["positive","attention","urgent","neutral"]);
 });
 
 test("ranked labels use three states with unassessed data left ungraded",()=>{

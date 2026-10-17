@@ -1,7 +1,7 @@
 import { createInteraction, createReview } from "./interactions.js";
 import { watchFadingTitles } from "./fading.js";
 import { normalizeCurrency, formatMinorAmount, majorToMinorAmount, minorToMajorAmount, localDateInput,
-  normalizeStatus, statusLabel, priorityLabel, priorityTone, conditionLabel, issueStageLabel, purchaseStageLabel, healthLevelLabel, actionLabel, displayLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
+  normalizeStatus, statusLabel, statusTone, priorityLabel, priorityTone, operationalLabel, operationalTone, issueStageLabel, purchaseStageLabel, healthLevelLabel, actionLabel, displayLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -92,14 +92,23 @@ function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="l
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
 function badge(v){
   const status=normalizeStatus(v);
-  return '<span class="badge '+esc(status)+'" data-tone="neutral">'+esc(statusLabel(status))+'</span>';
+  return '<span class="badge '+esc(status)+'" data-tone="'+statusTone(status)+'">'+esc(statusLabel(status))+'</span>';
 }
 function conditionOptions(previous){
   const code=normalizeStatus(previous);
   const unrated=code==="NEW"?"NEW":"UNKNOWN";
-  const poor=code==="FAILED"?"FAILED":"POOR";
-  return [["Not assessed",unrated],["Good","GOOD"],["Fair","FAIR"],["Poor",poor]]
+  const attention=["FAIR","POOR"].includes(code)?code:"FAIR";
+  return [["Not assessed",unrated],["Working","GOOD"],["Needs attention",attention],["Out of service","FAILED"]]
     .map(([label,value])=>'<option value="'+value+'">'+label+'</option>').join("");
+}
+function operationalBadge(asset){
+  const code=asset.operational_state||"UNASSESSED";
+  return '<span class="badge operational '+esc(code)+'" data-tone="'+operationalTone(code)+'">'+esc(operationalLabel(code))+'</span>';
+}
+function analysisMetric(label,value,description,action){
+  return '<div class="insight-row"><div class="insight-copy"><strong>'+esc(label)+'</strong><small>'+esc(description)+'</small></div>'
+    +'<span class="insight-value">'+esc(value)+'</span>'
+    +(action?'<button type="button" class="insight-action" data-insight-action="'+esc(action)+'" aria-label="Open '+esc(label)+'">View</button>':'')+'</div>';
 }
 function purchaseOptions(previous){
   const saved=normalizeStatus(previous)==="SHORTLISTED"?"SHORTLISTED":"SAVED";
@@ -556,6 +565,33 @@ async function showHome(){
         +(overdue?'<div class="metric"><span>Overdue</span><strong>'+overdue+'</strong></div>':'')
         +'</section>';
     }
+    const insights=d.insights;
+    if(insights){
+      const metrics=[];
+      const service=insights.service||{},repairData=insights.repairs||{},expense=insights.charges||{};
+      const affected=Number(service.needing_attention||0)+Number(service.out_of_service||0);
+      if(affected||Number(service.unassessed||0)){
+        const note=[affected+" requiring a check",
+          Number(service.out_of_service||0)?service.out_of_service+" out of service":null,
+          Number(service.unassessed||0)?service.unassessed+" not assessed":null].filter(Boolean).join(" · ");
+        metrics.push(analysisMetric("Appliance attention",affected+" / "+assets.length,note,"appliances"));
+      }
+      if(Number(repairData.count_12m||0)){
+        const known=Number(repairData.cost_count_12m||0);
+        metrics.push(analysisMetric("Repairs · last 365 days",
+          known?money(repairData.recorded_cost_cents_12m):"No costs entered",
+          repairData.count_12m+" repairs · "+known+" with a recorded cost","repairs"));
+      }
+      if(Number(expense.active_count||0)){
+        const estimated=Number(expense.estimated_count||0);
+        const missing=Number(expense.unspecified_cycle_count||0);
+        metrics.push(analysisMetric("Estimated monthly charges",
+          estimated?money(expense.estimated_monthly_cents):"Not estimable",
+          estimated+" of "+expense.active_count+" active charges included"+(missing?" · "+missing+" excluded (unspecified cycle)":""),
+          "charges"));
+      }
+      if(metrics.length)html+='<section class="home-insights" aria-label="Home insights"><div class="card-head"><h2>Insights</h2></div><div class="insight-rows">'+metrics.join("")+'</div></section>';
+    }
     if(Number(summary.systems_needing_attention||0)>0&&!attention.length){
       html+='<p class="home-attention-note">'+Number(summary.systems_needing_attention)+' systems need attention</p>';
     }
@@ -579,6 +615,11 @@ async function showHome(){
     const chargesShortcut=$("#view-charges-shortcut");if(chargesShortcut)chargesShortcut.onclick=showCharges;
     const purchasesShortcut=$("#view-purchases-shortcut");if(purchasesShortcut)purchasesShortcut.onclick=showPurchases;
     $("#view-history").onclick=showHistory;
+    $$("[data-insight-action]",content).forEach(button=>button.onclick=()=>{
+      const target=button.dataset.insightAction;
+      if(target==="charges")void showCharges();
+      else if(target==="repairs"||target==="appliances")navigate(target);
+    });
     $$("[data-go]",content).forEach(b=>b.onclick=()=>navigate(b.dataset.go));
     $$("[data-home-maintenance]",content).forEach(b=>b.onclick=()=>openMaintenanceSummary(maintenanceShortcuts.find(m=>m.id===b.dataset.homeMaintenance)));
     $$("[data-home-asset]",content).forEach(b=>b.onclick=()=>openAsset(b.dataset.homeAsset));
@@ -675,7 +716,7 @@ async function openAssetForm(existing){
   if(!modalPending(pending))return;
   const options=systems.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'}).join("");
   if(!options){closeModal();notify("No home systems available.");return}
-  openModal('<h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Condition</label><select name="condition">'+conditionOptions(existing?.condition)+'</select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>'+esc(amountLabel("Purchase price"))+'</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Operational condition</label><select name="condition">'+conditionOptions(existing?.condition)+'</select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>'+esc(amountLabel("Purchase price"))+'</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   if(existing){
     const form=$("#asset-form");
     const values={systemId:existing.system_id,name:existing.name,category:existing.category,
@@ -702,7 +743,7 @@ async function openAssetForm(existing){
 function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
-  const body=items.map(a=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([displayLabel(a.category),a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button>'+((a.condition&&!["UNKNOWN","NEW","GOOD","HEALTHY","WORKING"].includes(normalizeStatus(a.condition)))?'<div class="ledger-details">'+badge(conditionLabel(a.condition))+'</div>':'')+'</div>').join("");
+  const body=items.map(a=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([displayLabel(a.category),a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+operationalBadge(a)+'</div></div>').join("");
   target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
   $$("[data-asset]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.asset));
 }
@@ -723,10 +764,19 @@ async function openAsset(id){
   try{
     const a=await api("/api/assets/"+encodeURIComponent(id));
     if(!modalPending(pending))return;
-    const conditionDisplay=conditionLabel(a.condition),healthDisplay=healthLevelLabel(a.health);
-    let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+badge(conditionDisplay)+'</div><div class="detail-grid">';
-    (healthDisplay!=="Not assessed"&&healthDisplay!==conditionDisplay?[["Health",healthDisplay]]:[])
-      .concat([["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Age",assetAge(a)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]]).forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
+    const activeIssues=(a.issues||[]).filter(i=>!["RESOLVED","CLOSED"].includes(normalizeStatus(i.status)));
+    const overdueRules=(a.maintenance||[]).filter(m=>Number(m.active)===1&&String(m.next_due_at||"")<today());
+    const pricedRepairs=(a.repairs||[]).filter(r=>r.cost_cents!=null&&Number.isSafeInteger(Number(r.cost_cents))&&Number(r.cost_cents)>=0);
+    const repairSpend=pricedRepairs.reduce((total,r)=>total+Number(r.cost_cents),0);
+    let html='<p class="eyebrow">'+esc(a.system_name)+'</p><h2>'+esc(a.name)+'</h2><div class="hero-actions">'+operationalBadge(a)+'</div>'
+      +'<p class="asset-assessment-note">Based on the recorded condition, unresolved issues and overdue maintenance.</p>'
+      +'<div class="asset-facts">'
+      +'<span>'+activeIssues.length+' unresolved '+(activeIssues.length===1?'issue':'issues')+'</span>'
+      +'<span>'+(a.repairs||[]).length+' recorded '+((a.repairs||[]).length===1?'repair':'repairs')+'</span>'
+      +(pricedRepairs.length?'<span>'+money(repairSpend)+' recorded repair costs</span>':'')
+      +(overdueRules.length?'<span>'+overdueRules.length+' overdue '+(overdueRules.length===1?'service task':'service tasks')+'</span>':'')
+      +'</div><div class="detail-grid">';
+    [["Location",a.location||"—"],["Purchased",fmtDate(a.purchase_date)],["Age",assetAge(a)],["Purchase price",money(a.purchase_cost_cents)],["Manufacturer",a.manufacturer||"—"],["Model",a.model||"—"],["Warranty end",fmtDate(a.warranty_end)]].forEach(function(v){html+='<div class="detail"><span>'+esc(v[0])+'</span><strong>'+esc(v[1])+"</strong></div>"});
     html+="</div>";if(a.notes)html+='<div class="detail-section"><h3>Notes</h3><div class="row-note">'+esc(a.notes)+"</div></div>";
     html+='<div class="detail-section"><h3>Issues</h3><div class="rows">'+(a.issues.map(function(i){return row(i.title,fmtDate(i.detected_at)+" · "+priorityLabel(i.severity),badge(issueStageLabel(i.status)),i.description||"")}).join("")||'<div class="empty">No issues.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";

@@ -2,6 +2,8 @@ import type { HomelyDatabase } from "../db.js";
 import { activeHomeId } from "../security/homeScope.js";
 import { deriveAssetHealth, deriveSystemHealth, type HealthState, type Severity } from "./health.js";
 import { HOUSEHOLD_CURRENCY } from "./currency.js";
+import { classifyAssetState } from "./applianceState.js";
+import { summarizeHomeInsights } from "./insights.js";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -37,10 +39,10 @@ export function listAssets(db: HomelyDatabase) {
      ORDER BY s.position, a.name`
   ).all(activeHomeId() ?? "");
 
-  return rows.map((row) => ({
-    ...row,
-    health: healthForAsset(db, String(row.id), row.health_observed_at)
-  }));
+  return rows.map((row) => {
+    const health=healthForAsset(db,String(row.id),row.health_observed_at);
+    return {...row,health,operational_state:classifyAssetState(row.condition,health)};
+  });
 }
 
 export function listSystems(db: HomelyDatabase) {
@@ -59,9 +61,11 @@ export function getAsset(db: HomelyDatabase, assetId: string) {
   ).get(assetId,activeHomeId() ?? "");
   if (!asset) return null;
 
+  const health=healthForAsset(db,assetId,asset.health_observed_at);
   return {
     ...asset,
-    health: healthForAsset(db, assetId, asset.health_observed_at),
+    health,
+    operational_state:classifyAssetState(asset.condition,health),
     issues: db.prepare("SELECT * FROM issues WHERE asset_id = ? ORDER BY detected_at DESC").all(assetId),
     maintenance: db.prepare("SELECT * FROM maintenance_rules WHERE asset_id = ? ORDER BY next_due_at").all(assetId),
     repairs: db.prepare("SELECT * FROM repairs WHERE asset_id = ? ORDER BY repair_date DESC, created_at DESC").all(assetId),
@@ -186,8 +190,17 @@ export function getOverview(db: HomelyDatabase) {
      ORDER BY m.next_due_at`
   ).all(today, today, today,activeHomeId() ?? "");
 
-  const repairs = listRepairs(db).slice(0, 4);
-  const charges = listCharges(db).filter((row) => Number(row.active) === 1);
+  const allRepairs=listRepairs(db);
+  const repairs = allRepairs.slice(0, 4);
+  const allCharges=listCharges(db);
+  const charges = allCharges.filter((row) => Number(row.active) === 1);
+  const insights=summarizeHomeInsights({
+    assets:listAssets(db),
+    issues:listIssues(db),
+    repairs:allRepairs,
+    charges:allCharges,
+    maintenance:listMaintenance(db)
+  },today);
   const purchases = listPurchaseCandidates(db).filter((row) =>
     ["SAVED","SHORTLISTED"].includes(String(row.status))
   ).slice(0, 4);
@@ -196,6 +209,7 @@ export function getOverview(db: HomelyDatabase) {
     home,
     currency: HOUSEHOLD_CURRENCY,
     systems,
+    insights,
     summary: {
       systems_needing_attention: systems.filter((s) => ["FAILED","DEGRADED","ATTENTION"].includes(String(s.health))).length,
       open_issues: activeIssues.length,
