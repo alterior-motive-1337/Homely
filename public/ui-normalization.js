@@ -77,7 +77,7 @@ export function conditionLabel(value){
 export function issueStageLabel(value){
   const code=normalizeStatus(value);
   if(["RESOLVED","CLOSED"].includes(code))return "Resolved";
-  if(code==="IN_PROGRESS")return "In progress";
+  if(["IN_PROGRESS","MONITORING"].includes(code))return "In progress";
   return "Open";
 }
 export function purchaseStageLabel(value){
