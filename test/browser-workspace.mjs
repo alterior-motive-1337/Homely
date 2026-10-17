@@ -238,16 +238,19 @@ try {
   }),"file records follow the same centered content alignment");
   assert.equal(await placement(".file-controls .search-toggle","#upload-file"),true,"file search icon and upload must share a row");
   assert.equal(await page.locator(".file-browser .ledger-toolbar,.file-inspector>.ledger-overline").count(),0,"file browser needs no secondary labels");
-  assert.equal(await page.locator(".file-grid").evaluate(el=>getComputedStyle(el).flexDirection),"column","files should use a vertical list rather than tiles");
-  assert.ok(await page.locator(".file-card").first().evaluate(el=>el.getBoundingClientRect().height<90),"file rows must be compact");
-  const fileRowBoxes=await page.locator(".file-card").evaluateAll(rows=>rows.slice(0,2).map(el=>el.getBoundingClientRect().toJSON()));
-  if(fileRowBoxes.length>1)assert.ok(fileRowBoxes[1].y>=fileRowBoxes[0].bottom,"file entries must stack vertically");
+  assert.equal(await page.locator(".file-grid").evaluate(el=>getComputedStyle(el).display),"grid","files should use an actual thumbnail grid");
+  assert.ok(await page.locator(".file-card").first().evaluate(el=>{
+    const r=el.getBoundingClientRect(),preview=el.querySelector(".file-preview").getBoundingClientRect();
+    return r.height>=140&&r.height<=360&&preview.height>=80&&preview.width>=150;
+  }),"file cards need useful preview space");
+  const fileTileBoxes=await page.locator(".file-card").evaluateAll(rows=>rows.slice(0,2).map(el=>el.getBoundingClientRect().toJSON()));
+  if(fileTileBoxes.length>1)assert.ok(Math.abs(fileTileBoxes[1].y-fileTileBoxes[0].y)<4,"desktop preview cards should share a row");
   assert.equal(await page.locator(".file-controls #save-link").count(),1,"save link stays beside file upload");
   assert.equal(await page.locator("#file-inspector,#file-info-toggle,#file-info-resizer").count(),0,"file metadata inspector must not consume workspace");
   assert.ok(await page.locator(".file-card").first().evaluate(el => {
     const rect=el.getBoundingClientRect(),css=getComputedStyle(el);
-    return rect.height <= 115 && css.borderTopWidth==="1px" && css.borderBottomWidth==="1px";
-  }),"file entries must have complete borders and compact spacing");
+    return rect.height >= 140 && css.borderTopWidth==="1px" && css.borderBottomWidth==="1px";
+  }),"file previews must retain complete selection borders");
   await noOverflow();
   let releaseRepairOptions;
   const repairOptions=new Promise(resolve=>{releaseRepairOptions=resolve});
@@ -534,8 +537,9 @@ try {
     await names.locator(".file-card .fade-title.is-overflowing").first().waitFor();
     assert.equal(await names.locator(".file-card").first().evaluate(el=>{
       const title=el.querySelector(".fade-title").getBoundingClientRect(),box=el.getBoundingClientRect();
-      return title.left>=box.left&&title.right<=box.right&&box.height<90;
-    }),true,"long names stay inside compact file rows");
+      return title.left>=box.left&&title.right<=box.right&&box.height>=140&&
+        el.querySelector(".file-preview").getBoundingClientRect().height>=80;
+    }),true,"long names stay inside visual file cards");
     await names.locator(".file-card").first().dblclick();
     await names.locator("#viewer-title.is-overflowing").waitFor();
     assert.equal(await names.locator(".viewer-head").evaluate(el=>{
@@ -777,6 +781,13 @@ try {
   await sample.locator("#modal-close").click();
   if(process.env.TEST_SCREENSHOT_DIR)await sample.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/sample-states-mobile.png"});
   await sample.locator('[data-view="files"]').click();
+  const thumbnail=sample.locator(".file-preview-video video").first();
+  await thumbnail.waitFor();
+  assert.match(await thumbnail.getAttribute("src"),/api\/files\//,"video thumbnail uses the protected local file");
+  assert.equal(await thumbnail.getAttribute("preload"),"metadata","video preview must avoid eager full download");
+  assert.equal(await sample.locator(".file-grid").evaluate(el=>getComputedStyle(el).display),"grid");
+  const visibleTiles=await sample.locator(".file-card").evaluateAll(nodes=>nodes.slice(0,2).map(el=>el.getBoundingClientRect().toJSON()));
+  assert.ok(visibleTiles.length<2||Math.abs(visibleTiles[0].y-visibleTiles[1].y)<4,"Android cards should fit two columns when space allows");
   const touchFile=sample.locator(".file-card").filter({hasText:"Washing machine warranty.txt"});
   await touchFile.waitFor();
   await touchFile.tap();
