@@ -1047,6 +1047,13 @@ async function showFiles(){
     // An unavailable thumbnail falls back to the file's format cover.
     $(".file-preview img,.file-preview video",content).forEach(media=>{
       media.addEventListener("error",()=>{media.hidden=true},{once:true});
+      if(media.tagName==="VIDEO"){
+        media.addEventListener("loadedmetadata",()=>{
+          if(Number.isFinite(media.duration)&&media.duration>0){
+            try{media.currentTime=Math.min(.15,media.duration*.08)}catch(_){}
+          }
+        },{once:true});
+      }
     });
     $("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
