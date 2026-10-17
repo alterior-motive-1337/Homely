@@ -49,7 +49,7 @@ export function localDateInput(date=new Date()){
 // Display strings are separate from stored codes; never rewrite API payload values.
 export function normalizeStatus(value){
   return String(value??"UNKNOWN").trim().replace(/([a-z])([A-Z])/g,"$1_$2")
-    .replace(/[\\s-]+/g,"_").toUpperCase()||"UNKNOWN";
+    .replace(/[^A-Za-z0-9]+/g,"_").toUpperCase()||"UNKNOWN";
 }
 // Three semantic tones, including the default neutral. Colors describe urgency,
 // not arbitrary workflow stages such as OPEN, SAVED or IN_PROGRESS.
