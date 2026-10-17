@@ -1,7 +1,7 @@
 import { createInteraction, createReview } from "./interactions.js";
 import { watchFadingTitles } from "./fading.js";
 import { normalizeCurrency, formatMinorAmount, majorToMinorAmount, minorToMajorAmount, localDateInput,
-  normalizeStatus, statusLabel, priorityLabel, priorityTone, conditionLabel, issueStageLabel, purchaseStageLabel, healthLevelLabel, actionLabel, displayLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
+  normalizeStatus, statusLabel, statusTone, priorityLabel, priorityTone, operationalLabel, operationalTone, issueStageLabel, purchaseStageLabel, healthLevelLabel, actionLabel, displayLabel, matchesSearch, countLabel, matchesStatusFilter, calendarDate } from "./ui-normalization.js";
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -92,14 +92,23 @@ function loading(label){if(!state.silentRefresh)content.innerHTML='<div class="l
 function fail(e){console.error(e);content.innerHTML='<div class="error">'+esc(e&&e.message?e.message:"Homely could not load this view.")+"</div>"}
 function badge(v){
   const status=normalizeStatus(v);
-  return '<span class="badge '+esc(status)+'" data-tone="neutral">'+esc(statusLabel(status))+'</span>';
+  return '<span class="badge '+esc(status)+'" data-tone="'+statusTone(status)+'">'+esc(statusLabel(status))+'</span>';
 }
 function conditionOptions(previous){
   const code=normalizeStatus(previous);
   const unrated=code==="NEW"?"NEW":"UNKNOWN";
-  const poor=code==="FAILED"?"FAILED":"POOR";
-  return [["Not assessed",unrated],["Good","GOOD"],["Fair","FAIR"],["Poor",poor]]
+  const attention=["FAIR","POOR"].includes(code)?code:"FAIR";
+  return [["Not assessed",unrated],["Working","GOOD"],["Needs attention",attention],["Out of service","FAILED"]]
     .map(([label,value])=>'<option value="'+value+'">'+label+'</option>').join("");
+}
+function operationalBadge(asset){
+  const code=asset.operational_state||"UNASSESSED";
+  return '<span class="badge operational '+esc(code)+'" data-tone="'+operationalTone(code)+'">'+esc(operationalLabel(code))+'</span>';
+}
+function analysisMetric(label,value,description,action){
+  return '<div class="insight-row"><div class="insight-copy"><strong>'+esc(label)+'</strong><small>'+esc(description)+'</small></div>'
+    +'<span class="insight-value">'+esc(value)+'</span>'
+    +(action?'<button type="button" class="insight-action" data-insight-action="'+esc(action)+'" aria-label="Open '+esc(label)+'">View</button>':'')+'</div>';
 }
 function purchaseOptions(previous){
   const saved=normalizeStatus(previous)==="SHORTLISTED"?"SHORTLISTED":"SAVED";
@@ -675,7 +684,7 @@ async function openAssetForm(existing){
   if(!modalPending(pending))return;
   const options=systems.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'}).join("");
   if(!options){closeModal();notify("No home systems available.");return}
-  openModal('<h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Condition</label><select name="condition">'+conditionOptions(existing?.condition)+'</select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>'+esc(amountLabel("Purchase price"))+'</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
+  openModal('<h2>'+(existing?"Edit appliance or furniture":"Register appliance or furniture")+'</h2><form class="form" id="asset-form"><div class="form-grid"><div class="field"><label>System</label><select name="systemId" required>'+options+'</select></div><div class="field"><label>Category</label><input name="category" maxlength="80" required></div><div class="field full"><label>Name</label><input name="name" maxlength="180" required></div><div class="field"><label>Operational condition</label><select name="condition">'+conditionOptions(existing?.condition)+'</select></div><div class="field"><label>Room or location</label><input name="location" maxlength="200"></div><div class="field"><label>Manufacturer</label><input name="manufacturer" maxlength="160"></div><div class="field"><label>Model</label><input name="model" maxlength="160"></div><div class="field full"><label>Serial number</label><input name="serialNumber" maxlength="160"></div><div class="field"><label>Purchase date</label><input name="purchaseDate" type="date"></div><div class="field"><label>'+esc(amountLabel("Purchase price"))+'</label><input name="purchaseCost" type="number" min="0" step=".01"></div><div class="field"><label>Warranty end</label><input name="warrantyEnd" type="date"></div><div class="field full"><label>Notes</label><textarea name="notes" maxlength="3000"></textarea></div></div><div class="form-actions"><button type="button" class="button" data-cancel>Cancel</button><button class="primary-button">Preview</button></div></form>');
   if(existing){
     const form=$("#asset-form");
     const values={systemId:existing.system_id,name:existing.name,category:existing.category,
@@ -702,7 +711,7 @@ async function openAssetForm(existing){
 function renderAssets(items){
   const target=$("#asset-results");
   if(!target)return;
-  const body=items.map(a=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([displayLabel(a.category),a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button>'+((a.condition&&!["UNKNOWN","NEW","GOOD","HEALTHY","WORKING"].includes(normalizeStatus(a.condition)))?'<div class="ledger-details">'+badge(conditionLabel(a.condition))+'</div>':'')+'</div>').join("");
+  const body=items.map(a=>'<div class="ledger-entry" role="listitem"><button type="button" class="ledger-main" data-asset="'+esc(a.id)+'"><span class="ledger-entry-content"><strong class="fade-title">'+esc(a.name)+'</strong><small>'+esc([displayLabel(a.category),a.location].filter(Boolean).join(" · ")||a.system_name||"Household asset")+'</small></span></button><div class="ledger-details">'+operationalBadge(a)+'</div></div>').join("");
   target.innerHTML=ledger("Appliances & furniture",items.length,"",body,"Asset");
   $$("[data-asset]",target).forEach(b=>b.onclick=()=>openAsset(b.dataset.asset));
 }
