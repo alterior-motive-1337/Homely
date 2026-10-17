@@ -308,7 +308,7 @@ try {
   await page.getByText("Opening file…",{exact:true}).waitFor();
   releaseText();
   await page.locator("#viewer-body .viewer-text").waitFor();
-  assert.ok(await page.locator("#viewer-head,#viewer-controls").count()===0 || await page.locator(".viewer-head").evaluate(el=>getComputedStyle(el).height==="60px"),"file preview header uses the shared compact toolbar");
+  assert.equal(await page.locator(".viewer-head").evaluate(el=>Math.round(el.getBoundingClientRect().height)),60,"file preview header uses the shared compact toolbar");
   assert.match(await page.locator("#viewer-body .viewer-text").textContent(),/20 January 2030/);
   await page.locator("#viewer-close").click();
   await page.unroute("**/demo-documents/inverter-warranty.txt");
