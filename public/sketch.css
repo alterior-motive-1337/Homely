@@ -2311,6 +2311,14 @@ button:disabled,.button:disabled,.primary-button:disabled{opacity:.55;cursor:not
 .settings-content #rename-home-form,
 .settings-content #invite-home-form{align-items:end}
 .settings-content #invite-result input[readonly]{user-select:all}
+.settings-content #rename-home-form .form-actions,
+.settings-content #invite-home-form .form-actions{
+  margin:0!important;padding:0!important;align-self:end!important;
+  min-height:44px!important;
+}
+.settings-content #rename-home-form .form-actions button,
+.settings-content #invite-home-form .form-actions button{min-height:44px!important}
+.settings-content>.detail-section .rows{min-width:0}
 #delete-account{border-color:#777780!important}
 .viewer{
   width:min(1160px,calc(100vw - 30px))!important;
