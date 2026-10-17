@@ -64,6 +64,35 @@ export function priorityTone(value){
   if(priority==="MEDIUM")return "attention";
   return "neutral";
 }
+// UI families contain at most three meaningful choices. "Not assessed" represents
+// missing information, not a fourth condition/health grade. Legacy codes are read
+// without altering stored records or the transaction/audit trail.
+export function conditionLabel(value){
+  const code=normalizeStatus(value);
+  if(["GOOD","HEALTHY","WORKING"].includes(code))return "Good";
+  if(code==="FAIR")return "Fair";
+  if(["POOR","FAILED"].includes(code))return "Poor";
+  return "Not assessed";
+}
+export function issueStageLabel(value){
+  const code=normalizeStatus(value);
+  if(["RESOLVED","CLOSED"].includes(code))return "Resolved";
+  if(["IN_PROGRESS","MONITORING"].includes(code))return "In progress";
+  return "Open";
+}
+export function purchaseStageLabel(value){
+  const code=normalizeStatus(value);
+  if(code==="PURCHASED")return "Purchased";
+  if(code==="DISMISSED")return "Dismissed";
+  return "Saved";
+}
+export function healthLevelLabel(value){
+  const code=normalizeStatus(value);
+  if(code==="HEALTHY")return "Good";
+  if(["ATTENTION","DEGRADED"].includes(code))return "Fair";
+  if(code==="FAILED")return "Poor";
+  return "Not assessed";
+}
 export function statusLabel(value){
   const normalized=normalizeStatus(value);
   return normalized.split("_").filter(Boolean).join(" ").toLocaleLowerCase("en-ZA")

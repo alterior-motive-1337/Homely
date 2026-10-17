@@ -348,6 +348,8 @@ try {
   await page.locator("#modal-close").click();
   await page.locator("#view-purchases,#view-purchases-shortcut").click();
   await page.locator("#add-purchase").click();
+  assert.equal(await page.locator('#purchase-form select[name="status"]').count(),0,
+    "new purchases start as Saved without an unnecessary status selector");
   await page.locator('#purchase-form input[name="title"]').fill("Browser purchase");
   await page.locator('#purchase-form input[name="category"]').fill("FURNITURE");
   await page.getByRole("button", {name:"Preview",exact:true}).click();
@@ -355,6 +357,8 @@ try {
   await page.locator("#modal").waitFor({state:"hidden"});
   await page.locator("#view-purchases,#view-purchases-shortcut").click();
   await page.locator("[data-purchase-edit]").first().click();
+  assert.deepEqual(await page.locator('#purchase-form select[name="status"] option').allTextContents(),
+    ["Saved","Purchased","Dismissed"]);
   await page.locator('#purchase-form select[name="status"]').selectOption("PURCHASED");
   await page.getByRole("button", {name:"Preview",exact:true}).click();
   await page.getByRole("button", {name:"Approve & commit"}).click();
@@ -720,8 +724,9 @@ try {
   const sampleAssets=await sample.evaluate(async()=>await(await fetch("/api/assets")).json());
   assert.equal(sampleAssets.length,9);
   await sample.locator('[data-view="issues"]').click();
-  await sample.locator(".ledger-entry .badge.IN_PROGRESS").waitFor();
+  await sample.locator(".ledger-entry .badge.IN_PROGRESS").first().waitFor();
   assert.equal(await sample.locator(".badge.IN_PROGRESS").first().textContent(),"In progress");
+  assert.equal(await sample.locator(".ledger-entry .badge.IN_PROGRESS").count(),2,"Monitoring and In progress share one display stage");
   assert.equal(await sample.locator(".badge.CRITICAL").first().textContent(),"High","historical Critical renders as High");
   const priorities=await sample.locator(".ledger-entry .badge.priority").evaluateAll(nodes=>
     Object.fromEntries(nodes.map(el=>[el.classList[2],{label:el.textContent,tone:el.dataset.tone,color:getComputedStyle(el).color}])));
@@ -738,15 +743,21 @@ try {
   assert.equal(await sample.locator('#issue-form select[name="severity"]').inputValue(),"MEDIUM");
   await sample.locator("#modal-close").click();
   await sample.locator('[data-view="appliances"]').click();
-  await sample.locator(".badge.FAILED").first().waitFor();
-  assert.equal(await sample.locator(".ledger-entry .badge.GOOD,.ledger-entry .badge.UNKNOWN").count(),0,"routine conditions do not clutter asset rows");
-  const conditions=await sample.locator(".badge:is(.FAIR,.POOR,.FAILED)").evaluateAll(nodes=>
-    Object.fromEntries(nodes.map(el=>[el.classList[1],{label:el.textContent,tone:el.dataset.tone,color:getComputedStyle(el).color}])));
-  assert.equal(conditions.POOR.label,"Poor");
-  assert.equal(conditions.FAILED.label,"Failed");
-  assert.equal(conditions.POOR.tone,"neutral");
-  assert.equal(conditions.FAILED.tone,"neutral");
-  assert.equal(conditions.POOR.color,conditions.FAILED.color,"conditions stay monochrome");
+  await sample.locator(".ledger-entry .badge.POOR").first().waitFor();
+  assert.equal(await sample.locator(".ledger-entry .badge.GOOD,.ledger-entry .badge.UNKNOWN,.ledger-entry .badge.NEW,.ledger-entry .badge.FAILED").count(),0,
+    "condition list contains only three meaningful ratings");
+  const conditions=await sample.locator(".ledger-entry .badge").evaluateAll(nodes=>
+    [...new Set(nodes.map(el=>el.textContent))].sort());
+  assert.deepEqual(conditions,["Fair","Poor"],"legacy Failed is shown as Poor");
+  await sample.locator("[data-asset]").filter({hasText:"Washing machine"}).first().click();
+  await sample.locator(".hero-actions .badge").filter({hasText:"Poor"}).waitFor();
+  await sample.locator("#edit-asset").click();
+  await sample.locator('#asset-form select[name="condition"]').waitFor();
+  assert.deepEqual(await sample.locator('#asset-form select[name="condition"] option').allTextContents(),
+    ["Not assessed","Good","Fair","Poor"]);
+  assert.equal(await sample.locator('#asset-form select[name="condition"]').inputValue(),"FAILED",
+    "editing other asset details must preserve historical Failed without rewriting it");
+  await sample.locator("#modal-close").click();
   if(process.env.TEST_SCREENSHOT_DIR)await sample.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/sample-states-mobile.png"});
   await sample.locator('[data-view="files"]').click();
   const touchFile=sample.locator(".file-card").filter({hasText:"Washing machine warranty.txt"});
