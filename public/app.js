@@ -339,6 +339,15 @@ function openModal(html){
   cancelPendingUpload();
   modalGeneration++;
   modalBody.innerHTML=html;
+  const title=modalBody.querySelector("h2");
+  if(title){
+    title.id="modal-title";
+    modal.setAttribute("aria-labelledby","modal-title");
+    modal.removeAttribute("aria-label");
+  }else{
+    modal.removeAttribute("aria-labelledby");
+    modal.setAttribute("aria-label","Loading home record");
+  }
   modalBody.querySelectorAll(".field").forEach(function(field,index){
     const label=$("label",field),input=$("input,select,textarea",field);
     if(label&&input){input.id=input.id||"record-field-"+index;label.htmlFor=input.id}
