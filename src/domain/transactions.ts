@@ -151,9 +151,11 @@ function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRe
   if (actionType === "REPORT_ISSUE") {
     const assetId = requireText(raw.assetId, "Asset", 120);
     getAsset(db, assetId);
-    const severity = requireText(raw.severity, "Severity", 20).toUpperCase();
-    if (!["LOW","MEDIUM","HIGH","CRITICAL"].includes(severity)) {
-      throw new DomainError("Severity must be LOW, MEDIUM, HIGH or CRITICAL.");
+    // Legacy CRITICAL submissions map to HIGH; stored historical records remain intact.
+    const requestedSeverity = requireText(raw.severity, "Severity", 20).toUpperCase();
+    const severity = requestedSeverity === "CRITICAL" ? "HIGH" : requestedSeverity;
+    if (!["LOW","MEDIUM","HIGH"].includes(severity)) {
+      throw new DomainError("Priority must be Low, Medium or High.");
     }
     return {
       assetId,
