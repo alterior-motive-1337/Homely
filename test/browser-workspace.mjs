@@ -721,30 +721,32 @@ try {
   assert.equal(sampleAssets.length,9);
   await sample.locator('[data-view="issues"]').click();
   await sample.locator(".ledger-entry .badge.IN_PROGRESS").waitFor();
-  assert.equal(await sample.locator(".badge.IN_PROGRESS").first().textContent(),"In progress","issue states use readable labels");
-  assert.equal(await sample.locator(".badge.CRITICAL").first().textContent(),"Critical");
-  const issueColors=await sample.locator(".ledger-entry .badge").evaluateAll(nodes=>
-    Object.fromEntries(nodes.map(el=>[el.classList[1],{tone:el.dataset.tone,color:getComputedStyle(el).color}])));
-  assert.equal(issueColors.IN_PROGRESS.tone,"neutral");
-  assert.equal(issueColors.CRITICAL.tone,"urgent");
+  assert.equal(await sample.locator(".badge.IN_PROGRESS").first().textContent(),"In progress");
+  assert.equal(await sample.locator(".badge.CRITICAL").first().textContent(),"High","historical Critical renders as High");
+  const priorities=await sample.locator(".ledger-entry .badge.priority").evaluateAll(nodes=>
+    Object.fromEntries(nodes.map(el=>[el.classList[2],{label:el.textContent,tone:el.dataset.tone,color:getComputedStyle(el).color}])));
+  assert.equal(priorities.LOW.label,"Low");
+  assert.equal(priorities.LOW.tone,"neutral");
+  assert.equal(priorities.MEDIUM.label,"Medium");
+  assert.equal(priorities.MEDIUM.tone,"attention");
+  assert.equal(priorities.HIGH.label,"High");
+  assert.equal(priorities.HIGH.tone,"urgent");
+  assert.equal(priorities.CRITICAL.label,"High");
+  assert.equal(new Set([priorities.LOW.color,priorities.MEDIUM.color,priorities.HIGH.color]).size,3,"priority alone has three colors");
   await sample.locator("#new-issue").click();
-  assert.equal(await sample.locator('#issue-form select[name="severity"] option[value="MEDIUM"]').textContent(),"Medium");
-  assert.equal(await sample.locator('#issue-form select[name="severity"]').inputValue(),"MEDIUM","forms preserve server enum values");
+  assert.deepEqual(await sample.locator('#issue-form select[name="severity"] option').allTextContents(),["Low","Medium","High"]);
+  assert.equal(await sample.locator('#issue-form select[name="severity"]').inputValue(),"MEDIUM");
   await sample.locator("#modal-close").click();
   await sample.locator('[data-view="appliances"]').click();
   await sample.locator(".badge.FAILED").first().waitFor();
-  assert.equal(await sample.locator(".ledger-entry .badge.GOOD,.ledger-entry .badge.UNKNOWN").count(),0,"routine and unknown conditions do not clutter asset rows");
-  const tones=await sample.locator(".badge:is(.FAIR,.POOR,.FAILED)").evaluateAll(nodes=>
-    Object.fromEntries(nodes.map(el=>[el.classList[1],{label:el.textContent,tone:el.dataset.tone,color:getComputedStyle(el).color,
-      bg:getComputedStyle(el).backgroundColor}])));
-  assert.equal(tones.FAIR.label,"Fair");
-  assert.equal(tones.POOR.label,"Poor");
-  assert.equal(tones.FAILED.label,"Failed");
-  assert.equal(tones.FAIR.tone,"neutral");
-  assert.equal(tones.POOR.tone,"attention");
-  assert.equal(tones.FAILED.tone,"urgent");
-  assert.equal(new Set([tones.FAIR.color,tones.POOR.color,tones.FAILED.color]).size,3,"one readable text color per urgency tier");
-  assert.equal(tones.FAILED.bg,"rgba(0, 0, 0, 0)","urgency never fills badges or cards");
+  assert.equal(await sample.locator(".ledger-entry .badge.GOOD,.ledger-entry .badge.UNKNOWN").count(),0,"routine conditions do not clutter asset rows");
+  const conditions=await sample.locator(".badge:is(.FAIR,.POOR,.FAILED)").evaluateAll(nodes=>
+    Object.fromEntries(nodes.map(el=>[el.classList[1],{label:el.textContent,tone:el.dataset.tone,color:getComputedStyle(el).color}])));
+  assert.equal(conditions.POOR.label,"Poor");
+  assert.equal(conditions.FAILED.label,"Failed");
+  assert.equal(conditions.POOR.tone,"neutral");
+  assert.equal(conditions.FAILED.tone,"neutral");
+  assert.equal(conditions.POOR.color,conditions.FAILED.color,"conditions stay monochrome");
   if(process.env.TEST_SCREENSHOT_DIR)await sample.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/sample-states-mobile.png"});
   await sample.locator('[data-view="files"]').click();
   const touchFile=sample.locator(".file-card").filter({hasText:"Washing machine warranty.txt"});
