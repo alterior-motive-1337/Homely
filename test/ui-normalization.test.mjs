@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_CURRENCY,normalizeCurrency,formatMinorAmount,majorToMinorAmount,
-  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,actionLabel,
+  minorToMajorAmount,localDateInput,calendarDate,normalizeStatus,statusLabel,statusTone,actionLabel,displayLabel,
   matchesSearch,countLabel,matchesStatusFilter
 } from "../public/ui-normalization.js";
 
@@ -53,6 +53,11 @@ test("labels are human-readable without changing stored enum values",()=>{
     assert.equal(normalizeStatus(raw),code,raw);
     assert.equal(statusLabel(raw),label,raw);
   }
+  assert.equal(displayLabel("APPLIANCE"),"Appliance");
+  assert.equal(displayLabel("FURNITURE"),"Furniture");
+  assert.equal(displayLabel("CCTV"),"CCTV");
+  assert.equal(displayLabel("Kitchen counter"),"Kitchen counter");
+  assert.equal(displayLabel("HDMI television"),"HDMI television");
   assert.equal(actionLabel("REPORT_ISSUE"),"Issue reported");
   assert.equal(actionLabel("RECORD_REPAIR"),"Repair recorded");
   assert.equal(actionLabel("COMPLETE_MAINTENANCE"),"Maintenance completed");
