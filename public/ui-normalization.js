@@ -64,6 +64,13 @@ export function statusLabel(value){
   return normalized.split("_").filter(Boolean).join(" ").toLocaleLowerCase("en-ZA")
     .replace(/^./,first=>first.toLocaleUpperCase("en-ZA"));
 }
+// Free-text names are left alone. Only machine-style codes gain display casing.
+export function displayLabel(value){
+  const raw=String(value??"").trim();
+  if(!raw)return "";
+  if(["AI","API","CCTV","HVAC","LED","PDF","TV","URL","USB"].includes(raw))return raw;
+  return /^[A-Z][A-Z0-9_ -]*$/.test(raw)&&raw.length>3?statusLabel(raw):raw;
+}
 const ACTION_LABELS=Object.freeze({
   REPORT_ISSUE:"Issue reported",RESOLVE_ISSUE:"Issue resolved",
   RECORD_REPAIR:"Repair recorded",CREATE_ASSET:"Asset registered",
