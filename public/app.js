@@ -1055,7 +1055,7 @@ async function showFiles(){
         },{once:true});
       }
     });
-    $("[data-file]",content).forEach(b=>{
+    $$("[data-file]",content).forEach(b=>{
       const doc=docs.find(d=>d.id===b.dataset.file);
       const select=()=>$$("[data-file]",content).forEach(card=>card.setAttribute("aria-pressed",String(card===b)));
       b.title="Double-click or double-tap to open";
