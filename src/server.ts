@@ -3,9 +3,10 @@ import path from "node:path";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { URL, pathToFileURL } from "node:url";
+import zlib from "node:zlib";
 import { config } from "./config.js";
 import { migrate, openDatabase, type HomelyDatabase } from "./db.js";
-import { getAsset, getOverview, getProject, getTimeline, listAssets, listCharges, listDocuments, listIssues, listMaintenance, listProjects, listPurchaseCandidates, listRepairs, listSystems } from "./domain/repository.js";
+import { getAsset, getOverview, getProject, getTimeline, listAssets, listCharges, listDocuments, listIssues, listMaintenance, listProjects, listPurchaseCandidates, listRepairs, listSystems } from "./domain/queries.js";
 import {
   commitTransaction,
   DomainError,
@@ -36,7 +37,7 @@ function securityHeaders(res: http.ServerResponse): void {
   res.setHeader("x-frame-options", "DENY");
   res.setHeader("referrer-policy", "no-referrer");
   res.setHeader("permissions-policy", "camera=(), microphone=(self), geolocation=()");
-  res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; frame-src 'self' blob: https://drive.google.com; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; frame-src 'self';");
   if(process.env.RENDER==="true")res.setHeader("strict-transport-security","max-age=31536000; includeSubDomains");
 }
 
@@ -100,20 +101,78 @@ function mimeType(filePath: string): string {
   return "application/octet-stream";
 }
 
-function serveStatic(res: http.ServerResponse, pathname: string) {
+async function serveStatic(res: http.ServerResponse, pathname: string, req: http.IncomingMessage) {
+  // Serve from public dir, guard path traversal
   const relative = (pathname === "/" ? "index.html" : pathname).replace(/^\/+/, "");
   const filePath = path.resolve(config.publicDir, relative);
   if (!filePath.startsWith(config.publicDir + path.sep) && filePath !== path.join(config.publicDir, "index.html")) {
     return sendJson(res, 403, { error: "Forbidden" });
   }
+
+  // If file missing or not a file, serve index for SPA routes (no extension)
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-    const indexPath = path.join(config.publicDir, "index.html");
     if (path.extname(pathname)) return sendJson(res, 404, { error: "File not found" });
-    return sendHtml(res, 200, fs.readFileSync(indexPath, "utf8"), { "cache-control": "no-store" });
+    const indexPath = path.join(config.publicDir, "index.html");
+    if (!fs.existsSync(indexPath)) return sendJson(res, 404, { error: "File not found" });
+    // Fall through to serve indexPath
+    return await serveStatic(res, "/index.html", req);
   }
-  securityHeaders(res);
-  res.writeHead(200, { "content-type": mimeType(filePath), "cache-control": path.extname(filePath).toLowerCase() === ".html" ? "no-store" : "no-cache" });
-  return res.end(fs.readFileSync(filePath));
+
+  // Read file and compute basic caching and compression headers
+  try {
+    const stat = fs.statSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const isLongCache = [".js", ".css", ".png", ".svg", ".ico", ".jpg", ".jpeg", ".webp"] .includes(ext);
+
+    // ETag using mtime and size (simple, fast)
+    const etag = `W/"${stat.mtimeMs}-${stat.size}"`;
+    const ifNoneMatch = req.headers["if-none-match"];
+    if (ifNoneMatch && String(ifNoneMatch) === etag) {
+      securityHeaders(res);
+      res.setHeader("etag", etag);
+      res.writeHead(304);
+      return res.end();
+    }
+
+    const raw = fs.readFileSync(filePath);
+
+    // Choose cache-control: immutable for fingerprinted assets (assumed), no-cache for HTML
+    const cacheControl = ext === ".html" ? "no-store" : (isLongCache ? "public, max-age=31536000, immutable" : "no-cache");
+
+    // Compression: respect Accept-Encoding, prefer brotli then gzip for larger assets
+    const accept = String(req.headers["accept-encoding"] ?? "");
+    let compressed: Buffer | null = null;
+    let encoding: string | undefined;
+
+    // Only compress assets larger than 1KB to avoid overhead
+    if (raw.length > 1024 && accept) {
+      if (accept.includes("br")) {
+        try { compressed = await zlib.promises.brotliCompress(raw); encoding = "br"; } catch (_) { compressed = null; }
+      }
+      if (!compressed && accept.includes("gzip")) {
+        try { compressed = await zlib.promises.gzip(raw); encoding = "gzip"; } catch (_) { compressed = null; }
+      }
+    }
+
+    securityHeaders(res);
+    res.setHeader("content-type", mimeType(filePath));
+    res.setHeader("cache-control", cacheControl);
+    res.setHeader("etag", etag);
+    // Indicate response varies by encoding
+    if (encoding) res.setHeader("vary", "Accept-Encoding");
+
+    if (encoding && compressed) {
+      res.setHeader("content-encoding", encoding);
+      res.writeHead(200);
+      return res.end(compressed);
+    }
+
+    res.writeHead(200);
+    return res.end(raw);
+  } catch (err) {
+    console.error("Error serving static file:", err);
+    return sendJson(res, 500, { error: "File serve failed" });
+  }
 }
 
 export async function startServer(
@@ -204,7 +263,7 @@ export async function startServer(
           else if(url.pathname.includes("/chunks/"))limits.enforce("chunks:"+key,240,60_000);
           else limits.enforce("write:"+key,90,60_000);
         }
-        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept"||url.pathname==="/api/account/delete"||url.pathname==="/api/alerts/acknowledge"||url.pathname==="/api/agent/history"||url.pathname.startsWith("/api/agent/conversations");
+        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept"||url.pathname==="/api/account/delete"||url.pathname==="/api/alerts/acknowledge"||url.patc[...]
         if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET") && !selfServe)
           throw new DomainError("Your household membership is read-only.",403);
       }
@@ -299,126 +358,126 @@ export async function startServer(
          return sendJson(res,200,renameChatConversation(db,auth.requireUser(req),id,(await readJson(req)).title),{"cache-control":"no-store"});
        }
        if(req.method==="GET"&&url.pathname==="/api/agent/history")return sendJson(res,200,chatHistory(db,auth.requireUser(req),url.searchParams.get("conversationId")),{"cache-control":"no-store"});
-      if(req.method==="DELETE"&&url.pathname==="/api/agent/history")return sendJson(res,200,clearChat(db,auth.requireUser(req)));
-      if (req.method === "GET" && url.pathname === "/api/systems") return sendJson(res, 200, listSystems(db));
-      if (req.method === "GET" && url.pathname === "/api/assets") return sendJson(res, 200, listAssets(db));
-      if (req.method === "GET" && url.pathname.startsWith("/api/assets/")) {
-        const asset = getAsset(db, decodeURIComponent(url.pathname.slice("/api/assets/".length)));
-        return asset ? sendJson(res, 200, asset) : sendJson(res, 404, { error: "Asset not found" });
-      }
-      if (req.method === "GET" && url.pathname === "/api/issues") return sendJson(res, 200, listIssues(db));
-      if (req.method === "GET" && url.pathname === "/api/repairs") return sendJson(res, 200, listRepairs(db));
-      if (req.method === "GET" && url.pathname === "/api/charges") return sendJson(res, 200, listCharges(db));
-      if (req.method === "GET" && url.pathname === "/api/purchases") return sendJson(res, 200, listPurchaseCandidates(db));
-      if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
-      if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
-      if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
-      const analysisPath=url.pathname.split("/");
-      if(req.method==="POST" && analysisPath.length===5 && analysisPath[1]==="api" &&
-        analysisPath[2]==="documents" && analysisPath[4]==="analyze" &&
-        /^[a-zA-Z0-9-]+$/.test(analysisPath[3]??"")){
-        try {
-          const body=await readJson(req);
-          if(body.visualFrames!==undefined&&!Array.isArray(body.visualFrames))throw new DomainError("Invalid video frames.");
-          return sendJson(res,200,await analyzeDocument(db,analysisPath[3]!,undefined,body.visualFrames as Array<{image:string;timeSeconds:number}>|undefined));
-        }
-        catch(error){
-          if(error instanceof DomainError) throw error;
-          console.error("Multimedia processing unavailable:",error);
-          return sendJson(res,503,{error:"Multimedia analysis failed or is unavailable."});
-        }
-      }
-      if (req.method === "GET" && url.pathname === "/api/projects") return sendJson(res, 200, listProjects(db));
-      if (req.method === "GET" && url.pathname.startsWith("/api/projects/")) {
-        const project = getProject(db, decodeURIComponent(url.pathname.slice("/api/projects/".length)));
-        return project ? sendJson(res, 200, project) : sendJson(res, 404, { error: "Project not found" });
-      }
-      if (req.method === "GET" && url.pathname === "/api/transactions") return sendJson(res, 200, listTransactions(db));
-      if (req.method === "GET" && url.pathname === "/api/integrations/status") {
-        return sendJson(res, 200, {
-          mode: "MULTI_HOME",
-          storage: { provider: "TURSO" },
-          ai: agentRuntime.status,
-          research: agentRuntime.researchStatus,
-          voice: { input: "BROWSER" }
-        });
-      }
+       if(req.method==="DELETE"&&url.pathname==="/api/agent/history")return sendJson(res,200,clearChat(db,auth.requireUser(req)));
+       if (req.method === "GET" && url.pathname === "/api/systems") return sendJson(res, 200, listSystems(db));
+       if (req.method === "GET" && url.pathname === "/api/assets") return sendJson(res, 200, listAssets(db));
+       if (req.method === "GET" && url.pathname.startsWith("/api/assets/")) {
+         const asset = getAsset(db, decodeURIComponent(url.pathname.slice("/api/assets/".length)));
+         return asset ? sendJson(res, 200, asset) : sendJson(res, 404, { error: "Asset not found" });
+       }
+       if (req.method === "GET" && url.pathname === "/api/issues") return sendJson(res, 200, listIssues(db));
+       if (req.method === "GET" && url.pathname === "/api/repairs") return sendJson(res, 200, listRepairs(db));
+       if (req.method === "GET" && url.pathname === "/api/charges") return sendJson(res, 200, listCharges(db));
+       if (req.method === "GET" && url.pathname === "/api/purchases") return sendJson(res, 200, listPurchaseCandidates(db));
+       if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
+       if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
+       if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
+       const analysisPath=url.pathname.split("/");
+       if(req.method==="POST" && analysisPath.length===5 && analysisPath[1]==="api" &&
+         analysisPath[2]==="documents" && analysisPath[4]==="analyze" &&
+         /^[a-zA-Z0-9-]+$/.test(analysisPath[3]??"")){
+         try {
+           const body=await readJson(req);
+           if(body.visualFrames!==undefined&&!Array.isArray(body.visualFrames))throw new DomainError("Invalid video frames.");
+           return sendJson(res,200,await analyzeDocument(db,analysisPath[3]!,undefined,body.visualFrames as Array<{image:string;timeSeconds:number}>|undefined));
+         }
+         catch(error){
+           if(error instanceof DomainError) throw error;
+           console.error("Multimedia processing unavailable:",error);
+           return sendJson(res,503,{error:"Multimedia analysis failed or is unavailable."});
+         }
+       }
+       if (req.method === "GET" && url.pathname === "/api/projects") return sendJson(res, 200, listProjects(db));
+       if (req.method === "GET" && url.pathname.startsWith("/api/projects/")) {
+         const project = getProject(db, decodeURIComponent(url.pathname.slice("/api/projects/".length)));
+         return project ? sendJson(res, 200, project) : sendJson(res, 404, { error: "Project not found" });
+       }
+       if (req.method === "GET" && url.pathname === "/api/transactions") return sendJson(res, 200, listTransactions(db));
+       if (req.method === "GET" && url.pathname === "/api/integrations/status") {
+         return sendJson(res, 200, {
+           mode: "MULTI_HOME",
+           storage: { provider: "TURSO" },
+           ai: agentRuntime.status,
+           research: agentRuntime.researchStatus,
+           voice: { input: "BROWSER" }
+         });
+       }
 
-      if (req.method === "POST" && url.pathname === "/api/agent/respond") {
-        const body = await readJson(req);
-        const message = String(body.message ?? "").trim();
-        if (!message) throw new DomainError("Message is required.");
-        if (message.length > 4000) throw new DomainError("Message is too long.");
-        if (!agentRuntime.provider) {
-          return sendJson(res, 503, {
-            error: "Agent unavailable. Structured Homely functionality remains operational."
-          });
-        }
+       if (req.method === "POST" && url.pathname === "/api/agent/respond") {
+         const body = await readJson(req);
+         const message = String(body.message ?? "").trim();
+         if (!message) throw new DomainError("Message is required.");
+         if (message.length > 4000) throw new DomainError("Message is too long.");
+         if (!agentRuntime.provider) {
+           return sendJson(res, 503, {
+             error: "Agent unavailable. Structured Homely functionality remains operational."
+           });
+         }
 
-        const user=auth.requireUser(req);
-        const conversationId=resolveChatConversation(db,user,typeof body.conversationId==="string"?body.conversationId:null);
-        const previous=typeof body.previousResponseId==="string"&&belongsToConversation(db,user,conversationId,body.previousResponseId)
-          ?body.previousResponseId:null;
-        try {
-          const response = await agentRuntime.provider.respond({
-            message,
-            userId:user.id,
-            previousResponseId:previous
-          });
-          saveChatTurn(db,user,message,response,conversationId);
-          return sendJson(res, 200, {...response,conversationId});
-        } catch (error) {
-          console.error("Homely agent provider failed:", error);
-          return sendJson(res, 503, {
-            error: "Agent temporarily unavailable. Structured Homely functionality remains operational."
-          });
-        }
-      }
+         const user=auth.requireUser(req);
+         const conversationId=resolveChatConversation(db,user,typeof body.conversationId==="string"?body.conversationId:null);
+         const previous=typeof body.previousResponseId==="string"&&belongsToConversation(db,user,conversationId,body.previousResponseId)
+           ?body.previousResponseId:null;
+         try {
+           const response = await agentRuntime.provider.respond({
+             message,
+             userId:user.id,
+             previousResponseId:previous
+           });
+           saveChatTurn(db,user,message,response,conversationId);
+           return sendJson(res, 200, {...response,conversationId});
+         } catch (error) {
+           console.error("Homely agent provider failed:", error);
+           return sendJson(res, 503, {
+             error: "Agent temporarily unavailable. Structured Homely functionality remains operational."
+           });
+         }
+       }
 
-      if (req.method === "POST" && url.pathname === "/api/transactions/preview") {
-        const body = await readJson(req);
-        const result = proposeTransaction(db, {
-          actionType: String(body.actionType ?? "") as ActionType,
-          payload: (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>,
-          reason: String(body.reason ?? ""),
-          requestText: body.requestText === undefined ? null : String(body.requestText),
-          origin: "WEB_UI"
-        });
-        return sendJson(res, 201, result);
-      }
+       if (req.method === "POST" && url.pathname === "/api/transactions/preview") {
+         const body = await readJson(req);
+         const result = proposeTransaction(db, {
+           actionType: String(body.actionType ?? "") as ActionType,
+           payload: (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>,
+           reason: String(body.reason ?? ""),
+           requestText: body.requestText === undefined ? null : String(body.requestText),
+           origin: "WEB_UI"
+         });
+         return sendJson(res, 201, result);
+       }
 
-      const transactionMatch = url.pathname.match(/^\/api\/transactions\/([^/]+)(?:\/(commit|reject|undo))?$/);
-      if (transactionMatch) {
-        const transactionId = decodeURIComponent(transactionMatch[1] ?? "");
-        const operation = transactionMatch[2];
+       const transactionMatch = url.pathname.match(/^\/api\/transactions\/([^/]+)(?:\/(commit|reject|undo))?$/);
+       if (transactionMatch) {
+         const transactionId = decodeURIComponent(transactionMatch[1] ?? "");
+         const operation = transactionMatch[2];
 
-        if (req.method === "GET" && !operation) {
-          const transaction = getTransaction(db, transactionId);
-          return transaction
-            ? sendJson(res, 200, transaction)
-            : sendJson(res, 404, { error: "Transaction not found" });
-        }
+         if (req.method === "GET" && !operation) {
+           const transaction = getTransaction(db, transactionId);
+           return transaction
+             ? sendJson(res, 200, transaction)
+             : sendJson(res, 404, { error: "Transaction not found" });
+         }
 
-        if (req.method === "POST" && operation === "commit") {
-          const result = commitTransaction(db, transactionId);
-          if (!result) throw new DomainError("Committed transaction could not be reloaded.", 500);
-          return sendJson(res, 200, result);
-        }
+         if (req.method === "POST" && operation === "commit") {
+           const result = commitTransaction(db, transactionId);
+           if (!result) throw new DomainError("Committed transaction could not be reloaded.", 500);
+           return sendJson(res, 200, result);
+         }
 
-        if (req.method === "POST" && operation === "reject") {
-          const result = rejectTransaction(db, transactionId);
-          if (!result) throw new DomainError("Rejected transaction could not be reloaded.", 500);
-          return sendJson(res, 200, result);
-        }
+         if (req.method === "POST" && operation === "reject") {
+           const result = rejectTransaction(db, transactionId);
+           if (!result) throw new DomainError("Rejected transaction could not be reloaded.", 500);
+           return sendJson(res, 200, result);
+         }
 
-        if (req.method === "POST" && operation === "undo") {
-          const result = undoTransaction(db, transactionId);
-          return sendJson(res, 200, result);
-        }
-      }
+         if (req.method === "POST" && operation === "undo") {
+           const result = undoTransaction(db, transactionId);
+           return sendJson(res, 200, result);
+         }
+       }
 
-      if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "Not found" });
-      return serveStatic(res, url.pathname);
+       if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "Not found" });
+       return serveStatic(res, url.pathname, req);
     } catch (error) {
       if (error instanceof DomainError) {
         if(error.status===429)res.setHeader("retry-after","60");
@@ -459,5 +518,3 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     process.exit(1);
   });
 }
-
-
