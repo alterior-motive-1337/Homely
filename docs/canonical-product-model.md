@@ -32,3 +32,4 @@ Turso is the required authoritative database; the local replica is a disposable 
 
 The UI should be minimal, modern and readable, prioritizing current home state, active problems and evidence rather than visual noise. Home keeps compact summaries; Charges, Potential Purchases and full History open from Home. The POC opens without a shared-password gate. Branding is a stick-house outline, including the browser-tab favicon.
 
+A new empty household should have a calm, action-oriented starting point that links to the existing asset registration, evidence capture, and household settings flows. It should encourage starting with known details, make clear that invitations are optional, and yield to the real household overview after records are added.

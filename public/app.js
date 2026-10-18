@@ -569,10 +569,17 @@ async function showHome(){
     pageTitle.textContent=homeName;
     document.title=homeName+" · Homely";
     if(!assets.length&&!repairs.length&&!charges.length&&!purchases.length&&!recent.length){
-      content.innerHTML='<section class="home-empty"><h2>No assets</h2>'
-        +'<div class="home-empty-actions"><button class="primary-button" id="home-first-asset">Register asset</button><button class="button" id="home-first-file">Upload file</button></div></section>';
+      content.innerHTML='<section class="home-empty" aria-labelledby="home-welcome-title">'
+        +'<p class="eyebrow">A fresh start for '+esc(homeName)+'</p><h2 id="home-welcome-title">Build your home’s memory, one detail at a time.</h2>'
+        +'<p class="home-welcome-copy">Start with one appliance or a document. Add what you know; everything else can wait. Homely keeps your records private unless you invite someone.</p>'
+        +'<div class="home-empty-actions">'
+        +'<article class="home-start-step"><span class="home-start-number">01</span><h3>Add something you own</h3><p>Track its condition, warranty, repairs and related records.</p><button class="primary-button" id="home-first-asset">Add an appliance or furnishing</button></article>'
+        +'<article class="home-start-step"><span class="home-start-number">02</span><h3>Keep its paperwork</h3><p>Save a receipt, manual, warranty, photo or video.</p><button class="button" id="home-first-file">Add a document or photo</button></article>'
+        +'<article class="home-start-step"><span class="home-start-number">03</span><h3>Make this home yours</h3><p>Choose a home name or invite a trusted household member.</p><button class="button" id="home-first-settings">Set up your household</button></article>'
+        +'</div></section>';
       $("#home-first-asset").onclick=()=>openAssetForm();
       $("#home-first-file").onclick=()=>openUploadEvidenceForm();
+      $("#home-first-settings").onclick=()=>openHouseholdSettings();
       return;
     }
     const quiet=!attention.length&&!upcoming.length&&!repairs.length&&!charges.length&&!purchases.length;
@@ -1487,5 +1494,4 @@ window.addEventListener("keydown",function(e){
     }
   }
 });
-
 

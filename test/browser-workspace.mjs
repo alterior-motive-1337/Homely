@@ -481,14 +481,23 @@ try {
   fresh.on("pageerror", error => errors.push(String(error)));
   await fresh.context().addCookies([{ name: "homely_test_view", value: "fresh", url: base }]);
   await fresh.goto(base);
-  await fresh.getByRole("heading", { name: "No assets" }).waitFor();
+  await fresh.getByRole("heading", { name: "Build your home’s memory, one detail at a time." }).waitFor();
+  assert.match(await fresh.locator(".home-welcome-copy").textContent(),/everything else can wait/i);
+  assert.equal(await fresh.locator(".home-start-step").count(),3,"new homeowners get three clear starting actions");
   assert.equal(await fresh.locator(".home-empty").evaluate(el=>{
     const r=el.getBoundingClientRect();
     const view=document.querySelector(".workspace").getBoundingClientRect();
     return Math.abs((r.left+r.right)/2-(view.left+view.right)/2)<12;
   }),true,"empty Home must be centered");
-  await fresh.getByRole("button", { name: "Register asset" }).click();
+  await fresh.getByRole("button", { name: "Add an appliance or furnishing" }).click();
   await fresh.locator("#asset-form").waitFor(); await fresh.locator("#modal-close").click();
+  await fresh.getByRole("button", { name: "Add a document or photo" }).click();
+  await fresh.locator("#homely-attachment").waitFor();
+  await fresh.locator("#modal-close").click();
+  await fresh.getByRole("button", { name: "Set up your household" }).click();
+  await fresh.locator("#rename-home-form").waitFor();
+  await fresh.locator("#invite-home-form").waitFor();
+  await fresh.locator("#modal-close").click();
   for (const view of ["issues", "repairs", "appliances", "files"]) {
     await fresh.locator('[data-view="' + view + '"]').click();
     await fresh.locator(view === "files" ? ".files-empty" : ".ledger-zero").waitFor();
