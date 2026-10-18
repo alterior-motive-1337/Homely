@@ -15,6 +15,9 @@ The Files workspace is a compact, single-column record list within Homely's mono
 - Video playback uses metadata and byte-range requests rather than eagerly downloading the entire file.
 - Analysis remains an explicit viewer action. It does not update authoritative household records.
 
+## Owner evidence export
+The household export contains the original uploaded bytes and structured Homely records, plus a print-friendly HTML register, CSV register, and SHA-256 checksum list. The register distinguishes Homely's evidence date from its recorded UTC creation time and includes stored source, provenance, reason, status, household associations, and Homely transaction references. Checksums support byte comparison after export; they are not a digital signature or independent proof of authorship or time. The bundle does not certify legal admissibility.
+
 ## QA
 Browser regressions cover compact row geometry, responsive widths, long-name fading, selection state, lazy evidence loading in the viewer, file uploads, and the broader Homely workspace. Sample image and video files exercise protected viewing and byte-range playback.
 

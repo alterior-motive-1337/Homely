@@ -5,6 +5,7 @@ import type { HomelyDatabase } from "../db.js";
 import { DomainError } from "./transactions.js";
 
 const TABLES=["homes","systems","assets","issues","maintenance_rules","repairs","charges","purchase_candidates","projects","documents","transactions","timeline_events","transaction_changes","file_analysis"];
+const EXPORT_ARTIFACTS=new Set(["evidence-register.html","evidence-register.csv","EXPORT-NOTES.txt","SHA256SUMS.txt"]);
 type Row=Record<string,unknown>;
 type Entry={offset:number;length:number};
 function archiveEntries(fd:number,size:number){
@@ -17,8 +18,10 @@ function archiveEntries(fd:number,size:number){
     const checksum=number(148,8),copy=Buffer.from(header);copy.fill(32,148,156);
     if(copy.reduce((a,b)=>a+b,0)!==checksum)throw new DomainError("Archive checksum mismatch.");
     const name=text(0,100),length=number(124,12),type=text(156,1);
-    if(!["0",""].includes(type)||text(345,155)||!(/^(homely\.json|files\/upload-[a-zA-Z0-9-]+)$/.test(name)))throw new DomainError("Unsupported archive entry.");
-    if(entries.has(name)||length>(name==="homely.json"?10_000_000:50_000_000)||position+512+length>size)throw new DomainError("Invalid or oversized archive entry.");
+    const allowed=name==="homely.json"||EXPORT_ARTIFACTS.has(name)||/^files\/upload-[a-zA-Z0-9-]+$/.test(name);
+    if(!["0",""].includes(type)||text(345,155)||!allowed)throw new DomainError("Unsupported archive entry.");
+    const maxLength=name==="homely.json"?10_000_000:50_000_000;
+    if(entries.has(name)||length>maxLength||position+512+length>size)throw new DomainError("Invalid or oversized archive entry.");
     entries.set(name,{offset:position+512,length});position+=512+Math.ceil(length/512)*512;
   }
   if(!ended||!entries.has("homely.json"))throw new DomainError("Incomplete Homely archive.");
@@ -68,7 +71,8 @@ export function restoreHomeArchive(db:HomelyDatabase,archivePath:string,ownerId:
       }
       ids.set(id,"upload-"+randomUUID());
     }
-    if(entries.size!==snapshot.uploads.length+1)throw new DomainError("Unlisted files in archive.");
+    const artifactCount=[...EXPORT_ARTIFACTS].filter(name=>entries.has(name)).length;
+    if(entries.size!==snapshot.uploads.length+1+artifactCount)throw new DomainError("Unlisted files in archive.");
     const rewrite=(value:unknown):unknown=>{
       if(typeof value==="string"){
         if(ids.has(value))return ids.get(value);

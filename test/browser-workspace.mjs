@@ -104,7 +104,7 @@ try {
   await page.locator("#modal").waitFor({state:"visible"});
   assert.match(await page.locator("#modal-body").textContent(),/Opening settings/,"slow settings must acknowledge the click immediately");
   releaseHomes();
-  await page.getByRole("link", { name: "Export household" }).waitFor();
+  await page.getByRole("link", { name: "Download evidence bundle" }).waitFor();
   assert.equal(await page.locator("#modal").getAttribute("aria-labelledby"),"modal-title","open dialogs must be labelled by their visible heading");
   assert.equal(await page.locator("#modal-title").textContent(),"Household settings");
   assert.ok(await page.locator("#modal").evaluate(el=>{

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import http from "node:http";
 import { once } from "node:events";
+import { createHash } from "node:crypto";
 import { createTestDatabase } from "./helpers.js";
 import { migrate } from "../src/db.js";
 import { seedDemo } from "../src/seed.js";
@@ -49,14 +50,28 @@ test("owner exports full structured history and original Turso chunks in tar, ne
       const response=await fetch("http://127.0.0.1:"+address.port);
       assert.equal(response.status,200);
       assert.equal(response.headers.get("content-type"),"application/x-tar");
+      assert.match(response.headers.get("content-disposition")||"",/homely-evidence-bundle\.tar/);
       const tar=Buffer.from(await response.arrayBuffer());
-      assert.equal(tar.subarray(0,11).toString("utf8").replace(/\0/g,""),"homely.json");
-      const metadataSize=parseInt(tar.subarray(124,136).toString("ascii").replace(/\0/g,"").trim(),8);
-      const metadata=JSON.parse(tar.subarray(512,512+metadataSize).toString("utf8"));
+      const entries=new Map<string,Buffer>();
+      for(let offset=0;offset+512<=tar.length;){
+        const header=tar.subarray(offset,offset+512);
+        if(header.every(byte=>byte===0))break;
+        const name=header.subarray(0,100).toString("ascii").replace(/\0.*$/s,"");
+        const length=parseInt(header.subarray(124,136).toString("ascii").replace(/\0.*$/s,"").trim(),8);
+        const start=offset+512;
+        entries.set(name,tar.subarray(start,start+length));
+        offset=start+Math.ceil(length/512)*512;
+      }
+      const metadata=JSON.parse(entries.get("homely.json")!.toString("utf8"));
       assert.equal(metadata.homeId,own.homeId);
-      const fileOffset=512+Math.ceil(metadataSize/512)*512;
-      assert.ok(tar.subarray(fileOffset,fileOffset+100).toString("utf8").includes(upload.id));
-      assert.deepEqual(tar.subarray(fileOffset+512,fileOffset+512+raw.length),raw);
+      const checksum=createHash("sha256").update(raw).digest("hex");
+      assert.deepEqual(entries.get("files/"+upload.id),raw);
+      assert.ok(entries.get("evidence-register.html")!.toString("utf8").includes("Homely evidence register"));
+      assert.ok(entries.get("evidence-register.html")!.toString("utf8").includes(checksum));
+      assert.ok(entries.get("evidence-register.html")!.toString("utf8").includes("ATTACH_DOCUMENT"));
+      assert.ok(entries.get("evidence-register.csv")!.toString("utf8").includes(upload.id));
+      assert.ok(entries.get("SHA256SUMS.txt")!.toString("utf8").includes(checksum+"  files/"+upload.id));
+      assert.match(entries.get("EXPORT-NOTES.txt")!.toString("utf8"),/not a digital signature/);
       assert.equal(tar.subarray(tar.length-1024).equals(Buffer.alloc(1024)),true);
     }finally{await new Promise<void>(resolve=>server.close(()=>resolve()))}
   }finally{db.close()}

@@ -50,7 +50,7 @@ Charges can be edited or deactivated, and purchases can be edited, shortlisted, 
 
 There is **no Google Drive integration**. Google is used only for authentication (scopes: `openid email profile`). **Self-registration is enabled**: every new Google identity receives its own private home, initialized with empty household systems. Turso stores hashed server-side sessions and membership records; the backend restricts API reads, mutations, audit history, files, staged uploads and agent tools to the authenticated home. Existing demo/home data can be claimed only by its existing owner or the email explicitly configured with optional `GOOGLE_ALLOWED_EMAIL` if the home is unowned. No Google Drive scope or refresh tokens are used.
 
-There are no external MCP, Firecrawl or Google Drive integrations to configure. A full owner-controlled TAR export is available; automated off-database backups are not yet configured. Evidence metadata and associations stay in Turso; existing source links remain viewable. Supported media open in the viewer and ordinary web pages retain an Open source link.
+There are no external MCP, Firecrawl or Google Drive integrations to configure. An owner-controlled TAR export includes structured records, original uploads, a printable HTML evidence register, CSV index and SHA-256 checksums. Hashes help detect file changes relative to the export; they do not prove authorship or creation time, and Homely does not certify legal admissibility. Automated off-database backups are not yet configured. Evidence metadata and associations stay in Turso; existing source links remain viewable. Supported media open in the viewer and ordinary web pages retain an Open source link.
 
 ## Evidence and file limits
 
