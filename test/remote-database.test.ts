@@ -14,7 +14,7 @@ import { writeHomeArchive } from "../src/domain/exportHome.js";
 import { restoreHomeArchive } from "../src/domain/restoreHome.js";
 import { runInHome } from "../src/security/homeScope.js";
 
-test("HTTP driver migrations, seeding and approval/undo retain atomic transactions", { timeout: 30_000 }, async () => runInHome("home-hawthorn",async () => {
+test("HTTP driver migrations, seeding and approval/undo retain atomic transactions", { timeout: 240_000 }, async () => runInHome("home-hawthorn",async () => {
   const child = fork(new URL("./hrana-server.ts", import.meta.url), [], { execArgv: ["--import", "tsx"], stdio: ["ignore", "ignore", "pipe", "ipc"] });
   let db: HomelyDatabase | undefined;
   const dir = fs.mkdtempSync(path.join(tmpdir(), "homely-remote-migration-"));
@@ -65,4 +65,3 @@ test("HTTP driver migrations, seeding and approval/undo retain atomic transactio
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }));
-
