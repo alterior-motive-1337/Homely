@@ -1,20 +1,21 @@
-# Homely — visual Files library
+# Homely — compact Files library
 
-Make the Files workspace feel like a media library rather than a compressed database list. Keep the monochrome shell and existing record-oriented navigation, with color supplied primarily by the user's own photographs and videos. The layout adds no second navigation tier or permanent metadata inspector.
+The Files workspace is a compact, single-column record list within Homely's monochrome shell. It keeps household files easy to scan without loading thumbnails, media metadata, or a permanent inspector for every item. Actual evidence is loaded only after the user opens a file.
 
-## Grid
-- Adaptive thumbnail tiles: several columns on desktop, two on typical Android portrait widths, and one for narrow viewports.
-- Each tile has a 4:3 preview, name and compact context caption. Long names fade rather than pushing other controls out of view.
-- Local images use lazy decoded thumbnail elements. Local videos load metadata and seek slightly forward to display a frame, without autoplay.
-- PDF, document, audio, text and unsupported types use legible format covers. Loading a grid never launches multiple heavy PDF viewers or downloads complete text files.
-- External links use format covers, with no automatic requests to third-party sites when browsing the library.
-- Failed or unavailable media falls back to the type icon. The existing full viewer handles PDFs, text files, downloads and optional document analysis.
-- Sample household data includes a small self-contained SVG illustration to verify actual thumbnail loading.
+## List
+- Each row shows a file-type icon, the full accessible name, and its primary household association.
+- Long names stay on one line, fade when truncated, and expose the complete filename as a title.
+- Search is optional and stays collapsed by default. Counts, selection, uploads, and link actions remain available.
+- Responsive rows use the same single-column layout on desktop and Android; selection is visible without adding cards or columns.
+- The list does not fetch image/video bytes or create preview elements. External links are not requested while browsing.
 
-## Interaction
-Single click/tap selects a tile; double-click/tap opens it. Keyboard Enter opens it. Search is hidden until requested; filters, file counts, selection outlines, uploading and link actions all remain. No modifications to file storage, authentication, evidence retention or database schema.
+## Viewer and interaction
+- Single click/tap selects a file; double-click/double-tap or keyboard Enter opens it.
+- The dedicated viewer loads the selected image, audio, video, PDF, text, or source link. Media stays behind the authenticated file route.
+- Video playback uses metadata and byte-range requests rather than eagerly downloading the entire file.
+- Analysis remains an explicit viewer action. It does not update authoritative household records.
 
 ## QA
-Browser regression tests cover grid geometry, responsive widths, name fading, selected borders, protected image thumbnail loading, video preview source, opening behavior, empty search, file uploads and the broader Homely app.
+Browser regressions cover compact row geometry, responsive widths, long-name fading, selection state, lazy evidence loading in the viewer, file uploads, and the broader Homely workspace. Sample image and video files exercise protected viewing and byte-range playback.
 
-Manual review on a physical Android device remains needed for browser-specific video decoding and thumbnail appearance.
+Manual review on a physical Android device remains needed for browser-specific video decoding and viewer appearance.

@@ -232,25 +232,21 @@ try {
   await page.locator("#record-search").fill("");
 
   await go("files");
-  assert.ok(await page.locator(".file-grid").evaluate(grid=>{
-    const box=grid.getBoundingClientRect(),view=document.querySelector(".workspace").getBoundingClientRect();
-    return box.width<=1088 && Math.abs((box.left+box.right)/2-(view.left+view.right)/2)<24;
-  }),"file records follow the same centered content alignment");
+  assert.ok(await page.locator(".file-list").evaluate(list=>{
+    const box=list.getBoundingClientRect(),view=document.querySelector(".workspace").getBoundingClientRect(),css=getComputedStyle(list);
+    return box.width<=1088&&Math.abs((box.left+box.right)/2-(view.left+view.right)/2)<24&&css.display==="flex"&&css.flexDirection==="column";
+  }),"file records use a centered, single-column list");
   assert.equal(await placement(".file-controls .search-toggle","#upload-file"),true,"file search icon and upload must share a row");
   assert.equal(await page.locator(".file-browser .ledger-toolbar,.file-inspector>.ledger-overline").count(),0,"file browser needs no secondary labels");
-  assert.equal(await page.locator(".file-grid").evaluate(el=>getComputedStyle(el).display),"grid","files should use an actual thumbnail grid");
   assert.ok(await page.locator(".file-card").first().evaluate(el=>{
-    const r=el.getBoundingClientRect(),preview=el.querySelector(".file-preview").getBoundingClientRect();
-    return r.height>=140&&r.height<=360&&preview.height>=80&&preview.width>=150;
-  }),"file cards need useful preview space");
-  const fileTileBoxes=await page.locator(".file-card").evaluateAll(rows=>rows.slice(0,2).map(el=>el.getBoundingClientRect().toJSON()));
-  if(fileTileBoxes.length>1)assert.ok(Math.abs(fileTileBoxes[1].y-fileTileBoxes[0].y)<4,"desktop preview cards should share a row");
+    const r=el.getBoundingClientRect(),css=getComputedStyle(el);
+    return css.display==="flex"&&r.height>=60&&r.height<=100&&el.querySelector(".file-row-icon")&&el.querySelector(".file-entry-copy")&&!el.querySelector(".file-preview");
+  }),"file rows stay compact and do not load inline previews");
+  const fileRowBoxes=await page.locator(".file-card").evaluateAll(rows=>rows.slice(0,2).map(el=>el.getBoundingClientRect().toJSON()));
+  if(fileRowBoxes.length>1)assert.ok(fileRowBoxes[1].y-fileRowBoxes[0].y>=60,"desktop files occupy separate rows");
   assert.equal(await page.locator(".file-controls #save-link").count(),1,"save link stays beside file upload");
   assert.equal(await page.locator("#file-inspector,#file-info-toggle,#file-info-resizer").count(),0,"file metadata inspector must not consume workspace");
-  assert.ok(await page.locator(".file-card").first().evaluate(el => {
-    const rect=el.getBoundingClientRect(),css=getComputedStyle(el);
-    return rect.height >= 140 && css.borderTopWidth==="1px" && css.borderBottomWidth==="1px";
-  }),"file previews must retain complete selection borders");
+  assert.equal(await page.locator(".file-list .file-preview").count(),0,"the list does not request media previews before selection");
   await noOverflow();
   let releaseRepairOptions;
   const repairOptions=new Promise(resolve=>{releaseRepairOptions=resolve});
@@ -537,9 +533,8 @@ try {
     await names.locator(".file-card .fade-title.is-overflowing").first().waitFor();
     assert.equal(await names.locator(".file-card").first().evaluate(el=>{
       const title=el.querySelector(".fade-title").getBoundingClientRect(),box=el.getBoundingClientRect();
-      return title.left>=box.left&&title.right<=box.right&&box.height>=140&&
-        el.querySelector(".file-preview").getBoundingClientRect().height>=80;
-    }),true,"long names stay inside visual file cards");
+      return title.left>=box.left&&title.right<=box.right&&box.height>=60&&box.height<=100;
+    }),true,"long names stay inside compact file rows");
     await names.locator(".file-card").first().dblclick();
     await names.locator("#viewer-title.is-overflowing").waitFor();
     assert.equal(await names.locator(".viewer-head").evaluate(el=>{
@@ -781,24 +776,23 @@ try {
   await sample.locator("#modal-close").click();
   if(process.env.TEST_SCREENSHOT_DIR)await sample.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/sample-states-mobile.png"});
   await sample.locator('[data-view="files"]').click();
-  const thumbnail=sample.locator(".file-preview-video video").first();
-  await thumbnail.waitFor();
-  assert.match(await thumbnail.getAttribute("src"),/api\/files\//,"video thumbnail uses the protected local file");
-  assert.equal(await thumbnail.getAttribute("preload"),"metadata","video preview must avoid eager full download");
-  assert.equal(await sample.locator(".file-grid").evaluate(el=>getComputedStyle(el).display),"grid");
-  const visibleTiles=await sample.locator(".file-card").evaluateAll(nodes=>nodes.slice(0,2).map(el=>el.getBoundingClientRect().toJSON()));
-  assert.ok(visibleTiles.length<2||Math.abs(visibleTiles[0].y-visibleTiles[1].y)<4,"Android cards should fit two columns when space allows");
+  assert.equal(await sample.locator(".file-list").evaluate(el=>getComputedStyle(el).display),"flex");
+  assert.equal(await sample.locator(".file-list .file-preview").count(),0,"the file list must not eagerly request image or video previews");
+  const visibleRows=await sample.locator(".file-card").evaluateAll(nodes=>nodes.slice(0,2).map(el=>el.getBoundingClientRect().toJSON()));
+  assert.ok(visibleRows.length<2||visibleRows[1].y-visibleRows[0].y>=60,"Android files remain one compact row per line");
   const touchFile=sample.locator(".file-card").filter({hasText:"Washing machine warranty.txt"});
   await touchFile.waitFor();
   await touchFile.tap();
   assert.equal(await sample.locator("#viewer").isVisible(),false,"single tap selects only");
   assert.equal(await touchFile.getAttribute("aria-pressed"),"true");
+  await sample.waitForFunction(()=>{const selected=document.querySelector('.file-card[aria-pressed="true"]');return selected&&getComputedStyle(selected).boxShadow!=="none"});
   const selection=await touchFile.evaluate(el=>{
     const style=getComputedStyle(el),other=getComputedStyle(el.parentElement.querySelector('.file-card:not([aria-pressed="true"])'));
-    return {top:style.borderTopWidth,bottom:style.borderBottomWidth,color:style.borderTopColor,other:other.borderTopColor};
+    return {pressed:el.getAttribute("aria-pressed"),shadow:style.boxShadow,otherShadow:other.boxShadow};
   });
-  assert.equal(selection.top,"1px");assert.equal(selection.bottom,"1px");
-  assert.notEqual(selection.color,selection.other,"selection needs a visible fine border");
+  assert.equal(selection.pressed,"true");
+  assert.match(selection.shadow,/inset/);
+  assert.notEqual(selection.shadow,selection.otherShadow,"selection needs a visible row highlight");
   await sample.waitForTimeout(500); // Start a fresh pair after the selection inspection.
   await touchFile.tap();await touchFile.tap();
   await sample.locator("#viewer-body .viewer-text").waitFor();
@@ -810,14 +804,24 @@ try {
   const sampleDocs=await sample.evaluate(async()=>await(await fetch("/api/documents")).json());
   assert.equal(sampleDocs.length,7);
   const imageDoc=sampleDocs.find(d=>d.mime_type==="image/svg+xml");
-  assert.ok(imageDoc,"sample home contains a real image for visual preview testing");
-  await sample.locator(".file-card").filter({hasText:"Reading corner reference"}).waitFor();
-  const loadedImage=sample.locator(".file-card").filter({hasText:"Reading corner reference"}).locator("img.file-preview-image");
+  assert.ok(imageDoc,"sample home contains a real image for file viewer testing");
+  const imageFile=sample.locator(".file-card").filter({hasText:"Reading corner reference"});
+  await imageFile.waitFor();
+  await imageFile.dblclick();
+  const loadedImage=sample.locator("#viewer-body img");
   await loadedImage.waitFor();
-  await loadedImage.scrollIntoViewIfNeeded();
-  await sample.waitForFunction(()=>[...document.querySelectorAll(".file-preview-image")].some(el=>el.complete&&el.naturalWidth>0));
-  assert.equal(await loadedImage.evaluate(el=>el.complete&&el.naturalWidth>0),true,"real image thumbnails render from protected stored files");
+  await sample.waitForFunction(()=>{const image=document.querySelector("#viewer-body img");return image?.complete&&image.naturalWidth>0});
+  assert.equal(await loadedImage.evaluate(el=>el.complete&&el.naturalWidth>0),true,"selected images render from protected stored files");
+  assert.match(await loadedImage.getAttribute("src"),/api\/files\//,"selected image is loaded through the protected file route");
+  await sample.locator("#viewer-close").click();
   const videoDoc=sampleDocs.find(d=>d.mime_type==="video/webm");
+  const videoFile=sample.locator(".file-card").filter({hasText:"colour bars.webm"});
+  await videoFile.dblclick();
+  const selectedVideo=sample.locator("#viewer-body video");
+  await selectedVideo.waitFor();
+  assert.match(await selectedVideo.getAttribute("src"),/api\/files\//,"selected video is loaded through the protected file route");
+  assert.equal(await selectedVideo.getAttribute("preload"),"metadata","video playback does not eagerly download the full file");
+  await sample.locator("#viewer-close").click();
   const sampleRange=await sample.request.get(base+videoDoc.local_path,{headers:{Range:"bytes=0-3"}});
   assert.equal(sampleRange.status(),206);assert.equal((await sampleRange.body()).toString("hex"),"1a45dfa3");
   if(process.env.TEST_SCREENSHOT_DIR)await sample.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/sample-files-mobile.png"});
@@ -831,4 +835,3 @@ try {
   assert.deepEqual(errors, [], "browser errors");
   console.log("Workspace browser checks passed: safe Markdown/history/replies/code copy, panel resizing/collapse/persistence, record commits, search/cache, related files, keyboard viewer, desktop/mobile, fresh home and voice.");
 } finally { await browser.close(); }
-

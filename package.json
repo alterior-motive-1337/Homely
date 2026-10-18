@@ -14,7 +14,7 @@
     "db:seed": "node --env-file-if-exists=.env --import tsx scripts/seed.ts",
     "backup": "node --env-file-if-exists=.env --import tsx scripts/backup.ts",
     "restore": "node --env-file-if-exists=.env --import tsx scripts/restore.ts",
-    "test": "node --import tsx --test test/*.test.ts test/*.test.mjs",
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts test/*.test.mjs",
     "prebuild": "node scripts/vendor-chat.mjs",
     "predev": "node scripts/vendor-chat.mjs"
   },

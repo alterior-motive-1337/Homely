@@ -13,7 +13,7 @@ The UI remains an intentionally restrained, monochrome **record workspace**. The
 - [x] Navigation contrast and active-state legibility without additional decorative borders.
 - [x] Home metrics, sections, routine record rows, and actions share a consistent visual rhythm.
 - [x] Issues/Repairs/Appliances list alignment, secondary text contrast, search/filter hierarchy, and clear focus.
-- [x] Files: preserve complete selection outline, compact rows and long-name fading; improve glyph and secondary labels.
+- [x] Files: compact rows, long-name fading, a clear selected-row indicator, and legible type glyphs and associations.
 - [x] Forms: consistent label, input and textarea dimensions; readability, focus border and mobile scaling.
 - [x] Dialogs: heading hierarchy, effective name for screen readers, compact close action, restrained detail grid, and usable mobile scrolling.
 - [x] Settings: grouping by task, inline rename/invite actions on desktop, stacked controls on phones, without extra panels.
@@ -24,7 +24,7 @@ The UI remains an intentionally restrained, monochrome **record workspace**. The
 
 ## Validation
 
-`npm run build`, `npm test`, syntax checking, and the CI Chromium integration suite must pass before merge. The browser suite verifies navigation contrast, accessible modal headings, form dimensions, viewport overflow, file previews and responsive behavior alongside all established record workflows.
+`npm run build`, `npm test`, syntax checking, and the CI Chromium integration suite must pass before merge. The browser suite verifies navigation contrast, accessible modal headings, form dimensions, viewport overflow, compact file rows, lazy viewer loading and responsive behavior alongside all established record workflows.
 
 **Manual validation remains:** manufacturer-specific Android keyboard/picker/PDF behavior and authenticated production layout. CI screenshots are emulated Chromium images, not photos or physical device screenshots.
 

@@ -70,7 +70,7 @@ npm test
 node --check public/app.js
 ```
 
-Tests use an explicit in-memory libSQL dependency, never a production startup flag or fallback. CI checks record approval/history, evidence viewing, navigation, voice stop and layout without calling paid providers or the production database.
+Tests run serially so worker-based document extraction stays reliable across supported development environments. They use an explicit in-memory libSQL dependency, never a production startup flag or fallback. CI checks record approval/history, evidence viewing, navigation, voice stop and layout without calling paid providers or the production database.
 
 ## Google Sign-In configuration
 
@@ -109,4 +109,3 @@ These commands use the same Turso credentials as the server. The backup command 
 - JSON request logs include generated request IDs, method, normalized route, status and duration. Query strings, OAuth codes and invitation tokens are never logged. Responses have CSP, no-sniff, frame protections, and HTTPS HSTS on Render.
 - `GET /api/health` checks database access; `GET /api/ready` additionally reports whether Google OAuth has been configured. Production health checks may use the readiness endpoint **after** OAuth settings are installed.
 - Throttling uses bounded **in-process memory**. A scaled deployment must use a shared limiter (e.g. Redis or Turso-backed counters) to enforce global limits and protect against sign-up abuse. The 500 MB quota is per home, **not** a global free-tier budget. Automated offsite backups, monitoring alerts, billing, data-retention policy and live load/security testing remain open before a public production launch. Passing CI isn't production certification.
-
