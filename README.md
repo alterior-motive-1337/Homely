@@ -44,6 +44,8 @@ One Node/TypeScript server serves the existing HTML/CSS/JavaScript frontend and 
 
 Voice input uses the browser and needs no service key. Stop listening ends capture; dictation does not submit automatically. Personal chat history is stored in Turso per user and home (latest 100 turns), with a Clear chat action. Reasoning context retains the latest 20 turns and survives service restarts; clearing chat does not delete household records or committed audit history.
 
+Static files are served asynchronously, with a bounded in-process cache for small assets and cached Brotli/gzip variants. Conditional requests use ETags; only content-hashed filenames receive immutable caching, while normal application files revalidate so a deployment cannot leave clients pinned to stale code. Asset and system health reads batch issue and maintenance lookups instead of querying once per asset.
+
 High/critical unresolved issues and maintenance overdue or due within seven days produce in-app alerts on startup, after changes, and every minute while the app is visible. Acknowledgement belongs to the individual user and does not resolve the underlying record. A new due date or changed issue generates a fresh alert. Desktop notifications require an explicit user opt-in and operate while the app is running; background push when the app is closed is not implemented.
 
 Charges can be edited or deactivated, and purchases can be edited, shortlisted, marked purchased or dismissed. Updates use the same preview/approval/audit/undo boundary as other reversible records. An update refuses to commit if the record changed after its preview.

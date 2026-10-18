@@ -1,12 +1,10 @@
-import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { URL, pathToFileURL } from "node:url";
-import zlib from "node:zlib";
 import { config } from "./config.js";
 import { migrate, openDatabase, type HomelyDatabase } from "./db.js";
-import { getAsset, getOverview, getProject, getTimeline, listAssets, listCharges, listDocuments, listIssues, listMaintenance, listProjects, listPurchaseCandidates, listRepairs, listSystems } from "./domain/queries.js";
+import { getAsset, getOverview, getProject, getTimeline, listAssets, listCharges, listDocuments, listIssues, listMaintenance, listProjects, listPurchaseCandidates, listRepairs, listSystems } from "./domain/repository.js";
 import {
   commitTransaction,
   DomainError,
@@ -31,15 +29,9 @@ import { listAlerts, acknowledgeAlert } from "./domain/alerts.js";
 import { chatHistory, clearChat, saveChatTurn, listChatConversations, createChatConversation, renameChatConversation, resolveChatConversation, belongsToConversation } from "./domain/chat.js";
 import { acceptInvite, inviteMember, listHouseholds, listInvitations, listMembers, removeMember, renameHome, revokeInvite } from "./domain/households.js";
 import { openSampleHome } from "./domain/sampleHome.js";
-
-function securityHeaders(res: http.ServerResponse): void {
-  res.setHeader("x-content-type-options", "nosniff");
-  res.setHeader("x-frame-options", "DENY");
-  res.setHeader("referrer-policy", "no-referrer");
-  res.setHeader("permissions-policy", "camera=(), microphone=(self), geolocation=()");
-  res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; frame-src 'self';");
-  if(process.env.RENDER==="true")res.setHeader("strict-transport-security","max-age=31536000; includeSubDomains");
-}
+import { serveStatic } from "./server/staticFiles.js";
+import { securityHeaders } from "./security/headers.js";
+import { viewerMayWrite } from "./security/authorization.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -86,92 +78,6 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
     return parsed as Record<string, unknown>;
   } catch {
     throw new DomainError("Request body must be valid JSON.");
-  }
-}
-
-function mimeType(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".html") return "text/html; charset=utf-8";
-  if (ext === ".css") return "text/css; charset=utf-8";
-  if (ext === ".js") return "text/javascript; charset=utf-8";
-  if (ext === ".txt") return "text/plain; charset=utf-8";
-  if (ext === ".svg") return "image/svg+xml";
-  if (ext === ".png") return "image/png";
-  if (ext === ".ico") return "image/x-icon";
-  return "application/octet-stream";
-}
-
-async function serveStatic(res: http.ServerResponse, pathname: string, req: http.IncomingMessage) {
-  // Serve from public dir, guard path traversal
-  const relative = (pathname === "/" ? "index.html" : pathname).replace(/^\/+/, "");
-  const filePath = path.resolve(config.publicDir, relative);
-  if (!filePath.startsWith(config.publicDir + path.sep) && filePath !== path.join(config.publicDir, "index.html")) {
-    return sendJson(res, 403, { error: "Forbidden" });
-  }
-
-  // If file missing or not a file, serve index for SPA routes (no extension)
-  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-    if (path.extname(pathname)) return sendJson(res, 404, { error: "File not found" });
-    const indexPath = path.join(config.publicDir, "index.html");
-    if (!fs.existsSync(indexPath)) return sendJson(res, 404, { error: "File not found" });
-    // Fall through to serve indexPath
-    return await serveStatic(res, "/index.html", req);
-  }
-
-  // Read file and compute basic caching and compression headers
-  try {
-    const stat = fs.statSync(filePath);
-    const ext = path.extname(filePath).toLowerCase();
-    const isLongCache = [".js", ".css", ".png", ".svg", ".ico", ".jpg", ".jpeg", ".webp"] .includes(ext);
-
-    // ETag using mtime and size (simple, fast)
-    const etag = `W/"${stat.mtimeMs}-${stat.size}"`;
-    const ifNoneMatch = req.headers["if-none-match"];
-    if (ifNoneMatch && String(ifNoneMatch) === etag) {
-      securityHeaders(res);
-      res.setHeader("etag", etag);
-      res.writeHead(304);
-      return res.end();
-    }
-
-    const raw = fs.readFileSync(filePath);
-
-    // Choose cache-control: immutable for fingerprinted assets (assumed), no-cache for HTML
-    const cacheControl = ext === ".html" ? "no-store" : (isLongCache ? "public, max-age=31536000, immutable" : "no-cache");
-
-    // Compression: respect Accept-Encoding, prefer brotli then gzip for larger assets
-    const accept = String(req.headers["accept-encoding"] ?? "");
-    let compressed: Buffer | null = null;
-    let encoding: string | undefined;
-
-    // Only compress assets larger than 1KB to avoid overhead
-    if (raw.length > 1024 && accept) {
-      if (accept.includes("br")) {
-        try { compressed = await zlib.promises.brotliCompress(raw); encoding = "br"; } catch (_) { compressed = null; }
-      }
-      if (!compressed && accept.includes("gzip")) {
-        try { compressed = await zlib.promises.gzip(raw); encoding = "gzip"; } catch (_) { compressed = null; }
-      }
-    }
-
-    securityHeaders(res);
-    res.setHeader("content-type", mimeType(filePath));
-    res.setHeader("cache-control", cacheControl);
-    res.setHeader("etag", etag);
-    // Indicate response varies by encoding
-    if (encoding) res.setHeader("vary", "Accept-Encoding");
-
-    if (encoding && compressed) {
-      res.setHeader("content-encoding", encoding);
-      res.writeHead(200);
-      return res.end(compressed);
-    }
-
-    res.writeHead(200);
-    return res.end(raw);
-  } catch (err) {
-    console.error("Error serving static file:", err);
-    return sendJson(res, 500, { error: "File serve failed" });
   }
 }
 
@@ -263,8 +169,7 @@ export async function startServer(
           else if(url.pathname.includes("/chunks/"))limits.enforce("chunks:"+key,240,60_000);
           else limits.enforce("write:"+key,90,60_000);
         }
-        const selfServe=url.pathname==="/api/homes/active"||url.pathname==="/api/homes/invitations/accept"||url.pathname==="/api/account/delete"||url.pathname==="/api/alerts/acknowledge"||url.patc[...]
-        if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET") && !selfServe)
+        if(user.role==="VIEWER" && !["GET","HEAD"].includes(req.method ?? "GET") && !viewerMayWrite(req.method ?? "",url.pathname))
           throw new DomainError("Your household membership is read-only.",403);
       }
 
@@ -477,7 +382,7 @@ export async function startServer(
        }
 
        if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "Not found" });
-       return serveStatic(res, url.pathname, req);
+       return serveStatic(res, url.pathname, req, config.publicDir);
     } catch (error) {
       if (error instanceof DomainError) {
         if(error.status===429)res.setHeader("retry-after","60");
@@ -487,6 +392,10 @@ export async function startServer(
       return sendJson(res, 500, { error: "Homely could not complete this request." });
     }
   });
+
+  server.headersTimeout = 15_000;
+  server.requestTimeout = 120_000;
+  server.keepAliveTimeout = 5_000;
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {

@@ -9,22 +9,42 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function healthForAsset(db: HomelyDatabase, assetId: string, observedAt: unknown): HealthState {
-  const severities = db.prepare(
-    `SELECT severity FROM issues
-     WHERE asset_id = ? AND status IN ('OPEN','MONITORING','PLANNED','IN_PROGRESS')`
-  ).all(assetId).map((row) => String(row.severity) as Severity);
+interface AssetHealthInput {
+  id: string;
+  health_observed_at: unknown;
+}
 
-  const overdue = db.prepare(
-    `SELECT 1 AS hit FROM maintenance_rules
-     WHERE asset_id = ? AND active = 1 AND next_due_at < ? LIMIT 1`
-  ).get(assetId, todayIso());
+function healthForAssets(db: HomelyDatabase, assets: AssetHealthInput[]): Map<string, HealthState> {
+  const assetIds = assets.map((asset) => String(asset.id));
+  const health = new Map<string, HealthState>();
+  if (!assetIds.length) return health;
 
-  return deriveAssetHealth({
-    activeSeverities: severities,
-    hasOverdueMaintenance: Boolean(overdue),
-    hasObservation: Boolean(observedAt)
-  });
+  const placeholders = assetIds.map(() => "?").join(",");
+  const severitiesByAsset = new Map<string, Severity[]>();
+  for (const row of db.prepare(
+    `SELECT asset_id, severity FROM issues
+     WHERE asset_id IN (${placeholders}) AND status IN ('OPEN','MONITORING','PLANNED','IN_PROGRESS')`
+  ).all(...assetIds)) {
+    const id = String(row.asset_id);
+    const severities = severitiesByAsset.get(id) ?? [];
+    severities.push(String(row.severity) as Severity);
+    severitiesByAsset.set(id, severities);
+  }
+
+  const overdueAssets = new Set(db.prepare(
+    `SELECT DISTINCT asset_id FROM maintenance_rules
+     WHERE asset_id IN (${placeholders}) AND active = 1 AND next_due_at < ?`
+  ).all(...assetIds, todayIso()).map((row) => String(row.asset_id)));
+
+  for (const asset of assets) {
+    const id = String(asset.id);
+    health.set(id, deriveAssetHealth({
+      activeSeverities: severitiesByAsset.get(id) ?? [],
+      hasOverdueMaintenance: overdueAssets.has(id),
+      hasObservation: Boolean(asset.health_observed_at)
+    }));
+  }
+  return health;
 }
 
 export function getHome(db: HomelyDatabase) {
@@ -38,19 +58,40 @@ export function listAssets(db: HomelyDatabase) {
      WHERE s.home_id = COALESCE(NULLIF(?,''),s.home_id)
      ORDER BY s.position, a.name`
   ).all(activeHomeId() ?? "");
+  const health = healthForAssets(db, rows.map((row) => ({
+    id: String(row.id),
+    health_observed_at: row.health_observed_at
+  })));
 
   return rows.map((row) => {
-    const health=healthForAsset(db,String(row.id),row.health_observed_at);
-    return {...row,health,operational_state:classifyAssetState(row.condition,health)};
+    const assetHealth = health.get(String(row.id))!;
+    return {...row,health:assetHealth,operational_state:classifyAssetState(row.condition,assetHealth)};
   });
 }
 
 export function listSystems(db: HomelyDatabase) {
-  return db.prepare("SELECT * FROM systems WHERE home_id = COALESCE(NULLIF(?,''),home_id) ORDER BY position, name").all(activeHomeId() ?? "").map((system) => {
-    const assets = db.prepare("SELECT id, health_observed_at FROM assets WHERE system_id = ? ORDER BY name")
-      .all(String(system.id));
-    const states = assets.map((asset) => healthForAsset(db, String(asset.id), asset.health_observed_at));
-    return { ...system, health: deriveSystemHealth(states), asset_count: assets.length };
+  const systems = db.prepare("SELECT * FROM systems WHERE home_id = COALESCE(NULLIF(?,''),home_id) ORDER BY position, name")
+    .all(activeHomeId() ?? "");
+  const assets = db.prepare(
+    `SELECT a.id, a.system_id, a.health_observed_at
+     FROM assets a JOIN systems s ON s.id = a.system_id
+     WHERE s.home_id = COALESCE(NULLIF(?,''),s.home_id)
+     ORDER BY a.name`
+  ).all(activeHomeId() ?? "");
+  const health = healthForAssets(db, assets.map((asset) => ({
+    id: String(asset.id),
+    health_observed_at: asset.health_observed_at
+  })));
+  const assetsBySystem = new Map<string, HealthState[]>();
+  for (const asset of assets) {
+    const systemId = String(asset.system_id);
+    const states = assetsBySystem.get(systemId) ?? [];
+    states.push(health.get(String(asset.id))!);
+    assetsBySystem.set(systemId, states);
+  }
+  return systems.map((system) => {
+    const states = assetsBySystem.get(String(system.id)) ?? [];
+    return { ...system, health: deriveSystemHealth(states), asset_count: states.length };
   });
 }
 
@@ -61,7 +102,10 @@ export function getAsset(db: HomelyDatabase, assetId: string) {
   ).get(assetId,activeHomeId() ?? "");
   if (!asset) return null;
 
-  const health=healthForAsset(db,assetId,asset.health_observed_at);
+  const health=healthForAssets(db,[{
+    id: assetId,
+    health_observed_at: asset.health_observed_at
+  }]).get(assetId)!;
   return {
     ...asset,
     health,
@@ -253,4 +297,3 @@ export function getProject(db: HomelyDatabase, projectId: string) {
     ).all(projectId)
   };
 }
-
