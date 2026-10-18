@@ -482,7 +482,7 @@ try {
   await fresh.context().addCookies([{ name: "homely_test_view", value: "fresh", url: base }]);
   await fresh.goto(base);
   await fresh.getByRole("heading", { name: "Build your home’s memory, one detail at a time." }).waitFor();
-  assert.match(await fresh.locator(".home-welcome-copy").textContent(),/everything else can wait/i);
+  assert.match(await fresh.locator(".home-welcome-copy").textContent(),/progress stays here/i);
   assert.equal(await fresh.locator(".home-start-step").count(),3,"new homeowners get three clear starting actions");
   assert.equal(await fresh.locator(".home-empty").evaluate(el=>{
     const r=el.getBoundingClientRect();
@@ -498,6 +498,13 @@ try {
   await fresh.locator("#rename-home-form").waitFor();
   await fresh.locator("#invite-home-form").waitFor();
   await fresh.locator("#modal-close").click();
+  const skipContext=await browser.newContext({viewport:{width:1366,height:768}});
+  const skip=await skipContext.newPage();
+  await skip.context().addCookies([{name:"homely_test_view",value:"fresh",url:base}]);
+  await skip.goto(base);
+  await skip.getByRole("button",{name:"Skip setup"}).click();
+  await skip.locator(".home-setup-guide").waitFor({state:"detached"});
+  await skipContext.close();
   for (const view of ["issues", "repairs", "appliances", "files"]) {
     await fresh.locator('[data-view="' + view + '"]').click();
     await fresh.locator(view === "files" ? ".files-empty" : ".ledger-zero").waitFor();
@@ -508,6 +515,29 @@ try {
       assert.equal(await fresh.locator(".ledger-columns").isVisible(),false,"empty registers should not show useless column headings");
     }
   }
+  await fresh.locator('[data-view="home"]').click();
+  await fresh.locator("#home-first-asset").click();
+  await fresh.locator("#asset-form").waitFor();
+  await fresh.locator('#asset-form select[name="systemId"]').selectOption({index:0});
+  await fresh.locator('#asset-form input[name="category"]').fill("Appliance");
+  await fresh.locator('#asset-form input[name="name"]').fill("Setup test refrigerator");
+  await fresh.getByRole("button",{name:"Preview",exact:true}).click();
+  await fresh.getByRole("button",{name:"Approve & commit"}).click();
+  await fresh.locator(".home-setup-guide").filter({hasText:"1 of 3 complete"}).waitFor();
+  await fresh.locator(".home-start-step.is-complete").filter({hasText:"Add something you own"}).waitFor();
+  await fresh.locator("#home-first-file").click();
+  await fresh.locator("#homely-attachment").setInputFiles({name:"setup-guide.txt",mimeType:"text/plain",buffer:Buffer.from("Household setup evidence.")});
+  await fresh.getByRole("button",{name:"Preview attachment"}).click();
+  await fresh.getByRole("button",{name:"Approve & commit"}).click();
+  await fresh.locator(".home-setup-guide").filter({hasText:"2 of 3 complete"}).waitFor();
+  await fresh.locator(".home-start-step.is-complete").filter({hasText:"Keep its paperwork"}).waitFor();
+  await fresh.locator("#home-first-settings").click();
+  await fresh.locator("#rename-home-form input[name='homeName']").fill("Setup Journey Home");
+  await fresh.getByRole("button",{name:"Save name"}).click();
+  await fresh.locator("#page-title").filter({hasText:"Setup Journey Home"}).waitFor();
+  await fresh.locator(".home-setup-guide").waitFor({state:"detached"});
+  assert.equal(await fresh.locator(".home-setup-guide").count(),0,"the setup guide finishes after all three steps complete");
+  assert.equal(await fresh.locator("#page-title").textContent(),"Setup Journey Home","household setup remains available through the final step");
   // Long names must stay in their text column while every control remains usable.
   const names=await browser.newPage({viewport:{width:1366,height:768}});
   names.on("pageerror",error=>errors.push(String(error)));

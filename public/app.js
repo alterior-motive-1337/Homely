@@ -10,11 +10,14 @@ const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewer
 const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input"), voiceButton=$("#voice-button");
 viewerTitle.classList.add("fade-title");
 watchFadingTitles(document.body);
-const state={view:"home",assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false,currency:normalizeCurrency()};
+const state={view:"home",homeId:null,assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false,currency:normalizeCurrency()};
 const viewPanels=new Map();
+const homeSetupMemory=new Map();
 const VIEW_CACHE_MS=45000;
 const ACTIVE_REFRESH_MS=45000;
 const LAYOUT_KEY="homely_workspace_layout_v1";
+const HOME_SETUP_KEY="homely_home_setup_v1:";
+const HOME_SETUP_STEPS=["asset","evidence","household"];
 const workspaceLayout={assistant:{width:null,collapsed:false,expanded:false},files:{width:null,collapsed:false,mobileCollapsed:true}};
 const compactFiles=window.matchMedia("(max-width: 700px)");
 compactFiles.addEventListener("change",()=>state.syncFileInfo?.());
@@ -26,6 +29,59 @@ try{
   }
 }catch(_){/* Layout remains usable when browser storage is unavailable. */}
 function saveWorkspaceLayout(){try{localStorage.setItem(LAYOUT_KEY,JSON.stringify(workspaceLayout))}catch(_){}}
+function homeSetupState(homeId){
+  try{
+    const saved=JSON.parse(localStorage.getItem(HOME_SETUP_KEY+homeId)||"null");
+    if(saved){
+      const setup={started:saved.started===true,dismissed:saved.dismissed===true,completed:Array.isArray(saved.completed)?saved.completed.filter(step=>HOME_SETUP_STEPS.includes(step)):[]};
+      homeSetupMemory.set(homeId,setup);
+      return setup;
+    }
+  }catch(_){}
+  return homeSetupMemory.get(homeId)||{started:false,dismissed:false,completed:[]};
+}
+function saveHomeSetup(homeId,setup){
+  homeSetupMemory.set(homeId,setup);
+  try{localStorage.setItem(HOME_SETUP_KEY+homeId,JSON.stringify(setup))}catch(_){}
+}
+function completeHomeSetupStep(step){
+  const homeId=state.homeId;
+  if(!homeId||!HOME_SETUP_STEPS.includes(step))return;
+  const setup=homeSetupState(homeId);
+  if(!setup.started||setup.dismissed||setup.completed.includes(step))return;
+  setup.completed.push(step);
+  saveHomeSetup(homeId,setup);
+}
+function homeSetupIsActive(setup){return setup.started&&!setup.dismissed&&setup.completed.length<HOME_SETUP_STEPS.length}
+function homeSetupMarkup(homeId,empty){
+  const setup=homeSetupState(homeId);
+  if(!homeSetupIsActive(setup))return "";
+  const completed=setup.completed.length;
+  const steps=[
+    ["asset","Add something you own","Track its condition, warranty, repairs and related records.","Add an appliance or furnishing"],
+    ["evidence","Keep its paperwork","Save a receipt, manual, warranty, photo or video.","Add a document or photo"],
+    ["household","Make this home yours","Choose a home name or invite a trusted household member.","Set up your household"]
+  ];
+  const actions={asset:"home-first-asset",evidence:"home-first-file",household:"home-first-settings"};
+  return '<section class="home-setup-guide'+(empty?' home-empty':'')+'" aria-labelledby="home-welcome-title">'
+    +'<p class="eyebrow">Getting started · '+completed+' of 3 complete</p><h2 id="home-welcome-title">Build your home’s memory, one detail at a time.</h2>'
+    +'<p class="home-welcome-copy">Start with what you know. Your progress stays here while you complete setup; invitations are optional.</p>'
+    +'<div class="home-empty-actions">'+steps.map(function(step,index){
+      const done=setup.completed.includes(step[0]);
+      return '<article class="home-start-step'+(done?' is-complete':'')+'"><span class="home-start-number">'+String(index+1).padStart(2,"0")+'</span><h3>'+esc(step[1])+'</h3><p>'+esc(step[2])+'</p>'
+        +(done?'<span class="home-start-complete" role="status">Complete</span>':'<button class="'+(index===completed?'primary-button':'button')+'" id="'+actions[step[0]]+'" type="button">'+esc(step[3])+'</button>')+'</article>';
+    }).join("")+'</div><button class="home-setup-skip" id="home-setup-dismiss" type="button">Skip setup</button></section>';
+}
+function bindHomeSetupActions(homeId){
+  const asset=$("#home-first-asset");if(asset)asset.onclick=()=>openAssetForm();
+  const file=$("#home-first-file");if(file)file.onclick=()=>openUploadEvidenceForm();
+  const settings=$("#home-first-settings");if(settings)settings.onclick=()=>openHouseholdSettings();
+  const dismiss=$("#home-setup-dismiss");
+  if(dismiss)dismiss.onclick=()=>{
+    const setup=homeSetupState(homeId);setup.dismissed=true;saveHomeSetup(homeId,setup);
+    viewPanels.delete(state.view);state.needsReload=true;void selectView(state.view);
+  };
+}
 
 function bindPanelResize({name,container,panel,handle,variable,min,max,mainMin,breakpoint}){
   const preference=workspaceLayout[name];
@@ -451,6 +507,8 @@ async function previewAction(actionType,payload,reason,requestText){
       button.disabled=true;other.disabled=true;button.textContent="Saving…";
       try{
         await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});
+        if(actionType==="CREATE_ASSET")completeHomeSetupStep("asset");
+        if(actionType==="ATTACH_DOCUMENT")completeHomeSetupStep("evidence");
         if(modalPending(previewGeneration))closeModal();
         notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");
         await selectView(state.view);
@@ -566,24 +624,22 @@ async function showHome(){
     const attention=issueShortcuts.map(i=>homeActionRow(i.title,i.asset_name,priorityBadge(i.severity),"issue",i.id))
       .concat((d.attention?.maintenance||[]).map(m=>homeActionRow(m.title,m.asset_name+" · "+m.days_overdue+" days overdue",badge("OVERDUE"),"maintenance",m.id)));
     const homeName=d.home?.name||"My Home";
+    state.homeId=d.home?.id||null;
     pageTitle.textContent=homeName;
     document.title=homeName+" · Homely";
-    if(!assets.length&&!repairs.length&&!charges.length&&!purchases.length&&!recent.length){
-      content.innerHTML='<section class="home-empty" aria-labelledby="home-welcome-title">'
-        +'<p class="eyebrow">A fresh start for '+esc(homeName)+'</p><h2 id="home-welcome-title">Build your home’s memory, one detail at a time.</h2>'
-        +'<p class="home-welcome-copy">Start with one appliance or a document. Add what you know; everything else can wait. Homely keeps your records private unless you invite someone.</p>'
-        +'<div class="home-empty-actions">'
-        +'<article class="home-start-step"><span class="home-start-number">01</span><h3>Add something you own</h3><p>Track its condition, warranty, repairs and related records.</p><button class="primary-button" id="home-first-asset">Add an appliance or furnishing</button></article>'
-        +'<article class="home-start-step"><span class="home-start-number">02</span><h3>Keep its paperwork</h3><p>Save a receipt, manual, warranty, photo or video.</p><button class="button" id="home-first-file">Add a document or photo</button></article>'
-        +'<article class="home-start-step"><span class="home-start-number">03</span><h3>Make this home yours</h3><p>Choose a home name or invite a trusted household member.</p><button class="button" id="home-first-settings">Set up your household</button></article>'
-        +'</div></section>';
-      $("#home-first-asset").onclick=()=>openAssetForm();
-      $("#home-first-file").onclick=()=>openUploadEvidenceForm();
-      $("#home-first-settings").onclick=()=>openHouseholdSettings();
+    const empty=!assets.length&&!repairs.length&&!charges.length&&!purchases.length&&!recent.length;
+    if(state.homeId&&empty){
+      const setup=homeSetupState(state.homeId);
+      if(!setup.started){setup.started=true;saveHomeSetup(state.homeId,setup)}
+    }
+    const setupGuide=state.homeId?homeSetupMarkup(state.homeId,empty):"";
+    if(empty&&setupGuide){
+      content.innerHTML=setupGuide;
+      bindHomeSetupActions(state.homeId);
       return;
     }
     const quiet=!attention.length&&!upcoming.length&&!repairs.length&&!charges.length&&!purchases.length;
-    let html='<div class="home-overview'+(quiet?' home-overview-quiet':'')+'">';
+    let html=setupGuide+'<div class="home-overview'+(quiet?' home-overview-quiet':'')+'">';
     const openIssues=Number(summary.open_issues||0),overdue=Number(summary.overdue_maintenance||0);
     {
       const metricCount=1+Number(Boolean(openIssues))+Number(Boolean(overdue));
@@ -638,6 +694,7 @@ async function showHome(){
     }
     html+='<nav class="home-utilities" aria-label="Other home records"><div class="utility-links">'+(!charges.length?'<button class="ghost-link" id="view-charges-shortcut">Charges</button>':'')+(!purchases.length?'<button class="ghost-link" id="view-purchases-shortcut">Purchases</button>':'')+'<button class="ghost-link" id="view-history">History</button></div></nav></div>';
     content.innerHTML=html;
+    if(setupGuide)bindHomeSetupActions(state.homeId);
     const chargesBtn=$("#view-charges");if(chargesBtn)chargesBtn.onclick=showCharges;
     const purchasesBtn=$("#view-purchases");if(purchasesBtn)purchasesBtn.onclick=showPurchases;
     const chargesShortcut=$("#view-charges-shortcut");if(chargesShortcut)chargesShortcut.onclick=showCharges;
@@ -1377,7 +1434,7 @@ async function openHouseholdSettings(){
     const rename=$("#rename-home-form");
     if(rename)rename.onsubmit=async e=>{
       e.preventDefault();
-      try{await api("/api/homes/current",{method:"PATCH",body:{name:new FormData(rename).get("homeName")}});closeModal();window.location.assign("/")}
+      try{await api("/api/homes/current",{method:"PATCH",body:{name:new FormData(rename).get("homeName")}});completeHomeSetupStep("household");closeModal();window.location.assign("/")}
       catch(error){notify(error.message)}
     };
     const invite=$("#invite-home-form");
@@ -1386,6 +1443,8 @@ async function openHouseholdSettings(){
       try{
         const data=new FormData(invite);
         const result=await api("/api/homes/invitations",{method:"POST",body:{email:data.get("email"),role:data.get("role")}});
+        completeHomeSetupStep("household");
+        if(state.view==="home"){viewPanels.delete("home");state.needsReload=true;void selectView("home")}
         const link=new URL(result.link,location.origin).href;
         $("#invite-result").innerHTML='<div class="field"><label>Invitation link — share with '+esc(result.email)+'</label><input id="invite-link" readonly value="'+esc(link)+'"></div><div class="form-actions"><button type="button" class="button" id="copy-invite">Copy link</button></div>';
         $("#copy-invite").onclick=async()=>{try{await navigator.clipboard.writeText(link);notify("Invitation copied.")}catch(_){$("#invite-link").select();notify("Select and copy the invitation link.")}};
@@ -1494,4 +1553,3 @@ window.addEventListener("keydown",function(e){
     }
   }
 });
-

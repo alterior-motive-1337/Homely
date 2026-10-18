@@ -1192,7 +1192,12 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   color:#8e8e95;font-size:12px;font-weight:480;
 }
 .home-overview .utility-links .ghost-link:hover{color:#f1f1f1}
-.home-empty{
+.home-setup-guide{
+  width:min(100%,880px);
+  margin:0 auto 26px;
+  text-align:center;
+}
+.home-setup-guide.home-empty{
   width:min(100%,700px);
   min-height:min(650px,calc(100dvh - 150px));
   margin:0 auto;
@@ -1200,15 +1205,19 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   text-align:center;background:transparent;border:0;gap:0;
 }
-.home-empty>.eyebrow{margin:0 0 14px;color:#a8a8b0;font-size:11px;letter-spacing:.1em;text-transform:uppercase}
-.home-empty h2{max-width:590px;font-size:clamp(27px,3.6vw,40px);font-weight:550;line-height:1.12;letter-spacing:-.045em;margin:0 0 14px}
-.home-empty>.home-welcome-copy{max-width:500px;margin:0 0 30px;color:#a5a5ad;font-size:14px;line-height:1.65}
+.home-setup-guide>.eyebrow{margin:0 0 14px;color:#a8a8b0;font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.home-setup-guide h2{max-width:590px;margin:0 auto 14px;font-size:clamp(27px,3.6vw,40px);font-weight:550;line-height:1.12;letter-spacing:-.045em}
+.home-setup-guide>.home-welcome-copy{max-width:500px;margin:0 auto 25px;color:#a5a5ad;font-size:14px;line-height:1.65}
 .home-empty-actions{display:grid;width:100%;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;gap:10px;text-align:left}
 .home-start-step{display:flex;flex-direction:column;align-items:flex-start;min-width:0;padding:17px 14px;border:1px solid #303035;border-radius:10px;background:#111113}
+.home-start-step.is-complete{border-color:#3c463e;background:#111411}
 .home-start-number{color:#888890;font-size:10px;font-variant-numeric:tabular-nums;letter-spacing:.08em}
 .home-start-step h3{margin:17px 0 7px;font-size:13px;font-weight:590;line-height:1.4}
 .home-start-step p{flex:1;margin:0 0 18px;color:#a1a1a9;font-size:11px;line-height:1.55}
 .home-start-step button{min-height:40px!important;width:100%;padding:9px 10px!important;font-size:11px!important;line-height:1.35}
+.home-start-complete{margin-top:auto;color:#9ac29e;font-size:12px;font-weight:600}
+.home-setup-skip{margin:16px 0 0;color:#a1a1a9;font-size:11px}
+.home-setup-skip:hover{color:#f1f1f1}
 @media(max-width:700px){
   .home-overview{padding-top:clamp(34px,9vh,68px);padding-bottom:35px}
   .home-overview-quiet{padding-top:clamp(58px,15vh,115px)}
@@ -1225,9 +1234,10 @@ button.home-recent-item:hover,button.home-recent-item:focus-visible{
   .home-recent{margin-bottom:15px}
   .home-recent-item{min-height:43px;padding:9px 3px!important}
   .home-overview .utility-links{gap:22px}
-  .home-empty{width:100%;min-height:calc(100dvh - 230px);padding:34px 0 45px}
-  .home-empty h2{font-size:clamp(29px,8vw,36px)}
-  .home-empty>.home-welcome-copy{font-size:13px;margin-bottom:24px}
+  .home-setup-guide{width:100%;margin-bottom:24px}
+  .home-setup-guide.home-empty{min-height:calc(100dvh - 230px);padding:34px 0 45px}
+  .home-setup-guide h2{font-size:clamp(29px,8vw,36px)}
+  .home-setup-guide>.home-welcome-copy{font-size:13px;margin-bottom:24px}
   .home-empty-actions{grid-template-columns:1fr;gap:8px}
   .home-start-step{display:grid;grid-template-columns:30px minmax(0,1fr);column-gap:9px;align-items:start;padding:13px}
   .home-start-number{grid-column:1;grid-row:1/4;padding-top:2px}

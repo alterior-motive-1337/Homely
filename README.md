@@ -36,7 +36,7 @@ Issues and repairs keep permanent history. Mutations follow **proposal → previ
 
 The five pages follow the notes: **Home, Issues, Repairs, Appliances, Files**. Chat stays alongside normal pages and opens as a drawer on smaller screens. The dedicated file viewer contains only the selected evidence.
 
-New households start with a short Home setup guide linking to the existing asset, evidence-upload, and household-settings flows; it disappears automatically when the first household records are added. Charges, saved purchases and history open from Home. Issues and repairs open their own details and evidence. The brand and browser tab use the stick-house shape.
+New households start with a resumable Home checklist linking to the existing asset, evidence-upload, and household-settings flows. Progress is saved in the browser per home until the three steps are complete or the homeowner skips setup. Charges, saved purchases and history open from Home. Issues and repairs open their own details and evidence. The brand and browser tab use the stick-house shape.
 
 ## Services
 
