@@ -2937,6 +2937,24 @@ section.file-browser .file-list > .files-empty{min-height:120px}
   }
 }
 
+@media(max-width:700px){
+  .sidebar .nav{gap:1px!important}
+  .sidebar .nav-item{
+    flex:1 1 0;
+    flex-direction:column;
+    gap:3px;
+    height:54px!important;
+    min-height:54px!important;
+    padding:4px 1px!important;
+  }
+  .sidebar .nav-item .nav-icon{
+    display:block;
+    width:16px;
+    height:16px;
+  }
+  .sidebar .nav-item .nav-label{font-size:9px;line-height:1.1}
+}
+
 .has-action-icon{gap:7px}
 .has-action-icon .action-glyph{width:15px;height:15px;opacity:.86}
 .danger-button.has-action-icon .action-glyph{color:currentColor}

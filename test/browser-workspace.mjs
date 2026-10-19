@@ -32,6 +32,17 @@ try {
   assert.equal(await page.locator(".nav-item.active").evaluate(el=>getComputedStyle(el).borderRadius),"8px","labeled navigation uses the refined rounded tab treatment");
   // Visual hierarchy and sizing: navigation must be labeled and use a single top row.
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "desktop tabs need visible text labels");
+  assert.deepEqual(await page.locator(".nav-item").evaluateAll(items=>items.map(item=>({
+    view:item.dataset.view,
+    icon:item.querySelector(".nav-icon")?.dataset.navIcon,
+    visible:getComputedStyle(item.querySelector(".nav-icon")).display!=="none"
+  }))),[
+    {view:"home",icon:"home",visible:true},
+    {view:"issues",icon:"issues",visible:true},
+    {view:"repairs",icon:"repairs",visible:true},
+    {view:"appliances",icon:"appliances",visible:true},
+    {view:"files",icon:"files",visible:true}
+  ],"each desktop destination has a matching, visible navigation icon");
   assert.ok(await page.locator(".sidebar").evaluate(el => { const r=el.getBoundingClientRect(); return r.width > 1100 && r.height <= 72; }), "desktop navigation must fit a compact header");
   assert.ok(await page.locator(".metric").first().evaluate(el => el.getBoundingClientRect().height <= 125), "overview counters should not become oversized cards");
   assert.equal(await page.locator(".metric").first().locator("strong").textContent(), "16", "home must show registered assets rather than unrelated empty counts");
@@ -90,6 +101,11 @@ try {
   assert.equal(await page.locator("#chat-rail").isVisible(),false,"collapsed layout must survive reload");
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "mobile tabs retain labels");
+  assert.equal(await page.locator(".nav-item .nav-icon").first().isVisible(),true,"mobile tabs pair their labels with icons");
+  await noOverflow();
+  await page.setViewportSize({width:320,height:844});
+  assert.equal(await page.locator(".nav-item .nav-icon").count(),5,"the narrow mobile tab bar keeps every destination icon");
+  assert.equal(await page.locator(".nav-item .nav-icon:visible").count(),5,"all destination icons remain visible at 320px");
   await noOverflow();
   assert.equal(await page.locator("#chat-open").getAttribute("aria-label"),"Open chat","mobile launcher must have an accessible label");
   assert.equal((await page.locator("#chat-open").textContent()).trim(),"","mobile launcher should be icon-only");
