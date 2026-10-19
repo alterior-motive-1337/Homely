@@ -52,6 +52,7 @@ try {
   assert.ok(await page.locator("[data-home-issue]").count()>0,"Home has issue shortcuts");
   await page.locator("[data-home-issue]").first().click();
   await page.locator("#issue-attach").waitFor();
+  assert.equal(await page.locator("#issue-attach .action-glyph").count(),1,"file attachment action uses a recognizable link icon");
   await page.locator("#modal-close").click();
   if(await page.locator("[data-home-repair]").count()){
     await page.locator("[data-home-repair]").first().click();
@@ -135,6 +136,8 @@ try {
   let issueFetches = 0;
   page.on("request", request => { if (request.method() === "GET" && new URL(request.url()).pathname === "/api/issues") issueFetches++; });
   await go("issues");
+  assert.equal((await page.locator("#new-issue").innerText()).trim(),"Report issue","primary action keeps its clear visible label");
+  assert.equal(await page.locator("#new-issue .action-glyph").count(),1,"primary action uses a descriptive issue icon");
   const placement=async(searchSelector,actionSelector)=>{
     const search=await page.locator(searchSelector).boundingBox();
     const action=await page.locator(actionSelector).boundingBox();
@@ -175,6 +178,7 @@ try {
     document.querySelector(".quick-search .search-toggle")?.getAttribute("aria-expanded")==="true");
   const fetches = issueFetches;
   await go("appliances");
+  assert.equal(await page.locator("#new-asset .action-glyph").count(),1,"asset registration uses a distinct asset icon");
   assert.equal(await placement(".register-tools .search-toggle","#new-asset"),true,"asset search icon and action must share a row");
   assert.equal(await page.locator("#record-search").isVisible(),false,"asset search is collapsed by default");
   await page.locator(".search-toggle").click();
@@ -189,6 +193,8 @@ try {
   await fileButtons.last().click();
   await page.locator("#viewer").waitFor({ state: "visible" });
   assert.equal(await page.getByRole("button",{name:"Remove from Homely"}).isVisible(),true,"file viewer exposes a clear remove action");
+  assert.equal(await page.locator("#remove-file .ui-icon").count(),1,"permanent removal is paired with a trash icon");
+  assert.equal(await page.locator("#analyze-file .action-glyph").count(),1,"file analysis uses a distinct analysis icon");
   await page.locator("#viewer-close").click();
   await page.locator("#modal-close").click();
   await go("issues");
@@ -209,6 +215,8 @@ try {
   await page.locator('#issue-form select[name="assetId"]').selectOption("asset-tap");
   await page.locator('#issue-form input[name="title"]').fill("Browser transaction issue");
   await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.locator("#commit-preview").waitFor();
+  assert.equal(await page.locator("#commit-preview .action-glyph").count(),1,"approval is paired with a confirmation icon");
   await page.getByRole("button", { name: "Approve & commit" }).click();
   await page.locator("[data-issue-open]").filter({ hasText: "Browser transaction issue" }).waitFor();
 
