@@ -4,6 +4,7 @@ const viewerPersonalActions = new Set([
   "POST /api/alerts/acknowledge",
   "POST /api/agent/respond",
   "POST /api/agent/conversations",
+  "POST /api/voice/speech",
   "DELETE /api/account/delete",
   "DELETE /api/agent/history"
 ]);

@@ -2964,6 +2964,15 @@ section.file-browser .file-list > .files-empty{min-height:120px}
 }
 .page-controls .controls-actions .icon-action .ui-icon{width:17px;height:17px}
 .icon-action-label{font-size:12px;font-weight:600}
+.speech-action{
+  display:inline-flex;align-items:center;gap:7px;min-height:34px;
+  margin-top:10px;padding:6px 9px!important;font-size:11px!important;
+  color:#c4c4cb!important;background:transparent!important;border-color:transparent!important;
+}
+.speech-action:hover{color:#fff!important;background:#2a2a2e!important;border-color:#39393e!important}
+.speech-action .action-glyph{width:15px;height:15px}
+.speech-action.is-speaking{color:#fff!important;background:#303034!important;border-color:#4a4a50!important}
+.message-speaking{box-shadow:0 0 0 1px #55555d}
 @media(max-width:700px){
   .page-controls .controls-actions .icon-action{
     width:auto!important;min-width:44px!important;height:44px!important;
