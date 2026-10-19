@@ -2936,3 +2936,20 @@ section.file-browser .file-list > .files-empty{min-height:120px}
     overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
   }
 }
+
+.has-action-icon{gap:7px}
+.has-action-icon .action-glyph{width:15px;height:15px;opacity:.86}
+.danger-button.has-action-icon .action-glyph{color:currentColor}
+.page-controls .controls-actions .icon-action{
+  width:auto!important;min-width:40px!important;height:40px!important;
+  padding:8px 12px!important;display:inline-flex!important;gap:8px;
+}
+.page-controls .controls-actions .icon-action .ui-icon{width:17px;height:17px}
+.icon-action-label{font-size:12px;font-weight:600}
+@media(max-width:700px){
+  .page-controls .controls-actions .icon-action{
+    width:auto!important;min-width:44px!important;height:44px!important;
+    padding-inline:10px!important;gap:7px;
+  }
+  .icon-action-label{font-size:11px}
+}

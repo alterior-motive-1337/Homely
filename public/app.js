@@ -369,12 +369,74 @@ content.addEventListener("keydown",event=>{
 });
 
 function registerAction(id,label,kind="plus",primary=true){
-  const paths=kind==="upload"
-    ?'<path d="M12 16V4m-5 5 5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>'
-    :kind==="link"
-      ?'<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/>'
-      :'<path d="M12 5v14M5 12h14"/>';
-  return '<button type="button" class="'+(primary?"primary-button":"button")+' icon-action" id="'+esc(id)+'" aria-label="'+esc(label)+'" title="'+esc(label)+'"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+paths+'</svg></button>';
+  const actionKind=kind!=="plus"?kind:actionIconKind(label);
+  return '<button type="button" class="'+(primary?"primary-button":"button")+' icon-action" id="'+esc(id)+'" aria-label="'+esc(label)+'" title="'+esc(label)+'">'+actionIcon(actionKind)+'<span class="icon-action-label">'+esc(label)+'</span></button>';
+}
+function actionIconKind(label){
+  const value=String(label).toLowerCase();
+  if(value.includes("issue")||value.includes("problem"))return "issue";
+  if(value.includes("repair"))return "repair";
+  if(value.includes("asset")||value.includes("appliance"))return "asset";
+  if(value.includes("upload")||value.includes("attachment"))return "upload";
+  if(value.includes("link"))return "link";
+  return "plus";
+}
+function actionIcon(kind){
+  const paths={
+    add:'<path d="M12 5v14M5 12h14"/>',
+    asset:'<path d="M4 8.5 12 4l8 4.5v9L12 22l-8-4.5v-9Z"/><path d="m4.5 8.7 7.5 4.2 7.5-4.2M12 13v8M17 5.8l-7.5 4.4"/>',
+    issue:'<path d="M12 3 2.8 19h18.4L12 3Z"/><path d="M12 9v4m0 3h.01"/>',
+    repair:'<path d="M14.5 6.5a5 5 0 0 0-6.7 6.7L3 18l3 3 4.8-4.8a5 5 0 0 0 6.7-6.7l-3 3-3-3 3-3Z"/>',
+    upload:'<path d="M12 16V4m-5 5 5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
+    link:'<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/>',
+    open:'<path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/>',
+    edit:'<path d="m4 16.5-.8 4.3 4.3-.8L19.8 7.7a2.1 2.1 0 0 0-3-3L4 16.5Z"/><path d="m15.5 6.5 3 3"/>',
+    delete:'<path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"/>',
+    undo:'<path d="M9 14 4 9l5-5"/><path d="M4 9h9a7 7 0 0 1 0 14h-2"/>',
+    check:'<path d="m5 12 4 4L19 6"/>',
+    complete:'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>',
+    download:'<path d="M12 4v11m-5-5 5 5 5-5M4 17v3h16v-3"/>',
+    copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
+    invite:'<circle cx="9" cy="8" r="3"/><path d="M3 20v-1a6 6 0 0 1 12 0v1m4-10v6m-3-3h6"/>',
+    settings:'<path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+    signout:'<path d="M10 17l5-5-5-5m5 5H3"/><path d="M13 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/>',
+    bell:'<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+    sparkle:'<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3ZM19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9L19 16Z"/>',
+    external:'<path d="M14 4h6v6m0-6-9 9"/><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/>',
+    cancel:'<path d="m6 6 12 12M18 6 6 18"/>'
+  };
+  const svgPaths=paths[kind]||paths.add;
+  return '<svg class="ui-icon action-glyph" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+svgPaths+'</svg>';
+}
+function enhanceActionButtons(root){
+  const labels={
+    "open":"open","open file":"open","open source":"external","open pdf":"external","try opening file":"external",
+    "open home":"open","view all":"open","view asset":"open","edit":"edit","edit details":"edit",
+    "delete":"delete","delete account…":"delete","permanently delete":"delete","remove":"delete","revoke":"delete",
+    "undo":"undo","acknowledge":"check","complete":"complete","record repair":"repair","report issue":"issue",
+    "register asset":"asset","upload file":"upload","add a document or photo":"upload","attach file":"link",
+    "save link":"link","download file":"download","download pdf":"download","download evidence bundle":"download",
+    "preview":"open","preview evidence":"open","preview attachment":"open","approve & commit":"check",
+    "reject":"cancel","cancel":"cancel","later":"cancel","enable notifications":"bell",
+    "analyze":"sparkle","copy link":"copy","create invite link":"invite","accept invitation":"check",
+    "save name":"check","save purchase":"add","add charge":"add","open sample home":"open",
+    "household":"settings","settings":"settings","sign out":"signout","create account":"invite",
+    "skip setup":"cancel","view":"open"
+  };
+  $$("button,a.button",root).forEach(button=>{
+    if(button.querySelector(".action-glyph"))return;
+    const label=button.textContent.trim().replace(/\s+/g," ").toLowerCase();
+    const kind=labels[label];
+    if(!kind)return;
+    const visibleLabel=button.textContent.trim().replace(/\s+/g," ");
+    button.innerHTML=actionIcon(kind)+'<span class="action-label">'+esc(visibleLabel)+'</span>';
+    button.classList.add("has-action-icon");
+  });
+}
+function setActionButtonLabel(button,label){
+  const visible=$(".action-label",button);
+  if(visible)visible.textContent=label;
+  else button.textContent=label;
 }
 function deleteRecordButton(type,id,label){
   return '<button type="button" class="button danger-button" data-delete-record="'+esc(id)+'" data-delete-type="'+esc(type)+'" aria-label="Delete '+esc(label)+'" title="Delete '+esc(label)+'">Delete</button>';
@@ -454,6 +516,7 @@ function openModal(html){
   cancelPendingUpload();
   modalGeneration++;
   modalBody.innerHTML=html;
+  enhanceActionButtons(modalBody);
   const title=modalBody.querySelector("h2");
   if(title){
     title.id="modal-title";
@@ -495,7 +558,7 @@ async function previewAction(actionType,payload,reason,requestText){
   if(submit?.disabled)return;
   const original=submit?.textContent;
   const formGeneration=modalGeneration;
-  if(submit){submit.disabled=true;submit.textContent="Preparing…"}
+  if(submit){submit.disabled=true;setActionButtonLabel(submit,"Preparing…")}
   try{
     const result=await api("/api/transactions/preview",{method:"POST",body:{actionType:actionType,payload:payload,reason:reason,requestText:requestText||null}});
     const p=result.preview,t=result.transaction;
@@ -512,13 +575,13 @@ async function previewAction(actionType,payload,reason,requestText){
     const previewGeneration=modalGeneration;
     $("#reject-preview").onclick=async function(){
       const button=$("#reject-preview"),other=$("#commit-preview");
-      button.disabled=true;other.disabled=true;button.textContent="Rejecting…";
+      button.disabled=true;other.disabled=true;setActionButtonLabel(button,"Rejecting…");
       try{await api("/api/transactions/"+encodeURIComponent(t.id)+"/reject",{method:"POST"});if(modalPending(previewGeneration))closeModal();notify("Proposal rejected.")}
-      catch(error){if(button.isConnected){button.disabled=false;other.disabled=false;button.textContent="Reject"}notify(error.message)}
+      catch(error){if(button.isConnected){button.disabled=false;other.disabled=false;setActionButtonLabel(button,"Reject")}notify(error.message)}
     };
     $("#commit-preview").onclick=async function(){
       const button=$("#commit-preview"),other=$("#reject-preview");
-      button.disabled=true;other.disabled=true;button.textContent="Saving…";
+      button.disabled=true;other.disabled=true;setActionButtonLabel(button,"Saving…");
       try{
         await api("/api/transactions/"+encodeURIComponent(t.id)+"/commit",{method:"POST"});
         if(actionType==="CREATE_ASSET")completeHomeSetupStep("asset");
@@ -527,10 +590,10 @@ async function previewAction(actionType,payload,reason,requestText){
         notify(actionType==="RECORD_REPAIR"?"Repair recorded.":actionType==="DELETE_RECORD"?"Record deleted. Undo is available in Home history.":"Saved.");
         viewPanels.delete(state.view);state.needsReload=true;
         await selectView(state.view);
-      }catch(error){if(button.isConnected){button.disabled=false;other.disabled=false;button.textContent="Approve & commit"}notify(error.message)}
+      }catch(error){if(button.isConnected){button.disabled=false;other.disabled=false;setActionButtonLabel(button,"Approve & commit")}notify(error.message)}
     };
   }catch(error){notify(error instanceof Error?error.message:"Could not prepare action.")}
-  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent=original}}
+  finally{if(submit?.isConnected){submit.disabled=false;setActionButtonLabel(submit,original)}}
 }
 
 function bindPreviewForm(selector,buildProposal){
@@ -922,15 +985,18 @@ async function openFile(doc){
   removeFile.hidden=false;
   removeFile.disabled=false;
   removeFile.onclick=()=>void removeDocumentFromHomely(doc,removeFile);
+  const analyze=$("#analyze-file");
+  if(!$(".action-glyph",analyze))analyze.innerHTML=actionIcon("sparkle")+'<span id="analyze-file-label">Analyze</span>';
+  const analyzeLabel=$("#analyze-file-label",analyze);
   const stored=String(doc.local_path||"").startsWith("/api/files/");
   viewerTitle.textContent=doc.title||"File";viewerBody.innerHTML="";
-  const insight=$("#viewer-insight"),analyze=$("#analyze-file");
+  const insight=$("#viewer-insight");
   insight.textContent="";insight.hidden=true;
   if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}
   analyze.hidden=!stored || !/^(image\/(png|jpeg|webp)|audio\/|video\/(mp4|webm)|text\/(plain|csv)|application\/(json|pdf|vnd\.openxmlformats-officedocument\.wordprocessingml\.document))/.test(mime);
-  analyze.disabled=false;analyze.textContent="Analyze";
+  analyze.disabled=false;analyzeLabel.textContent="Analyze";
   analyze.onclick=async function(){
-    analyze.disabled=true;analyze.textContent="Analyzing…";
+    analyze.disabled=true;analyzeLabel.textContent="Analyzing…";
     insight.hidden=false;insight.replaceChildren(createInteraction("Processing stored evidence…",{pending:true}));
     try{
       const visualFrames=mime.startsWith("video/")?await sampleVideoFrames($("video",viewerBody)):undefined;
@@ -938,7 +1004,7 @@ async function openFile(doc){
       const result=await api("/api/documents/"+encodeURIComponent(doc.id)+"/analyze",{method:"POST",body:visualFrames?{visualFrames}:{}});
       if(revision===state.viewerRevision)insight.replaceChildren(createInteraction(result.text));
     }catch(e){if(revision===state.viewerRevision)insight.replaceChildren(createInteraction(e.message,{error:true}))}
-    finally{if(revision===state.viewerRevision){analyze.disabled=false;analyze.textContent="Analyze"}}
+    finally{if(revision===state.viewerRevision){analyze.disabled=false;analyzeLabel.textContent="Analyze"}}
   };
   viewerBody.innerHTML='<div class="viewer-loading" role="status">Opening file…</div>';
   if(!viewer.open)viewer.showModal();
@@ -1288,6 +1354,7 @@ async function selectView(view){
   }
   viewPanels.delete(next);state.viewLoadedAt=Date.now();
   await views[next][1]();
+  enhanceActionButtons(content);
 }
 function navigate(view,replace){
   view=normalizeView(view);
@@ -1414,6 +1481,7 @@ async function refreshVisibleView(force=false){
   state.viewRefreshPending=true;state.silentRefresh=true;
   try{
     await views[current][1]();
+    enhanceActionButtons(content);
     if(state.view===current&&state.viewRevision===revision){
       restoreViewState(saved);
       state.viewLoadedAt=Date.now();
@@ -1447,9 +1515,9 @@ async function openHouseholdSettings(){
     openModal('<div class="settings-content">'+markup+'</div>');
     const sampleButton=$("#open-sample-home");
     if(sampleButton)sampleButton.onclick=async()=>{
-      sampleButton.disabled=true;sampleButton.textContent="Opening…";
+      sampleButton.disabled=true;setActionButtonLabel(sampleButton,"Opening…");
       try{await api("/api/homes/sample",{method:"POST"});window.location.assign("/")}
-      catch(error){notify(error.message);sampleButton.disabled=false;sampleButton.textContent="Open sample home"}
+      catch(error){notify(error.message);sampleButton.disabled=false;setActionButtonLabel(sampleButton,"Open sample home")}
     };
     $("#delete-account").onclick=function(){
       closeModal();
@@ -1483,6 +1551,7 @@ async function openHouseholdSettings(){
         if(state.view==="home"){viewPanels.delete("home");state.needsReload=true;void selectView("home")}
         const link=new URL(result.link,location.origin).href;
         $("#invite-result").innerHTML='<div class="field"><label>Invitation link — share with '+esc(result.email)+'</label><input id="invite-link" readonly value="'+esc(link)+'"></div><div class="form-actions"><button type="button" class="button" id="copy-invite">Copy link</button></div>';
+        enhanceActionButtons(modalBody);
         $("#copy-invite").onclick=async()=>{try{await navigator.clipboard.writeText(link);notify("Invitation copied.")}catch(_){$("#invite-link").select();notify("Select and copy the invitation link.")}};
       }catch(error){notify(error.message)}
     };
