@@ -2882,3 +2882,57 @@ section.file-browser .file-list > .files-empty{min-height:120px}
   section.file-browser .file-list > button.file-card{min-height:60px!important;padding:10px 8px!important;gap:11px!important}
   section.file-browser .file-list .file-row-icon{flex-basis:32px!important;width:32px!important}
 }
+
+/* Keep the labeled workspace navigation intentional at every breakpoint. */
+.sidebar .nav{
+  align-self:center;
+  height:42px;
+  gap:4px!important;
+  overflow-x:auto;
+}
+.sidebar .nav-item{
+  height:40px!important;
+  min-height:40px!important;
+  padding:0 12px!important;
+  border-radius:8px!important;
+  font-size:13px!important;
+  font-weight:550!important;
+  letter-spacing:0!important;
+}
+.sidebar .nav-item:hover{background:#191c1d!important}
+.sidebar .nav-item.active,.sidebar .nav-item[aria-current="page"]{
+  background:#202426!important;
+  color:#fff!important;
+}
+.sidebar .nav-item .nav-icon{width:16px;height:16px;opacity:.82}
+.sidebar .nav-item.active .nav-icon{opacity:1}
+.danger-button{
+  color:#d8bcbc!important;
+  background:transparent!important;
+  border-color:transparent!important;
+}
+.danger-button:hover{
+  color:#ffe9e9!important;
+  background:#382426!important;
+  border-color:#5b383a!important;
+}
+.viewer-controls .danger-button{min-height:36px;padding:8px 11px}
+.viewer-controls #remove-file{display:inline-flex;align-items:center;gap:7px}
+.viewer-controls #remove-file .ui-icon{width:16px;height:16px;flex:none}
+@media(max-width:700px){
+  .sidebar .nav{height:auto;min-height:42px;overflow:visible}
+  .sidebar .nav-item{
+    min-width:0;
+    padding-inline:5px!important;
+    font-size:11px!important;
+    justify-content:center;
+  }
+  .viewer-controls #remove-file{
+    width:40px!important;min-width:40px!important;height:40px!important;
+    padding:8px!important;justify-content:center;gap:0;
+  }
+  .viewer-controls #remove-file .remove-file-label{
+    position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+    overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
+  }
+}

@@ -129,6 +129,7 @@ const ACTION_LABELS=Object.freeze({
   UPDATE_ASSET:"Asset updated",CREATE_CHARGE:"Charge created",
   UPDATE_CHARGE:"Charge updated",SAVE_PURCHASE:"Purchase saved",
   UPDATE_PURCHASE:"Purchase updated",ATTACH_DOCUMENT:"File attached",
+  DELETE_RECORD:"Record deleted",DELETE_DOCUMENT:"File removed",
   COMPLETE_MAINTENANCE:"Maintenance completed"
 });
 export function actionLabel(value){

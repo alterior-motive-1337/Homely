@@ -32,6 +32,8 @@ The libSQL replica is a disposable cache managed by the app. Reads use the repli
 
 Issues and repairs keep permanent history. Mutations follow **proposal → preview → approval → commit → audit**; the assistant cannot commit changes. Reversible changes can be undone from Home's History view.
 
+Unlinked assets, recurring charges and saved purchases can be deleted through a preview; the removal is audited and can be undone from Home history. Assets with linked records cannot be deleted, and linked files must be removed first. Removing a file from Homely permanently deletes its stored upload and analysis; any external source remains unaffected. Issue and repair history cannot be deleted.
+
 ## Interface
 
 The five pages follow the notes: **Home, Issues, Repairs, Appliances, Files**. Chat stays alongside normal pages and opens as a drawer on smaller screens. The dedicated file viewer contains only the selected evidence.
