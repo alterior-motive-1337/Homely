@@ -9,6 +9,7 @@ test("read-only members retain personal account, household-switch, alert and cha
     ["POST", "/api/alerts/acknowledge"],
     ["POST", "/api/agent/respond"],
     ["POST", "/api/agent/conversations"],
+    ["POST", "/api/voice/speech"],
     ["PATCH", "/api/agent/conversations/chat-123"],
     ["DELETE", "/api/agent/history"],
     ["DELETE", "/api/account/delete"]

@@ -672,6 +672,11 @@ try {
   markdown.on("pageerror", error => errors.push(String(error)));
   await markdown.addInitScript(() => {
     Object.defineProperty(navigator,"clipboard",{value:{writeText:async text=>{window.__copiedCode=text}}});
+    window.__audioPlays=0;window.__audioPauses=0;
+    window.Audio=class extends EventTarget{
+      play(){window.__audioPlays++;this.timer=setTimeout(()=>this.dispatchEvent(new Event("ended")),80);return Promise.resolve()}
+      pause(){window.__audioPauses++;clearTimeout(this.timer)}
+    };
   });
   const formattedReply = [
     "## Kitchen check", "", "Check **pressure** and *flow*. Use `safe_mode`.", "",
@@ -684,10 +689,16 @@ try {
     "[Unsafe](javascript:alert(1)) [Encoded](jav&#x61;script:alert(1)) [Data](data:text/html,test)", "",
     '<script>window.__markdownExecuted=true</script><img src=x onerror="window.__markdownExecuted=true">', "",
     '<svg onload="window.__markdownExecuted=true"></svg>', "",
-    "![Image reference](https://example.invalid/tracking.png)"
+    "![Image reference](https://example.invalid/tracking.png)", "",
+    "Read this natural spoken answer aloud. ".repeat(12)
   ].join("\n");
   await markdown.route("**/api/integrations/status",async route=>{
-    const response=await route.fetch(),data=await response.json();data.ai.available=true;await route.fulfill({response,json:data});
+    const response=await route.fetch(),data=await response.json();data.ai.available=true;data.voice={...data.voice,outputAvailable:true};await route.fulfill({response,json:data});
+  });
+  const spokenChunks=[];
+  await markdown.route("**/api/voice/speech",async route=>{
+    spokenChunks.push(route.request().postDataJSON().text);
+    await route.fulfill({status:200,contentType:"audio/wav",body:Buffer.from("mock wav")});
   });
   await markdown.route("**/api/agent/history**",route=>route.fulfill({json:{messages:[
     {role:"user",text:"**Format my message**",proposals:[]},
@@ -700,6 +711,21 @@ try {
   await markdown.goto(base);
   await markdown.locator(".markdown-body h2").filter({hasText:"Kitchen check"}).waitFor();
   assert.equal(await markdown.locator(".message.user .markdown-body strong").textContent(),"Format my message");
+  const speechButton=markdown.locator(".message.assistant").first().locator(".speech-action");
+  assert.equal(await speechButton.getAttribute("title"),"AI-generated English voice · Groq Orpheus");
+  await speechButton.click();
+  await markdown.waitForFunction(()=>window.__audioPlays===1);
+  assert.equal(await speechButton.locator(".action-label").textContent(),"Stop speaking");
+  await speechButton.click();
+  await markdown.waitForFunction(()=>window.__audioPauses===1);
+  assert.equal(await speechButton.locator(".action-label").textContent(),"Read aloud","stopping speech restores the replay action");
+  await speechButton.click();
+  await markdown.waitForFunction(()=>window.__audioPlays>=4);
+  await markdown.waitForFunction(()=>document.querySelector(".message.assistant .speech-action .action-label")?.textContent==="Read aloud");
+  assert.ok(spokenChunks.length>=4,"long replies are synthesized as short sequential audio chunks");
+  assert.ok(spokenChunks.every(chunk=>[...chunk].length<=200),"every Groq Orpheus request stays within its 200-character limit");
+  assert.ok(spokenChunks.some(chunk=>chunk.includes("natural spoken answer")),"speech keeps meaningful response text");
+  assert.ok(spokenChunks.every(chunk=>!chunk.includes("example.com")&&!chunk.includes("sample =")),"speech omits URLs and fenced code");
   for(const role of ["user","assistant"]){
     assert.notEqual(await markdown.locator(".message."+role).first().evaluate(el=>getComputedStyle(el).backgroundColor),"rgba(0, 0, 0, 0)",role+" interactions must have visible bubbles");
     assert.ok(await markdown.locator(".message."+role).first().evaluate(el=>parseFloat(getComputedStyle(el).borderTopLeftRadius))>0);

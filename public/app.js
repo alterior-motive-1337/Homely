@@ -10,7 +10,7 @@ const modal=$("#modal"), modalBody=$("#modal-body"), viewer=$("#viewer"), viewer
 const toast=$("#toast"), chatRail=$("#chat-rail"), chatBody=$("#chat-body"), chatForm=$("#chat-form"), chatInput=$("#chat-input"), voiceButton=$("#voice-button");
 viewerTitle.classList.add("fade-title");
 watchFadingTitles(document.body);
-const state={view:"home",homeId:null,assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false,currency:normalizeCurrency()};
+const state={view:"home",homeId:null,assets:[],agentMessages:[],conversations:[],conversationId:null,previousResponseId:null,integrations:null,speechAvailable:false,objectUrl:null,viewRevision:0,stopVoice:null,needsReload:false,viewLoadedAt:0,alerts:[],chatLoading:true,chatBusy:false,currency:normalizeCurrency()};
 const viewPanels=new Map();
 const homeSetupMemory=new Map();
 const VIEW_CACHE_MS=45000;
@@ -244,6 +244,7 @@ async function refreshConversationList(){
 }
 async function switchConversation(id){
   if(state.chatBusy||state.chatLoading)return;
+  stopSpeechPlayback();
   state.chatLoading=true;
   try{
     const result=await api("/api/agent/history?conversationId="+encodeURIComponent(id));
@@ -270,6 +271,7 @@ async function loadChatHistory(){
 $("#chat-conversations-toggle").onclick=()=>toggleConversationList($("#chat-history-panel").hidden);
 $("#chat-new").onclick=async()=>{
   if(state.chatBusy||state.chatLoading)return;
+  stopSpeechPlayback();
   state.chatLoading=true;
   try{
     const c=await api("/api/agent/conversations",{method:"POST"});
@@ -395,6 +397,8 @@ function actionIcon(kind){
     delete:'<path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"/>',
     undo:'<path d="M9 14 4 9l5-5"/><path d="M4 9h9a7 7 0 0 1 0 14h-2"/>',
     check:'<path d="m5 12 4 4L19 6"/>',
+    speak:'<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7m3-10a9 9 0 0 1 0 13"/>',
+    stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>',
     complete:'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>',
     download:'<path d="M12 4v11m-5-5 5 5 5-5M4 17v3h16v-3"/>',
     copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
@@ -498,10 +502,12 @@ function bindRegisterSearch(items,textFor,isOpen){
 function setRuntime(x){
   state.integrations=x;
   const ai=x&&x.ai;
+  state.speechAvailable=Boolean(x&&x.voice&&x.voice.outputAvailable);
   chatInput.disabled=!(ai&&ai.available)||state.chatLoading;
   chatForm.querySelector('button[type="submit"]').disabled=!(ai&&ai.available)||state.chatLoading||state.chatBusy;
   voiceButton.disabled=!(ai&&ai.available);
   chatInput.placeholder=ai&&ai.available?"Ask Homely…":"Chat unavailable";
+  if(state.ready)renderChat();
 }
 async function refreshStatus(){
   try{setRuntime(await api("/api/integrations/status"))}
@@ -1228,8 +1234,141 @@ async function showFiles(){
   }catch(e){if(revision===state.viewRevision)fail(e)}
 }
 
-function messageElement(m){
+let activeSpeech=null;
+function stopSpeechPlayback(){
+  const session=activeSpeech;
+  if(!session)return;
+  activeSpeech=null;
+  session.controller.abort();
+  session.audio?.pause();
+  if(session.url)URL.revokeObjectURL(session.url);
+  session.messageElement.classList.remove("message-speaking");
+  if(session.button.isConnected){
+    session.button.classList.remove("is-speaking");
+    session.button.setAttribute("aria-pressed","false");
+    session.button.title="AI-generated English voice · Groq Orpheus";
+    setActionButtonLabel(session.button,"Read aloud");
+    session.button.querySelector(".action-glyph")?.setAttribute("data-icon-kind","speak");
+    session.button.innerHTML=actionIcon("speak")+'<span class="action-label">Read aloud</span>';
+  }
+}
+function speechChunks(markdown){
+  const text=String(markdown||"")
+    .replace(/```[\s\S]*?```/g," ")
+    .replace(/!\[[^\]]*]\([^)]*\)/g," ")
+    .replace(/\[([^\]]+)]\([^)]*\)/g,"$1")
+    .replace(/https?:\/\/\S+/g," ")
+    .replace(/<[^>]*>/g," ")
+    .replace(/^\s{0,3}(?:#{1,6}\s*|>\s*|[-*+]\s+|\d+[.)]\s+)/gm,"")
+    .replace(/[*_~]/g,"")
+    .replace(/\[[ xX]\]/g," ")
+    .replace(/\|/g," ")
+    .replace(/\s+/g," ")
+    .trim();
+  const sentences=text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/gu)||[];
+  const chunks=[];
+  let current="";
+  for(const sentence of sentences){
+    const words=sentence.trim().split(/\s+/);
+    for(let word of words){
+      while([...word].length>200){
+        const points=[...word];
+        const part=points.splice(0,200).join("");
+        if(current)chunks.push(current);
+        chunks.push(part);
+        current="";
+        word=points.join("");
+      }
+      const next=current?current+" "+word:word;
+      if([...next].length>200){chunks.push(current);current=word}
+      else current=next;
+    }
+  }
+  if(current)chunks.push(current);
+  return chunks;
+}
+async function requestSpeechAudio(text,signal){
+  const response=await fetch("/api/voice/speech",{
+    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text}),signal
+  });
+  if(response.status===401){window.location.replace("/");throw new Error("Session expired. Please sign in again.")}
+  if(!response.ok){
+    let data=null;try{data=await response.json()}catch(_){}
+    throw new Error(data?.error||"Voice playback failed: "+response.status);
+  }
+  return response.blob();
+}
+function waitForAudioEnd(audio,signal){
+  return new Promise((resolve,reject)=>{
+    const cleanup=()=>{
+      audio.removeEventListener("ended",onEnded);
+      audio.removeEventListener("error",onError);
+      signal.removeEventListener("abort",onAbort);
+    };
+    const onEnded=()=>{cleanup();resolve()};
+    const onError=()=>{cleanup();reject(new Error("This browser could not play the generated voice."))};
+    const onAbort=()=>{cleanup();reject(new DOMException("Speech playback stopped.","AbortError"))};
+    audio.addEventListener("ended",onEnded,{once:true});
+    audio.addEventListener("error",onError,{once:true});
+    signal.addEventListener("abort",onAbort,{once:true});
+    if(signal.aborted)onAbort();
+  });
+}
+async function playSpeechMessage(message,button){
+  if(activeSpeech?.button===button){stopSpeechPlayback();return}
+  stopSpeechPlayback();
+  const chunks=speechChunks(message.text);
+  if(!chunks.length){notify("There is no readable response to play.");return}
+  const session={button,messageElement:button.closest(".message"),controller:new AbortController(),audio:null,url:null};
+  activeSpeech=session;
+  button.classList.add("is-speaking");
+  button.setAttribute("aria-pressed","true");
+  button.title="Stop AI-generated speech";
+  setActionButtonLabel(button,"Stop speaking");
+  button.innerHTML=actionIcon("stop")+'<span class="action-label">Stop speaking</span>';
+  session.messageElement.classList.add("message-speaking");
+  try{
+    let blob=await requestSpeechAudio(chunks[0],session.controller.signal);
+    for(let index=0;index<chunks.length;index++){
+      if(activeSpeech!==session)return;
+      session.url=URL.createObjectURL(blob);
+      const audio=new Audio(session.url);
+      session.audio=audio;
+      const ended=waitForAudioEnd(audio,session.controller.signal);
+      void ended.catch(()=>{});
+      try{await audio.play()}catch(error){throw new Error("This browser could not start voice playback. Check the device’s audio permissions.")}
+      let nextAudio=null;
+      if(index+1<chunks.length){
+        nextAudio=requestSpeechAudio(chunks[index+1],session.controller.signal)
+          .then(value=>({value}),error=>({error}));
+      }
+      await ended;
+      URL.revokeObjectURL(session.url);session.url=null;session.audio=null;
+      if(nextAudio){
+        const next=await nextAudio;
+        if(next.error)throw next.error;
+        blob=next.value;
+      }
+    }
+  }catch(error){
+    if(!session.controller.signal.aborted)notify(error.message||"Voice playback failed.");
+  }finally{
+    if(activeSpeech===session)stopSpeechPlayback();
+    else if(session.url)URL.revokeObjectURL(session.url);
+  }
+}
+function messageElement(m,index){
   const message=createInteraction(m.text,{role:m.role});
+  if(m.role==="assistant"&&state.speechAvailable&&m.text&&!m.error){
+    const button=document.createElement("button");
+    button.type="button";button.className="button has-action-icon speech-action";
+    button.dataset.speakIndex=String(index);
+    button.title="AI-generated English voice · Groq Orpheus";
+    button.setAttribute("aria-label","Read aloud using AI-generated English speech");
+    button.setAttribute("aria-pressed","false");
+    button.innerHTML=actionIcon("speak")+'<span class="action-label">Read aloud</span>';
+    message.append(button);
+  }
   for(const p of m.proposals||[]){
     const proposal=document.createElement("section");
     proposal.className="proposal";
@@ -1257,6 +1396,9 @@ const pendingProposalActions=new Set();
 function renderChat(){
   chatBody.replaceChildren(...state.agentMessages.map(messageElement));
   if(!state.agentMessages.length){const empty=document.createElement("p");empty.className="chat-empty";empty.textContent="Ask Homely anything about your home.";chatBody.append(empty)}
+  $$("[data-speak-index]",chatBody).forEach(button=>{
+    button.onclick=()=>playSpeechMessage(state.agentMessages[Number(button.dataset.speakIndex)],button);
+  });
 
   async function actOnProposal(id,action){
     if(pendingProposalActions.has(id))return;
@@ -1294,7 +1436,7 @@ chatInput.addEventListener("keydown",event=>{
   if(!chatInput.disabled&&!state.chatLoading&&!state.chatBusy&&chatInput.value.trim())chatForm.requestSubmit();
 });
 chatForm.onsubmit=async function(e){
-  e.preventDefault();if(state.chatLoading||state.chatBusy)return;const message=chatInput.value.trim();if(!message)return;state.chatBusy=true;$("#chat-new").disabled=true;
+  e.preventDefault();if(state.chatLoading||state.chatBusy)return;stopSpeechPlayback();const message=chatInput.value.trim();if(!message)return;state.chatBusy=true;$("#chat-new").disabled=true;
   state.agentMessages.push({role:"user",text:message,proposals:[]});chatInput.value="";renderChat();const button=chatForm.querySelector('button[type="submit"]');button.disabled=true;button.setAttribute("aria-label","Sending message");
   try{
     if(!state.conversationId){

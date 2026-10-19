@@ -70,8 +70,8 @@ async function readBody(req: http.IncomingMessage, maxSize = 1_000_000): Promise
   return Buffer.concat(chunks);
 }
 
-async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
-  const body = await readBody(req);
+async function readJson(req: http.IncomingMessage, maxSize = 1_000_000): Promise<Record<string, unknown>> {
+  const body = await readBody(req, maxSize);
   if (!body.length) return {};
   try {
     const parsed: unknown = JSON.parse(body.toString("utf8"));
@@ -165,6 +165,7 @@ export async function startServer(
         if (req.method!=="GET" && req.method!=="HEAD") {
           const key=user.id;
           if(url.pathname==="/api/agent/respond")limits.enforce("agent:"+key,12,60_000);
+          else if(url.pathname==="/api/voice/speech")limits.enforce("voice-speech:"+key,30,60_000);
           else if(url.pathname.endsWith("/analyze"))limits.enforce("analysis:"+key,5,60_000);
           else if(url.pathname==="/api/uploads/start")limits.enforce("upload-start:"+key,20,60*60_000);
           else if(url.pathname.includes("/chunks/"))limits.enforce("chunks:"+key,240,60_000);
@@ -309,8 +310,27 @@ export async function startServer(
            storage: { provider: "TURSO" },
            ai: agentRuntime.status,
            research: agentRuntime.researchStatus,
-           voice: { input: "BROWSER" }
+           voice: { input: "BROWSER", output: "GROQ_ORPHEUS", outputAvailable: Boolean(agentRuntime.speechProvider) }
          });
+       }
+
+       if (req.method === "POST" && url.pathname === "/api/voice/speech") {
+         const body = await readJson(req, 4096);
+         if (typeof body.text !== "string" || !body.text.trim()) throw new DomainError("Speech text is required.");
+         if ([...body.text.trim()].length > 200) throw new DomainError("Speech text cannot exceed 200 characters.");
+         if (!agentRuntime.speechProvider) throw new DomainError("AI voice playback is unavailable.", 503);
+         try {
+           const audio = await agentRuntime.speechProvider.synthesize(body.text);
+           securityHeaders(res);
+           res.setHeader("cache-control", "no-store");
+           res.setHeader("content-type", "audio/wav");
+           res.setHeader("content-length", String(audio.length));
+           res.writeHead(200);
+           return res.end(audio);
+         } catch (error) {
+           console.error("Homely voice synthesis failed:", error instanceof Error ? error.name : "Unknown error");
+           throw new DomainError("AI voice playback is temporarily unavailable.", 503);
+         }
        }
 
        if (req.method === "POST" && url.pathname === "/api/agent/respond") {
