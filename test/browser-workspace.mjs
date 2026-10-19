@@ -52,7 +52,7 @@ try {
   assert.ok(await page.locator("[data-home-issue]").count()>0,"Home has issue shortcuts");
   await page.locator("[data-home-issue]").first().click();
   await page.locator("#issue-attach").waitFor();
-  assert.equal(await page.locator("#issue-attach .action-glyph").count(),1,"file attachment action uses a recognizable link icon");
+  assert.equal(await page.locator("#issue-attach .action-glyph").getAttribute("data-icon-kind"),"attach","file attachment action uses a recognizable paperclip icon");
   await page.locator("#modal-close").click();
   if(await page.locator("[data-home-repair]").count()){
     await page.locator("[data-home-repair]").first().click();
@@ -528,6 +528,7 @@ try {
   await fresh.locator("#asset-form").waitFor(); await fresh.locator("#modal-close").click();
   await fresh.getByRole("button", { name: "Add a document or photo" }).click();
   await fresh.locator("#homely-attachment").waitFor();
+  assert.equal(await fresh.getByRole("button",{name:"Preview attachment"}).locator(".action-glyph").getAttribute("data-icon-kind"),"open","attachment preview retains its open icon");
   await fresh.locator("#modal-close").click();
   await fresh.getByRole("button", { name: "Set up your household" }).click();
   await fresh.locator("#rename-home-form").waitFor();
@@ -561,8 +562,22 @@ try {
   await fresh.locator(".home-setup-guide").filter({hasText:"1 of 3 complete"}).waitFor();
   await fresh.locator(".home-start-step.is-complete").filter({hasText:"Add something you own"}).waitFor();
   await fresh.locator("#home-first-file").click();
-  await fresh.locator("#homely-attachment").setInputFiles({name:"setup-guide.txt",mimeType:"text/plain",buffer:Buffer.from("Household setup evidence.")});
+  await fresh.locator("#homely-attachment").setInputFiles({name:"setup-guide.txt",mimeType:"text/plain",buffer:Buffer.alloc(1_000_001,97)});
+  let releaseUploadChunk,uploadChunkStarted;
+  const uploadChunkReady=new Promise(resolve=>uploadChunkStarted=resolve);
+  const uploadChunkHeld=new Promise(resolve=>releaseUploadChunk=resolve);
+  await fresh.route("**/api/uploads/*/chunks/1",async route=>{
+    const response=await route.fetch();uploadChunkStarted();await uploadChunkHeld;await route.fulfill({response});
+  });
   await fresh.getByRole("button",{name:"Preview attachment"}).click();
+  await uploadChunkReady;
+  const uploadingButton=fresh.getByRole("button",{name:"Uploading 50%"});
+  assert.equal(await uploadingButton.isDisabled(),true,"attachment upload disables its submit action");
+  assert.equal(await uploadingButton.locator(".action-label").textContent(),"Uploading 50%","attachment upload exposes progress");
+  assert.equal(await uploadingButton.locator(".action-glyph").getAttribute("data-icon-kind"),"open","upload progress retains the action icon");
+  releaseUploadChunk();
+  await fresh.getByRole("button",{name:"Approve & commit"}).waitFor();
+  await fresh.unroute("**/api/uploads/*/chunks/1");
   await fresh.getByRole("button",{name:"Approve & commit"}).click();
   await fresh.locator(".home-setup-guide").filter({hasText:"2 of 3 complete"}).waitFor();
   await fresh.locator(".home-start-step.is-complete").filter({hasText:"Keep its paperwork"}).waitFor();
@@ -662,9 +677,10 @@ try {
     {role:"user",text:"**Format my message**",proposals:[]},
     {role:"assistant",text:formattedReply,proposals:[]}
   ],previousResponseId:null}}));
-  await markdown.route("**/api/agent/respond",route=>route.fulfill({json:{text:"### New reply\n\n**Ready** to review.",responseId:"markdown-response",proposals:[{
-    transactionId:"markdown-proposal",reason:"User requested a **record**",preview:{title:"Review proposed change",summary:"A proposal still requires **approval**",effects:["Keep **history**","Review the [receipt](https://example.com/receipt)"]}
-  }]}}));
+  await markdown.route("**/api/agent/respond",route=>route.fulfill({json:{text:"### New reply\n\n**Ready** to review.",responseId:"markdown-response",proposals:[
+    {transactionId:"markdown-proposal",reason:"User requested a **record**",preview:{title:"Review proposed change",summary:"A proposal still requires **approval**",effects:["Keep **history**","Review the [receipt](https://example.com/receipt)"]}},
+    {transactionId:"markdown-reject-proposal",reason:"User requested a **second review**",preview:{title:"Review another change",summary:"A second proposal requires **approval**",effects:["Keep **history**"]}}
+  ]}}));
   await markdown.goto(base);
   await markdown.locator(".markdown-body h2").filter({hasText:"Kitchen check"}).waitFor();
   assert.equal(await markdown.locator(".message.user .markdown-body strong").textContent(),"Format my message");
@@ -699,8 +715,11 @@ try {
   await markdown.locator("#chat-input").press("Enter");
   await markdown.locator(".markdown-body h3").filter({hasText:"New reply"}).waitFor();
   assert.equal(await markdown.locator("#chat-input").inputValue(),"","Enter submits without leaving extra text");
-  assert.equal(await markdown.locator(".proposal .review-effects li strong").textContent(),"history","proposal effects render Markdown");
-  assert.equal(await markdown.locator(".proposal .review-reason strong").textContent(),"record","proposal reasons render Markdown");
+  assert.equal(await markdown.locator(".proposal").first().locator(".review-effects li strong").textContent(),"history","proposal effects render Markdown");
+  assert.equal(await markdown.locator(".proposal").first().locator(".review-reason strong").textContent(),"record","proposal reasons render Markdown");
+  assert.equal(await markdown.locator('[data-approve="markdown-proposal"] .action-glyph').getAttribute("data-icon-kind"),"check","chat approval uses the confirmation icon");
+  assert.equal(await markdown.locator('[data-reject="markdown-proposal"] .action-glyph').getAttribute("data-icon-kind"),"cancel","chat rejection uses the cancel icon");
+  assert.equal(await markdown.locator('[data-reject="markdown-reject-proposal"] .action-glyph').getAttribute("data-icon-kind"),"cancel","separate proposals use the same cancel icon");
   if(process.env.TEST_SCREENSHOT_DIR)await markdown.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/chat-bubbles.png"});
   await markdown.keyboard.press("Control+Shift+Space");
   assert.equal(await markdown.locator("#chat-rail").getAttribute("aria-hidden"),"true","Ctrl+Shift+Space toggles chat closed from input");
@@ -773,6 +792,20 @@ try {
   if(process.env.TEST_SCREENSHOT_DIR)await android.screenshot({path:process.env.TEST_SCREENSHOT_DIR+"/android-desktop-parity.png"});
   await mobileContext.close();
   // Slow AI approvals disable both action controls and issue one commit request.
+  let rejectRequests=0,releaseRejection;
+  const holdRejection=new Promise(resolve=>releaseRejection=resolve);
+  await markdown.route("**/api/transactions/markdown-reject-proposal/reject",async route=>{
+    rejectRequests++;await holdRejection;await route.fulfill({json:{ok:true}});
+  });
+  await markdown.locator('[data-reject="markdown-reject-proposal"]').click();
+  assert.equal(await markdown.locator('[data-reject="markdown-reject-proposal"]').isDisabled(),true);
+  assert.equal(await markdown.locator('[data-reject="markdown-reject-proposal"] .action-label').textContent(),"Rejecting…","pending rejections retain a visible progress label");
+  assert.equal(await markdown.locator('[data-reject="markdown-reject-proposal"] .action-glyph').getAttribute("data-icon-kind"),"cancel","pending rejections retain their icon");
+  releaseRejection();
+  await markdown.getByText("Proposal rejected.",{exact:true}).waitFor();
+  assert.equal(rejectRequests,1,"rejection must issue one request");
+  await markdown.unroute("**/api/transactions/markdown-reject-proposal/reject");
+
   let commitRequests=0,releaseProposal;
   const holdProposal=new Promise(resolve=>releaseProposal=resolve);
   await markdown.route("**/api/transactions/markdown-proposal/commit",async route=>{
@@ -781,6 +814,8 @@ try {
   await markdown.locator('[data-approve="markdown-proposal"]').click();
   assert.equal(await markdown.locator('[data-approve="markdown-proposal"]').isDisabled(),true);
   assert.equal(await markdown.locator('[data-reject="markdown-proposal"]').isDisabled(),true);
+  assert.equal(await markdown.locator('[data-approve="markdown-proposal"] .action-label').textContent(),"Approving…","pending approvals retain a visible progress label");
+  assert.equal(await markdown.locator('[data-approve="markdown-proposal"] .action-glyph').getAttribute("data-icon-kind"),"check","pending approvals retain their confirmation icon");
   releaseProposal();
   await markdown.getByText("Approved and committed.",{exact:true}).waitFor();
   assert.equal(commitRequests,1,"approval must issue one commit request");
