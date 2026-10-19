@@ -389,6 +389,7 @@ function actionIcon(kind){
     repair:'<path d="M14.5 6.5a5 5 0 0 0-6.7 6.7L3 18l3 3 4.8-4.8a5 5 0 0 0 6.7-6.7l-3 3-3-3 3-3Z"/>',
     upload:'<path d="M12 16V4m-5 5 5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
     link:'<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/>',
+    attach:'<path d="m8 12.5 7.1-7.1a3.5 3.5 0 0 1 5 5L10 20.5a5 5 0 0 1-7.1-7.1L13 3.3"/>',
     open:'<path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/>',
     edit:'<path d="m4 16.5-.8 4.3 4.3-.8L19.8 7.7a2.1 2.1 0 0 0-3-3L4 16.5Z"/><path d="m15.5 6.5 3 3"/>',
     delete:'<path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"/>',
@@ -406,7 +407,7 @@ function actionIcon(kind){
     cancel:'<path d="m6 6 12 12M18 6 6 18"/>'
   };
   const svgPaths=paths[kind]||paths.add;
-  return '<svg class="ui-icon action-glyph" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+svgPaths+'</svg>';
+  return '<svg class="ui-icon action-glyph" data-icon-kind="'+esc(kind)+'" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+svgPaths+'</svg>';
 }
 function enhanceActionButtons(root){
   const labels={
@@ -414,7 +415,7 @@ function enhanceActionButtons(root){
     "open home":"open","view all":"open","view asset":"open","edit":"edit","edit details":"edit",
     "delete":"delete","delete account…":"delete","permanently delete":"delete","remove":"delete","revoke":"delete",
     "undo":"undo","acknowledge":"check","complete":"complete","record repair":"repair","report issue":"issue",
-    "register asset":"asset","upload file":"upload","add a document or photo":"upload","attach file":"link",
+    "register asset":"asset","upload file":"upload","add a document or photo":"upload","attach file":"attach",
     "save link":"link","download file":"download","download pdf":"download","download evidence bundle":"download",
     "preview":"open","preview evidence":"open","preview attachment":"open","approve & commit":"check",
     "reject":"cancel","cancel":"cancel","later":"cancel","enable notifications":"bell",
@@ -1126,7 +1127,7 @@ async function openUploadEvidenceForm(defaults){
   const source=$('input[name="sourceUrl"]',form);
   source.closest(".field").innerHTML='<label for="homely-attachment">File (maximum 50 MB)</label><input id="homely-attachment" type="file" name="attachment" required accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.zip">';
   $("h2",modalBody).textContent="Attach a file";
-  $(".primary-button",form).textContent="Preview attachment";
+  setActionButtonLabel($(".primary-button",form),"Preview attachment");
   const d=defaults||{};
   for(const key of ["assetId","issueId","repairId","chargeId","purchaseCandidateId"]){
     const element=form.elements.namedItem(key);
@@ -1160,11 +1161,11 @@ async function openUploadEvidenceForm(defaults){
         const chunk=file.slice(index*staged.chunkSize,Math.min(file.size,(index+1)*staged.chunkSize));
         await api("/api/uploads/"+encodeURIComponent(staged.id)+"/chunks/"+index,
           {method:"PUT",signal:controller.signal,headers:{"content-type":"application/octet-stream"},body:chunk});
-        if(submit)submit.textContent="Uploading "+Math.round((index+1)/total*100)+"%";
+        if(submit)setActionButtonLabel(submit,"Uploading "+Math.round((index+1)/total*100)+"%");
       }
       await api("/api/uploads/"+encodeURIComponent(staged.id)+"/finish",{method:"POST",signal:controller.signal});
       if(!modalPending(uploadGeneration))return;
-      if(submit){submit.disabled=false;submit.textContent="Preview attachment"}
+      if(submit){submit.disabled=false;setActionButtonLabel(submit,"Preview attachment")}
       activeUploadController=null;
       await previewAction("ATTACH_DOCUMENT",{
         assetId:data.get("assetId")||null,issueId:data.get("issueId")||null,
@@ -1179,7 +1180,7 @@ async function openUploadEvidenceForm(defaults){
     }catch(err){if(!controller.signal.aborted&&modalPending(uploadGeneration))notify(err.message)}
     finally{
       if(activeUploadController===controller)activeUploadController=null;
-      if(submit?.isConnected){submit.disabled=false;submit.textContent="Preview attachment"}
+      if(submit?.isConnected){submit.disabled=false;setActionButtonLabel(submit,"Preview attachment")}
     }
   };
 }
@@ -1237,8 +1238,10 @@ function messageElement(m){
       const actions=document.createElement("div");actions.className="proposal-actions";
       for(const action of ["reject","approve"]){
         const button=document.createElement("button");button.type="button";
-        button.className=action==="approve"?"primary-button":"button";
-        button.dataset[action]=p.transactionId;button.textContent=action==="approve"?"Approve":"Reject";
+        button.className=(action==="approve"?"primary-button":"button")+" has-action-icon";
+        button.dataset[action]=p.transactionId;
+        const label=action==="approve"?"Approve":"Reject";
+        button.innerHTML=actionIcon(action==="approve"?"check":"cancel")+'<span class="action-label">'+label+'</span>';
         actions.append(button);
       }
       proposal.append(actions);
@@ -1262,6 +1265,7 @@ function renderChat(){
       b.dataset.approve===id||b.dataset.reject===id);
     controls.forEach(b=>b.disabled=true);
     try{
+      controls.forEach(button=>setActionButtonLabel(button,(button.dataset.approve===id?"Approving":"Rejecting")+"…"));
       await api("/api/transactions/"+encodeURIComponent(id)+"/"+action,{method:"POST"});
       for(const message of state.agentMessages){
         const proposal=(message.proposals||[]).find(p=>p.transactionId===id);
@@ -1270,7 +1274,7 @@ function renderChat(){
       renderChat();
       notify(action==="commit"?"Approved and committed.":"Proposal rejected.");
       if(action==="commit")await selectView(state.view);
-    }catch(e){notify(e.message);controls.forEach(b=>{if(b.isConnected)b.disabled=false})}
+    }catch(e){notify(e.message);controls.forEach(b=>{if(b.isConnected){b.disabled=false;setActionButtonLabel(b,b.dataset.approve===id?"Approve":"Reject")}})}
     finally{pendingProposalActions.delete(id)}
   }
   $$("[data-approve]",chatBody).forEach(b=>b.onclick=()=>actOnProposal(b.dataset.approve,"commit"));
