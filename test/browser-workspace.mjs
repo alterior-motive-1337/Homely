@@ -215,6 +215,7 @@ try {
   await page.locator('#issue-form select[name="assetId"]').selectOption("asset-tap");
   await page.locator('#issue-form input[name="title"]').fill("Browser transaction issue");
   await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.locator("#commit-preview").waitFor();
   assert.equal(await page.locator("#commit-preview .action-glyph").count(),1,"approval is paired with a confirmation icon");
   await page.getByRole("button", { name: "Approve & commit" }).click();
   await page.locator("[data-issue-open]").filter({ hasText: "Browser transaction issue" }).waitFor();
