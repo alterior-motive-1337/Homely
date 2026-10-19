@@ -114,6 +114,7 @@ export function getAsset(db: HomelyDatabase, assetId: string) {
     maintenance: db.prepare("SELECT * FROM maintenance_rules WHERE asset_id = ? ORDER BY next_due_at").all(assetId),
     repairs: db.prepare("SELECT * FROM repairs WHERE asset_id = ? ORDER BY repair_date DESC, created_at DESC").all(assetId),
     documents: db.prepare("SELECT * FROM documents WHERE asset_id = ? ORDER BY created_at DESC").all(assetId),
+    purchase_candidates: db.prepare("SELECT id,title,status FROM purchase_candidates WHERE asset_id = ? ORDER BY created_at DESC").all(assetId),
     history: db.prepare("SELECT * FROM timeline_events WHERE asset_id = ? ORDER BY occurred_at DESC LIMIT 30").all(assetId)
   };
 }

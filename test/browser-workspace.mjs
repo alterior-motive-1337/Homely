@@ -29,6 +29,7 @@ try {
     const rgb=getComputedStyle(el).color.match(/\d+/g)?.map(Number);
     return rgb?.every(channel=>channel>=160);
   }),"inactive navigation labels must be legible on the dark surface");
+  assert.equal(await page.locator(".nav-item.active").evaluate(el=>getComputedStyle(el).borderRadius),"8px","labeled navigation uses the refined rounded tab treatment");
   // Visual hierarchy and sizing: navigation must be labeled and use a single top row.
   assert.equal(await page.locator(".nav-item .nav-label").first().isVisible(), true, "desktop tabs need visible text labels");
   assert.ok(await page.locator(".sidebar").evaluate(el => { const r=el.getBoundingClientRect(); return r.width > 1100 && r.height <= 72; }), "desktop navigation must fit a compact header");
@@ -187,6 +188,7 @@ try {
   // Every related file control must open the viewer, including the last one.
   await fileButtons.last().click();
   await page.locator("#viewer").waitFor({ state: "visible" });
+  assert.equal(await page.getByRole("button",{name:"Remove from Homely"}).isVisible(),true,"file viewer exposes a clear remove action");
   await page.locator("#viewer-close").click();
   await page.locator("#modal-close").click();
   await go("issues");
@@ -322,6 +324,25 @@ try {
   await page.locator("#viewer").waitFor({ state: "visible" });
   await page.locator("#viewer-body .viewer-text").waitFor();
   await page.locator("#viewer-close").click();
+  await page.locator("#save-link").click();
+  await page.locator('#link-evidence-form input[name="sourceUrl"]').fill("https://example.invalid/browser-delete-check");
+  await page.locator('#link-evidence-form input[name="title"]').fill("Browser removable file");
+  await page.getByRole("button",{name:"Preview evidence"}).click();
+  await page.getByRole("button",{name:"Approve & commit"}).click();
+  await page.locator("#modal").waitFor({state:"hidden"});
+  const removableFile=page.locator(".file-card").filter({hasText:"Browser removable file"});
+  await removableFile.waitFor();
+  await removableFile.dblclick();
+  await page.locator("#viewer").waitFor({state:"visible"});
+  let removalConfirmation="";
+  page.once("dialog",async confirmation=>{
+    removalConfirmation=confirmation.message();
+    await confirmation.accept();
+  });
+  await page.getByRole("button",{name:"Remove from Homely"}).click();
+  assert.match(removalConfirmation,/permanently deleted/);
+  await page.locator("#viewer").waitFor({state:"hidden"});
+  await removableFile.waitFor({state:"detached"});
   await go("home");
   await go("files");
   await go("home");
@@ -344,6 +365,12 @@ try {
   await page.locator("#modal").waitFor({state:"hidden"});
   await page.locator("#view-charges,#view-charges-shortcut").click();
   await page.getByText("Inactive",{exact:true}).waitFor();
+  await page.getByRole("button",{name:"Delete Browser charge"}).click();
+  await page.getByRole("heading",{name:"Delete recurring charge: Browser charge"}).waitFor();
+  await page.getByRole("button",{name:"Approve & commit"}).click();
+  await page.locator("#modal").waitFor({state:"hidden"});
+  await page.locator("#view-charges,#view-charges-shortcut").click();
+  assert.equal(await page.getByText("Browser charge",{exact:true}).count(),0,"approved deletion removes the charge from its list");
   await page.locator("#modal-close").click();
   await page.locator("#view-purchases,#view-purchases-shortcut").click();
   await page.locator("#add-purchase").click();

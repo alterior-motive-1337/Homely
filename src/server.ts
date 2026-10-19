@@ -25,6 +25,7 @@ import { enterHome } from "./security/homeScope.js";
 import { RequestLimiter } from "./security/traffic.js";
 import { streamHomeArchive } from "./domain/exportHome.js";
 import { deleteAccount } from "./domain/deleteAccount.js";
+import { deleteDocument } from "./domain/deleteDocument.js";
 import { listAlerts, acknowledgeAlert } from "./domain/alerts.js";
 import { chatHistory, clearChat, saveChatTurn, listChatConversations, createChatConversation, renameChatConversation, resolveChatConversation, belongsToConversation } from "./domain/chat.js";
 import { acceptInvite, inviteMember, listHouseholds, listInvitations, listMembers, removeMember, renameHome, revokeInvite } from "./domain/households.js";
@@ -277,6 +278,10 @@ export async function startServer(
        if (req.method === "GET" && url.pathname === "/api/maintenance") return sendJson(res, 200, listMaintenance(db));
        if (req.method === "GET" && url.pathname === "/api/timeline") return sendJson(res, 200, getTimeline(db));
        if (req.method === "GET" && url.pathname === "/api/documents") return sendJson(res, 200, listDocuments(db));
+       const documentDelete = /^\/api\/documents\/([a-zA-Z0-9-]+)$/.exec(url.pathname);
+       if (req.method === "DELETE" && documentDelete) {
+         return sendJson(res,200,deleteDocument(db,documentDelete[1]!));
+       }
        const analysisPath=url.pathname.split("/");
        if(req.method==="POST" && analysisPath.length===5 && analysisPath[1]==="api" &&
          analysisPath[2]==="documents" && analysisPath[4]==="analyze" &&

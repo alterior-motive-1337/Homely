@@ -376,6 +376,20 @@ function registerAction(id,label,kind="plus",primary=true){
       :'<path d="M12 5v14M5 12h14"/>';
   return '<button type="button" class="'+(primary?"primary-button":"button")+' icon-action" id="'+esc(id)+'" aria-label="'+esc(label)+'" title="'+esc(label)+'"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+paths+'</svg></button>';
 }
+function deleteRecordButton(type,id,label){
+  return '<button type="button" class="button danger-button" data-delete-record="'+esc(id)+'" data-delete-type="'+esc(type)+'" aria-label="Delete '+esc(label)+'" title="Delete '+esc(label)+'">Delete</button>';
+}
+function bindDeleteRecordButtons(root=modalBody){
+  $$("[data-delete-record]",root).forEach(button=>button.onclick=async()=>{
+    button.disabled=true;
+    try{
+      await previewAction("DELETE_RECORD",{
+        entityType:button.dataset.deleteType,
+        entityId:button.dataset.deleteRecord
+      },"Homeowner deleted a household record.");
+    }finally{if(button.isConnected)button.disabled=false}
+  });
+}
 function registerTools(label,status=false,action="",count=0){
   return '<div class="register-tools page-controls"><div class="controls-leading">'+quickSearch(label,"record-search")
     +(status?'<div class="register-filters" aria-label="Issue status"><button type="button" data-status="all" aria-pressed="true">All</button><button type="button" data-status="open" aria-pressed="false">Active</button><button type="button" data-status="resolved" aria-pressed="false">Resolved</button></div>':'')
@@ -510,7 +524,8 @@ async function previewAction(actionType,payload,reason,requestText){
         if(actionType==="CREATE_ASSET")completeHomeSetupStep("asset");
         if(actionType==="ATTACH_DOCUMENT")completeHomeSetupStep("evidence");
         if(modalPending(previewGeneration))closeModal();
-        notify(actionType==="RECORD_REPAIR"?"Repair recorded.":"Saved.");
+        notify(actionType==="RECORD_REPAIR"?"Repair recorded.":actionType==="DELETE_RECORD"?"Record deleted. Undo is available in Home history.":"Saved.");
+        viewPanels.delete(state.view);state.needsReload=true;
         await selectView(state.view);
       }catch(error){if(button.isConnected){button.disabled=false;other.disabled=false;button.textContent="Approve & commit"}notify(error.message)}
     };
@@ -715,20 +730,20 @@ async function showHome(){
 
 async function showCharges(){
   const pending=waitingModal("Loading records…");
-  try{const items=await api("/api/charges");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">Add charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,statusLabel(c.billing_cycle)+" · "+(c.provider||displayLabel(c.category)),'<span class="money">'+money(c.amount_cents)+'</span>'+badge(Number(c.active)?'ACTIVE':'INACTIVE')+'<button class="button" data-charge-edit="'+esc(c.id)+'">Edit</button>',c.notes||"")}).join("")||'<div class="empty">No charges.</div>')+'</div>');$("#add-charge").onclick=()=>openChargeForm();$$("[data-charge-edit]",modalBody).forEach(b=>b.onclick=()=>openChargeForm(items.find(c=>c.id===b.dataset.chargeEdit)))}catch(e){modalLoadFailed(pending,e)}
+  try{const items=await api("/api/charges");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Recurring charges</h2><button class="button" id="add-charge">Add charge</button></div><div class="rows">'+(items.map(function(c){return row(c.name,statusLabel(c.billing_cycle)+" · "+(c.provider||displayLabel(c.category)),'<span class="money">'+money(c.amount_cents)+'</span>'+badge(Number(c.active)?'ACTIVE':'INACTIVE')+'<button class="button" data-charge-edit="'+esc(c.id)+'">Edit</button>'+deleteRecordButton("charge",c.id,c.name),c.notes||"")}).join("")||'<div class="empty">No charges.</div>')+'</div>');$("#add-charge").onclick=()=>openChargeForm();$$("[data-charge-edit]",modalBody).forEach(b=>b.onclick=()=>openChargeForm(items.find(c=>c.id===b.dataset.chargeEdit)));bindDeleteRecordButtons()}catch(e){modalLoadFailed(pending,e)}
 }
 async function showPurchases(){
   const pending=waitingModal("Loading records…");
-  try{const items=await api("/api/purchases");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">Save purchase</button></div><div class="rows">'+(items.map(function(p){return row(p.title,displayLabel(p.category)+" · "+purchaseStageLabel(p.status),'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>',p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)))}catch(e){modalLoadFailed(pending,e)}
+  try{const items=await api("/api/purchases");if(!modalPending(pending))return;openModal('<div class="card-head"><h2>Potential purchases</h2><button class="button" id="add-purchase">Save purchase</button></div><div class="rows">'+(items.map(function(p){return row(p.title,displayLabel(p.category)+" · "+purchaseStageLabel(p.status),'<span class="money">'+money(p.expected_cost_cents==null?p.budget_cents:p.expected_cost_cents)+'</span><button class="button" data-purchase-edit="'+esc(p.id)+'">Edit</button>'+deleteRecordButton("purchase_candidate",p.id,p.title),p.rationale||"")}).join("")||'<div class="empty">No purchases.</div>')+'</div>');$("#add-purchase").onclick=()=>openPurchaseForm();$$("[data-purchase-edit]",modalBody).forEach(b=>b.onclick=()=>openPurchaseForm(items.find(p=>p.id===b.dataset.purchaseEdit)));bindDeleteRecordButtons()}catch(e){modalLoadFailed(pending,e)}
 }
 async function showHistory(){
   const pending=waitingModal("Loading records…");
   try{
     const results=await Promise.all([api("/api/timeline"),api("/api/transactions")]);
     if(!modalPending(pending))return;
-    const permanent=["REPORT_ISSUE","RESOLVE_ISSUE","RECORD_REPAIR"];
+    const permanent=["REPORT_ISSUE","RESOLVE_ISSUE","RECORD_REPAIR","DELETE_DOCUMENT"];
     openModal('<h2>Home history</h2><div class="rows">'+results[0].map(function(e){return row(e.title,fmtDate(e.occurred_at),"",e.summary||"")}).join("")+'</div><div class="detail-section"><h3>Changes</h3><div class="rows">'+(results[1].map(function(t){return row(actionLabel(t.action_type),fmtDate(t.created_at),badge(t.status)+(t.status==="COMMITTED"&&!permanent.includes(t.action_type)?'<button class="button" data-undo="'+esc(t.id)+'">Undo</button>':""),t.reason)}).join("")||'<div class="empty">No changes.</div>')+'</div></div>');
-    $$("[data-undo]",modalBody).forEach(function(b){b.onclick=async function(){b.disabled=true;try{await api("/api/transactions/"+encodeURIComponent(b.dataset.undo)+"/undo",{method:"POST"});closeModal();notify("Change undone.");await selectView(state.view)}catch(e){b.disabled=false;notify(e.message)}}});
+    $$("[data-undo]",modalBody).forEach(function(b){b.onclick=async function(){b.disabled=true;try{await api("/api/transactions/"+encodeURIComponent(b.dataset.undo)+"/undo",{method:"POST"});closeModal();notify("Change undone.");viewPanels.delete(state.view);state.needsReload=true;await selectView(state.view)}catch(e){b.disabled=false;notify(e.message)}}});
   }catch(e){modalLoadFailed(pending,e)}
 }
 
@@ -866,8 +881,9 @@ async function openAsset(id){
     html+='<div class="detail-section"><h3>Issues</h3><div class="rows">'+(a.issues.map(function(i){return row(i.title,fmtDate(i.detected_at)+" · "+priorityLabel(i.severity),badge(issueStageLabel(i.status)),i.description||"")}).join("")||'<div class="empty">No issues.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Repairs</h3><div class="rows">'+((a.repairs||[]).map(function(r){return row(r.title,fmtDate(r.repair_date),'<span class="money">'+money(r.cost_cents)+"</span>",r.outcome||"")}).join("")||'<div class="empty">No repairs.</div>')+"</div></div>";
     html+='<div class="detail-section"><h3>Files</h3><div class="rows">'+(a.documents.map(function(d){return row(d.title,d.type,'<button class="button" data-file="'+esc(d.id)+'">Open</button>',"",true)}).join("")||'<div class="empty">No files.</div>')+"</div></div>";
-    html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button></div>';
-    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};$$("[data-file]",modalBody).forEach(function(b){b.onclick=function(){const doc=(a.documents||[]).find(d=>d.id===b.dataset.file);if(doc)void openFile(doc)}})
+    const canDeleteAsset=!(a.issues||[]).length&&!(a.repairs||[]).length&&!(a.maintenance||[]).length&&!(a.documents||[]).length&&!(a.purchase_candidates||[]).length;
+    html+='<div class="form-actions"><button class="primary-button" id="edit-asset">Edit details</button>'+(canDeleteAsset?deleteRecordButton("asset",a.id,a.name):"")+'</div>';
+    openModal(html);$("#edit-asset").onclick=function(){openAssetForm(a)};bindDeleteRecordButtons();$$("[data-file]",modalBody).forEach(function(b){b.onclick=function(){const doc=(a.documents||[]).find(d=>d.id===b.dataset.file);if(doc)void openFile(doc)}})
   }catch(e){modalLoadFailed(pending,e)}
 }
 
@@ -902,6 +918,10 @@ async function openFile(doc){
   const revision=state.viewerRevision=(state.viewerRevision||0)+1;
   if(state.stopVoice)state.stopVoice();
   const href=fileHref(doc),mime=String(doc.mime_type||"");
+  const removeFile=$("#remove-file");
+  removeFile.hidden=false;
+  removeFile.disabled=false;
+  removeFile.onclick=()=>void removeDocumentFromHomely(doc,removeFile);
   const stored=String(doc.local_path||"").startsWith("/api/files/");
   viewerTitle.textContent=doc.title||"File";viewerBody.innerHTML="";
   const insight=$("#viewer-insight"),analyze=$("#analyze-file");
@@ -978,8 +998,24 @@ async function openFile(doc){
     viewerBody.innerHTML='<div class="viewer-link">'+action("Open source",href)+'</div>';
   }
 }
+async function removeDocumentFromHomely(doc,button){
+  if(!window.confirm('Remove "'+String(doc.title||"this file")+'" from Homely? Its stored upload and analysis will be permanently deleted. Any external source will remain unaffected.'))return;
+  button.disabled=true;
+  try{
+    await api("/api/documents/"+encodeURIComponent(doc.id),{method:"DELETE"});
+    viewer.close();
+    state.viewerDocumentId=null;
+    if(modal.open)closeModal();
+    notify("File removed from Homely. External sources remain unaffected.");
+    viewPanels.delete(state.view);state.needsReload=true;
+    await selectView(state.view);
+  }catch(error){
+    notify(error instanceof Error?error.message:"Could not remove this file.");
+    if(button.isConnected)button.disabled=false;
+  }
+}
 $("#viewer-close").onclick=function(){viewer.close()};
-viewer.addEventListener("close",function(){state.viewerRevision=(state.viewerRevision||0)+1;$("#viewer-insight").hidden=true;if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
+viewer.addEventListener("close",function(){state.viewerRevision=(state.viewerRevision||0)+1;state.viewerDocumentId=null;$("#remove-file").hidden=true;$("#viewer-insight").hidden=true;if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=null}});
 
 async function openLinkEvidenceForm(){
   const pending=waitingModal("Preparing file options…");

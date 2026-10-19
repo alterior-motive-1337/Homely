@@ -17,7 +17,8 @@ export type ActionType =
   | "SAVE_PURCHASE"
   | "UPDATE_PURCHASE"
   | "CREATE_PROJECT"
-  | "UPDATE_PROJECT_STATUS";
+  | "UPDATE_PROJECT_STATUS"
+  | "DELETE_RECORD";
 
 export class DomainError extends Error {
   constructor(message: string, public readonly status = 400) {
@@ -120,6 +121,39 @@ function getProject(db: HomelyDatabase, projectId: string) {
 }
 
 function validatePayload(db: HomelyDatabase, actionType: ActionType, raw: JsonRecord): JsonRecord {
+  if (actionType === "DELETE_RECORD") {
+    const entityType = requireText(raw.entityType, "Record type", 40);
+    const entityId = requireText(raw.entityId, "Record", 120);
+    let current: JsonRecord;
+    if (entityType === "asset") {
+      const asset = db.prepare(
+        "SELECT a.* FROM assets a JOIN systems s ON s.id=a.system_id WHERE a.id=? AND s.home_id=COALESCE(NULLIF(?,''),s.home_id)"
+      ).get(entityId,activeHomeId() ?? "");
+      if (!asset) throw new DomainError("Asset not found.",404);
+      for (const table of ["issues","repairs","maintenance_rules","documents","purchase_candidates"]) {
+        if (db.prepare(`SELECT 1 FROM ${table} WHERE asset_id=? LIMIT 1`).get(entityId)) {
+          throw new DomainError("This asset has linked records and cannot be deleted. Remove eligible links first; issue and repair history is permanent.",409);
+        }
+      }
+      current = asset as JsonRecord;
+    } else if (entityType === "charge") {
+      current = getCharge(db,entityId) as JsonRecord;
+      if (db.prepare("SELECT 1 FROM documents WHERE charge_id=? LIMIT 1").get(entityId)) {
+        throw new DomainError("This charge has linked files. Remove those files before deleting the charge.",409);
+      }
+    } else if (entityType === "purchase_candidate") {
+      current = getPurchaseCandidate(db,entityId) as JsonRecord;
+      if (db.prepare("SELECT 1 FROM documents WHERE purchase_candidate_id=? LIMIT 1").get(entityId)) {
+        throw new DomainError("This purchase has linked files. Remove those files before deleting the purchase.",409);
+      }
+    } else {
+      throw new DomainError("This record type cannot be deleted.",400);
+    }
+    if (raw.expectedState && !sameRow(current,raw.expectedState as JsonRecord)) {
+      throw new DomainError("Record changed. Refresh and try again.",409);
+    }
+    return {entityType,entityId,expectedState:current};
+  }
   if (actionType === "CREATE_ASSET" || actionType === "UPDATE_ASSET") {
     const assetId = actionType === "UPDATE_ASSET" ? requireText(raw.assetId, "Asset", 120) : null;
     if (assetId) getAsset(db, assetId);
@@ -455,6 +489,21 @@ function addDays(date: string, days: number): string {
 }
 
 function previewFor(db: HomelyDatabase, actionType: ActionType, payload: JsonRecord) {
+  if (actionType === "DELETE_RECORD") {
+    const state = payload.expectedState as JsonRecord;
+    const entityType = String(payload.entityType);
+    const labels: Record<string,string> = {
+      asset:"appliance or furniture",
+      charge:"recurring charge",
+      purchase_candidate:"purchase record"
+    };
+    const title = String(state.name ?? state.title ?? "record");
+    return {
+      title:`Delete ${labels[entityType] ?? "record"}: ${title}`,
+      summary:"This removes the record from the household and adds an entry to home history.",
+      effects:["Delete the selected record","Keep the action in household history","Allow restoring it with Undo from Home history"]
+    };
+  }
   if(actionType==="UPDATE_CHARGE"||actionType==="UPDATE_PURCHASE")return {
     title:actionType==="UPDATE_CHARGE"?`Update charge: ${payload.name}`:`Update purchase: ${payload.title}`,
     summary:actionType==="UPDATE_CHARGE"?`${payload.billingCycle} · ${Number(payload.active)?"Active":"Inactive"}`:String(payload.status),
@@ -717,6 +766,28 @@ export function commitTransaction(db: HomelyDatabase, transactionId: string) {
     // Recheck referenced assets, systems, evidence and other associations at approval time.
     // A valid preview never grants authority over another home after ownership changes.
     if (activeHomeId()) validatePayload(db,actionType,payload);
+    if (actionType === "DELETE_RECORD") {
+      const checked = validatePayload(db,actionType,payload);
+      const entityType = String(checked.entityType);
+      const entityId = String(checked.entityId);
+      const before = checked.expectedState as JsonRecord;
+      const table = entityType === "asset" ? "assets"
+        : entityType === "charge" ? "charges"
+        : entityType === "purchase_candidate" ? "purchase_candidates"
+        : null;
+      if (!table) throw new DomainError("This record type cannot be deleted.",400);
+      if (!sameRow(before,payload.expectedState as JsonRecord)) {
+        throw new DomainError("Record changed. Refresh and try again.",409);
+      }
+      db.prepare(`DELETE FROM ${table} WHERE id=?`).run(entityId);
+      recordChange(db,transactionId,entityType,entityId,"DELETE",before,null,createdAt);
+      createTimelineEvent(db,transactionId,{
+        eventType:"RECORD_DELETED",
+        title:`Deleted: ${String(before.name ?? before.title ?? "record")}`,
+        summary:"The record can be restored from household history.",
+        occurredAt:createdAt
+      },createdAt);
+    }
     if(actionType==="UPDATE_CHARGE"||actionType==="UPDATE_PURCHASE"){
       const charge=actionType==="UPDATE_CHARGE",table=charge?"charges":"purchase_candidates",entityType=charge?"charge":"purchase_candidate";
       const id=String(charge?payload.chargeId:payload.purchaseCandidateId);
@@ -1261,6 +1332,27 @@ function reverseChange(db: HomelyDatabase, change: JsonRecord, undoId: string, c
     }
   }
 
+  if (operation === "DELETE") {
+    if (!before || after !== null) throw new DomainError("Transaction history is incomplete.",409);
+    const tables: Record<string,string> = {
+      asset:"assets",
+      charge:"charges",
+      purchase_candidate:"purchase_candidates"
+    };
+    const table = tables[entityType];
+    if (!table) throw new DomainError("This deleted record cannot be restored from history.",409);
+    if (db.prepare(`SELECT 1 FROM ${table} WHERE id=?`).get(entityId)) {
+      throw new DomainError("A record with this ID already exists.",409);
+    }
+    const columns = Object.keys(before).filter(column => column !== "_metadata");
+    if (!columns.includes("id")) throw new DomainError("Transaction history is incomplete.",409);
+    db.prepare(`INSERT INTO ${table} (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`)
+      .run(...columns.map(column => before[column] as string|number|null));
+    const restored = db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(entityId);
+    recordChange(db,undoId,entityType,entityId,"CREATE",null,restored,changedAt);
+    return;
+  }
+
   throw new DomainError("This transaction contains an unsupported undo operation.", 409);
 }
 
@@ -1269,6 +1361,9 @@ export function undoTransaction(db: HomelyDatabase, transactionId: string) {
   if (!original) throw new DomainError("Transaction not found.", 404);
   if (String(original.status) !== "COMMITTED") throw new DomainError("Only committed transactions can be undone.", 409);
   if (String(original.action_type) === "UNDO") throw new DomainError("Undo transactions cannot be undone.", 409);
+  if (String(original.action_type) === "DELETE_DOCUMENT") {
+    throw new DomainError("Removed files cannot be restored. Upload the file again if you still need it.",409);
+  }
   if (["REPORT_ISSUE","RECORD_REPAIR"].includes(String(original.action_type))) {
     throw new DomainError(
       String(original.action_type) === "REPORT_ISSUE"
@@ -1351,4 +1446,3 @@ export function listTransactions(db: HomelyDatabase, limit = 50) {
     LIMIT ?
   `).all(activeHomeId() ?? "",limit);
 }
-
